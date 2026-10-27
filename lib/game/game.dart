@@ -1256,7 +1256,19 @@ class Game {
     logTops++;
     _saveLog();
     _play(Sfx.top);
-    final r = route!, best = bestTime(r), isBest = best == null || time < best;
+    final r = route!, best = bestTime(r);
+    final String note;
+    final bool isBest;
+    if (best == null) {
+      isBest = true;
+      note = 'Your first time at the top!';
+    } else if (time < best) {
+      isBest = true;
+      note = 'New best time!';
+    } else {
+      isBest = false;
+      note = 'Best time: ${fmtTime(best)}';
+    }
     if (isBest) store.set(bestKey(r), {'time': time, 'moves': moves});
     cele = Cele(c.copy(), Pt(clampD(c.x, 70, 290), r.topY + 105));
     for (final l in limbs) {
@@ -1270,7 +1282,7 @@ class Game {
         fmtTime(t),
         mv,
         fl,
-        isBest ? (best != null ? 'New best time!' : 'Your first time at the top!') : 'Best time: ${fmtTime(best ?? 0)}',
+        note,
         !isBest,
         routes.indexOf(r) == routes.length - 1 ? 'First route' : 'Next route',
       );

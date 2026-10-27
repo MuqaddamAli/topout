@@ -255,7 +255,9 @@ class Art {
       final g = q.r * 0.02;
       x.drawPath(oval(q.x + q.r * 0.05 * q.e, q.y - q.r * 0.09, (q.r + g) * q.e, q.r + g), paint);
       final shape = oval(q.x, q.y, q.r * q.e, q.r);
-      paint.shader = body;
+      paint
+        ..color = const ui.Color(0xFF000000)
+        ..shader = body;
       x.drawPath(shape, paint);
       // soft light on the side that faces the sun
       paint.shader = ui.Gradient.radial(ui.Offset(q.x - q.r * 0.45 * q.e, q.y + q.r * 0.35), q.r * 1.1 * q.e,
@@ -265,6 +267,7 @@ class Art {
     x.restore();
     // glow from the sun, low on the left, only where there is cloud
     paint
+      ..color = const ui.Color(0xFF000000)
       ..shader = ui.Gradient.radial(ui.Offset(-w * 0.15, base + h * 0.1), w * 0.9, [pal.glow, rgba(255, 170, 120, 0)])
       ..blendMode = ui.BlendMode.srcATop;
     x.drawRect(ui.Rect.fromLTWH(0, 0, w, h), paint);

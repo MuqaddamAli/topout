@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../game/audio.dart';
-import '../game/core.dart';
 import '../game/game.dart';
 import '../game/palette.dart';
 import 'widgets.dart';

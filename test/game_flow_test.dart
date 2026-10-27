@@ -3,7 +3,6 @@
 // the Daily Wall. It also saves screenshots to build/screens/ so the art can
 // be checked by eye (CI uploads them).
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';

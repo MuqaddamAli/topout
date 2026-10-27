@@ -102,7 +102,7 @@ class GameButton extends StatelessWidget {
               child: ConstrainedBox(
                 constraints: BoxConstraints(minHeight: minHeight),
                 child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: compact ? 0 : 18, vertical: compact ? 6 : 0),
+                  padding: EdgeInsets.symmetric(horizontal: compact || label.isEmpty ? 0 : 18, vertical: compact ? 6 : 0),
                   child: Center(widthFactor: width == null ? 1 : null, heightFactor: 1, child: content),
                 ),
               ),

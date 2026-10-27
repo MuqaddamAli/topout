@@ -108,6 +108,7 @@ class ScenePainter extends CustomPainter {
       _fill(c, Rect.fromLTWH(st.x * cw, y, st.s, st.s), rgba(255, 248, 235, al));
     }
     final sunX = cw * 0.2, sunY = ch / 2 + (0.2 * d - 160) * sc;
+    _p.color = const Color(0xFF000000);
     _p.shader = ui.Gradient.radial(Offset(sunX, sunY), math.max(cw, ch) * 0.6,
         [rgba(255, 205, 150, 0.6), rgba(255, 160, 120, 0.2), rgba(255, 140, 110, 0)], [0, 0.22, 1]);
     c.drawRect(skyRect, _p);
@@ -144,6 +145,7 @@ class ScenePainter extends CustomPainter {
         ..lineTo(cw, ch)
         ..close();
       c.drawPath(path, _p..color = hex(col));
+      _p.color = const Color(0xFF000000);
       _p.shader = ui.Gradient.linear(Offset(0, base - amp * sc * 0.4), Offset(0, base + 30 * sc),
           [rgba(240, 150, 140, 0), rgba(240, 150, 140, 0.22)]);
       c.drawPath(path, _p);
@@ -198,6 +200,7 @@ class ScenePainter extends CustomPainter {
       c.drawPath(t.path, _p..color = t.color);
     }
     final top = math.max(-60.0, v.y0), bottom = math.min(r.topY + 200, v.y1);
+    _p.color = const Color(0xFF000000);
     _p.shader = ui.Gradient.linear(Offset(v.x0 - 200, r.topY + 120), Offset(v.x1 + 200, -60),
         [rgba(255, 170, 115, 0.26), rgba(255, 170, 115, 0.05), rgba(20, 24, 46, 0.30)], [0, 0.5, 1]);
     c.drawRect(Rect.fromLTRB(v.x0, top, v.x1, bottom), _p);
@@ -207,6 +210,7 @@ class ScenePainter extends CustomPainter {
       if (a > 0) _fill(c, Rect.fromLTRB(v.x0, v.y0, v.x1, v.y1), rgba(205, 225, 255, a));
     }
     if (v.y0 < 90) {
+      _p.color = const Color(0xFF000000);
       _p.shader = ui.Gradient.linear(Offset.zero, const Offset(0, 90), [rgba(8, 10, 16, 0.45), rgba(8, 10, 16, 0)]);
       c.drawRect(Rect.fromLTRB(v.x0, 0, v.x1, 90), _p);
       _p.shader = null;
@@ -231,6 +235,7 @@ class ScenePainter extends CustomPainter {
   void _ground(Canvas c) {
     final v = g.viewRange();
     if (v.y0 > 40) return;
+    _p.color = const Color(0xFF000000);
     _p.shader = ui.Gradient.linear(Offset.zero, const Offset(0, -140), [Pal.earthTop, hex(0x1b1815)]);
     c.drawRect(Rect.fromLTRB(v.x0, -500, v.x1, 0), _p);
     _p.shader = null;
@@ -360,6 +365,7 @@ class ScenePainter extends CustomPainter {
 
   void _ledgeAt(Canvas c, ClimbRoute r, Hold h, int k, bool menu) {
     final x2 = h.x2!, w = x2 - h.x, isTop = h.t == HoldType.top;
+    _p.color = const Color(0xFF000000);
     _p.shader = ui.Gradient.linear(Offset(0, h.y - 10), Offset(0, h.y - 30), [rgba(8, 10, 16, 0.45), rgba(8, 10, 16, 0)]);
     c.drawRect(Rect.fromLTWH(h.x - 4, h.y - 30, w + 8, 21), _p);
     c.save();
@@ -426,7 +432,7 @@ class ScenePainter extends CustomPainter {
     if (on > 0) {
       c.save();
       c.translate(x, 0);
-      c.drawRRect(glass.shift(Offset(-x, 0)), _p..shader = _glass);
+      c.drawRRect(glass.shift(Offset(-x, 0)), _p..shader = _glass..color = const Color(0xFF000000));
       _p.shader = null;
       c.restore();
       _oval(c, x, y + 5.2, 1.3, 2.3, rgba(255, 246, 218, on));
@@ -583,6 +589,7 @@ class ScenePainter extends CustomPainter {
 
   void _vignette(Canvas c, Size size) {
     final cw = size.width, ch = size.height;
+    _p.color = const Color(0xFF000000);
     _p.shader = ui.Gradient.radial(Offset(cw / 2, ch * 0.5), math.max(cw, ch) * 0.75,
         [rgba(6, 8, 14, 0), rgba(6, 8, 14, 0.5)], null, TileMode.clamp, null, Offset(cw / 2, ch * 0.45), math.min(cw, ch) * 0.35);
     c.drawRect(Offset.zero & size, _p);
