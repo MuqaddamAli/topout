@@ -49,7 +49,7 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          flutter build web --release 2>&1 | tee build/report/web.txt
+          flutter build web --release --wasm 2>&1 | tee build/report/web.txt
 
       - name: Build Android APK
         id: apk

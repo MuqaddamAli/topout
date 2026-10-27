@@ -8,6 +8,9 @@
 build/
 coverage/
 
+# Flutter fetched by tool/vercel_build.sh
+.flutter-sdk/
+
 # IDEs
 .idea/
 *.iml
