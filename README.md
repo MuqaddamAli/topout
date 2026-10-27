@@ -25,13 +25,7 @@ flutter pub get
 flutter run
 ```
 
-If the `android`, `ios` or `web` folders are missing, make them once with:
-
-```bash
-flutter create . --platforms=android,ios,web --org com.muqaddamali --project-name topout
-```
-
-This only adds the missing platform files. It does not change `lib/`.
+The `android`, `ios` and `web` folders are included. If you ever need to rebuild one of them, run `flutter create . --platforms=android,ios,web --org com.muqaddamali --project-name topout`; it only adds missing files and does not change `lib/`.
 
 The game is made for phones held upright (portrait). It also runs on the web and on desktop. On a desktop you can use the keyboard: **U** undo, **L** look, **Esc** pause.
 
@@ -45,7 +39,7 @@ flutter test
 - `test/game_flow_test.dart` plays a full climb with real touch drags (moves, undo, look, a fall, the top, the Daily Wall, pause) and saves screenshots to `build/screens/`.
 - `test/widget_test.dart` is a quick start-up check.
 
-Every push runs `.github/workflows/build.yml` on GitHub Actions. It analyzes the code, runs the tests, builds the web version and an Android APK, and uploads the APK, the web build and the screenshots as downloads on the run page.
+Every push runs `.github/workflows/build.yml` on GitHub Actions. It analyzes the code, runs the tests, builds the web version and an Android APK, and uploads the APK (`topout-apk`), the web build (`topout-web`) and the test screenshots (`screenshots`) as downloads at the bottom of the run page, under **Actions**.
 
 ## How the code is laid out
 
