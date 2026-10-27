@@ -1,0 +1,12 @@
+00:00 +0: loading /home/runner/work/topout/topout/test/game_flow_test.dart
+00:00 +0: /home/runner/work/topout/topout/test/widget_test.dart: starts on the title screen
+00:01 +1: /home/runner/work/topout/topout/test/game_flow_test.dart: a full climb on a phone
+00:01 +2: /home/runner/work/topout/topout/test/game_flow_test.dart: a full climb on a phone
+00:02 +3: /home/runner/work/topout/topout/test/game_flow_test.dart: a full climb on a phone
+00:02 +4: /home/runner/work/topout/topout/test/game_flow_test.dart: a full climb on a phone
+00:02 +5: /home/runner/work/topout/topout/test/game_flow_test.dart: a full climb on a phone
+00:02 +6: /home/runner/work/topout/topout/test/game_flow_test.dart: a full climb on a phone
+00:02 +7: /home/runner/work/topout/topout/test/game_flow_test.dart: a full climb on a phone
+00:02 +8: /home/runner/work/topout/topout/test/game_flow_test.dart: a full climb on a phone
+00:12 +9: /home/runner/work/topout/topout/test/game_flow_test.dart: title screen on a wide screen
+00:15 +10: All tests passed!
