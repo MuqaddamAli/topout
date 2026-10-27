@@ -1,0 +1,114 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Make platform folders if they are missing
+        id: scaffold
+        run: |
+          if [ ! -d android ]; then
+            flutter create . --platforms=android,ios,web --org com.muqaddamali --project-name topout
+            echo "made=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - run: flutter --version
+      - run: flutter pub get
+
+      - name: Analyze
+        id: analyze
+        continue-on-error: true
+        run: |
+          mkdir -p build/report
+          set -o pipefail
+          flutter analyze 2>&1 | tee build/report/analyze.txt
+
+      - name: Test
+        id: test
+        continue-on-error: true
+        run: |
+          mkdir -p build/report
+          set -o pipefail
+          flutter test --reporter expanded 2>&1 | tee build/report/test.txt
+
+      - name: Build web
+        id: web
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          flutter build web --release 2>&1 | tee build/report/web.txt
+
+      - name: Build Android APK
+        id: apk
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          flutter build apk --release 2>&1 | tee build/report/apk.txt
+
+      - name: Upload the APK
+        if: steps.apk.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: topout-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Upload the web build
+        if: steps.web.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: topout-web
+          path: build/web
+
+      - name: Upload screenshots and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: |
+            build/screens
+            build/report
+
+      - name: Share results on the ci-results branch
+        if: always() && github.event_name == 'push'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          out=$(mktemp -d)
+          cp -r build/screens "$out/" 2>/dev/null || true
+          cp -r build/report "$out/" 2>/dev/null || true
+          if [ "${{ steps.scaffold.outputs.made }}" = "1" ]; then
+            mkdir -p "$out/scaffold"
+            cp -r android ios web .metadata "$out/scaffold/" 2>/dev/null || true
+          fi
+          printf 'commit %s\nanalyze %s\ntest %s\nweb %s\napk %s\n' "$GITHUB_SHA" \
+            "${{ steps.analyze.outcome }}" "${{ steps.test.outcome }}" "${{ steps.web.outcome }}" "${{ steps.apk.outcome }}" > "$out/STATUS.txt"
+          cd "$out"
+          git init -q -b ci-results
+          git add -A
+          git -c user.name="github-actions" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "Results for $GITHUB_SHA"
+          git push -fq "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci-results
+
+      - name: Fail if a step failed
+        if: steps.analyze.outcome != 'success' || steps.test.outcome != 'success' || steps.web.outcome != 'success' || steps.apk.outcome != 'success'
+        run: exit 1

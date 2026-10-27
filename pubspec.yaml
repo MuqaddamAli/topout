@@ -1,0 +1,42 @@
+name: topout
+description: "Topout: a calm 2D climbing game. Move one hand or foot at a time."
+publish_to: 'none'
+version: 0.4.0+1
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  audioplayers: ^6.1.0
+  shared_preferences: ^2.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/audio/
+
+  fonts:
+    - family: BigShoulders
+      fonts:
+        - asset: assets/fonts/BigShouldersDisplay-ExtraBold.ttf
+          weight: 800
+        - asset: assets/fonts/BigShouldersDisplay-Black.ttf
+          weight: 900
+    - family: Atkinson
+      fonts:
+        - asset: assets/fonts/AtkinsonHyperlegible-Regular.ttf
+        - asset: assets/fonts/AtkinsonHyperlegible-Bold.ttf
+          weight: 700
+    - family: PlexMono
+      fonts:
+        - asset: assets/fonts/IBMPlexMono-Medium.ttf
+          weight: 500

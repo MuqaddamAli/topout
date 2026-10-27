@@ -1,0 +1,12 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - web_prototype/**
+    - tool/**
+
+linter:
+  rules:
+    # The painters build many short-lived paths; these two would only add noise.
+    prefer_const_constructors: false
+    prefer_const_literals_to_create_immutables: false
