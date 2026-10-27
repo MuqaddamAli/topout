@@ -8,29 +8,23 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 
 import 'audio.dart';
+import 'body.dart';
 import 'core.dart';
+import 'palette.dart';
 import 'store.dart';
+
+export 'body.dart';
 
 enum Phase { menu, climb, paused, falling, fallCard, top }
 
 /// Which overlay is on screen.
 enum Screen { menu, hud, fallCard, topCard, pause }
 
-enum HandStyle { grip, fist, open }
-
 enum HoldStatus { good, weak, no, dyno, far }
 
 enum PartKind { chalk, dust, pebble, snow, spark }
 
 enum ToastKind { plain, warn, ok }
-
-double lerpD(double a, double b, double t) => a + (b - a) * t;
-
-/// A point turned by angle [a] around [c].
-Pt rot(Pt c, double a, double dx, double dy) {
-  final co = math.cos(a), s = math.sin(a);
-  return Pt(c.x + dx * co - dy * s, c.y + dx * s + dy * co);
-}
 
 class Snapshot {
   Snapshot(this.limbs, this.c);
@@ -67,6 +61,9 @@ class DragState {
   bool candOk = false;
   DynoResult? candDyno;
   String why = '';
+
+  /// Seconds since the drag began (the aiming marks fade in).
+  double age = 0;
   final Map<int, HoldStatus> status = {};
 
   /// Where the finger is and where it aims (touch only).
@@ -125,6 +122,13 @@ class Particle {
   double t = 0;
 }
 
+/// A speck of dust floating in the evening light. Positions are fractions of the screen.
+class Mote {
+  Mote(this.x, this.y, this.vx, this.vy, this.r, this.ph, this.f);
+  double x, y;
+  final double vx, vy, r, ph, f;
+}
+
 class Bird {
   Bird(this.u, this.h, this.v, this.ph, this.s);
   double u, ph;
@@ -135,42 +139,6 @@ class Shake {
   Shake(this.i, this.t);
   final int i;
   double t;
-}
-
-class ArmGeo {
-  ArmGeo(this.s, this.m, this.w, this.e, this.dir, this.style, this.kind);
-  final Pt s, m, w, e, dir;
-  final HandStyle style;
-  final HoldType kind;
-}
-
-class LegGeo {
-  LegGeo(this.h, this.k, this.a, this.e, this.free);
-  final Pt h, k, a, e;
-  final bool free;
-}
-
-class Pose {
-  Pose(this.c, this.tilt, this.br, this.lookX, this.lookUp);
-  final Pt c;
-  final double tilt, br, lookX, lookUp;
-  late final List<Pt> shoulders;
-  late final List<Pt> hips;
-  late final Pt head;
-  late final List<ArmGeo> arms;
-  late final List<LegGeo> legs;
-}
-
-class QuickdrawState {
-  QuickdrawState(this.p, this.prev);
-  final Pt p, prev;
-}
-
-/// Things that swing: the ponytail, the chalk bag and the quickdraws.
-class Gear {
-  final List<Pt> tail = [], tailPrev = [];
-  late Pt bag, bagPrev;
-  final List<QuickdrawState> qd = [];
 }
 
 class FallCardData {
@@ -199,8 +167,9 @@ class FallCardData {
 }
 
 class TopCardData {
-  TopCardData(this.routeName, this.time, this.moves, this.falls, this.note, this.noteDim, this.nextLabel);
-  final String routeName, time;
+  TopCardData(this.routeName, this.seconds, this.moves, this.falls, this.note, this.noteDim, this.nextLabel, this.climber);
+  final String routeName, climber;
+  final double seconds;
   final int moves, falls;
   final String note;
   final bool noteDim;
@@ -231,14 +200,6 @@ class Pulse extends ChangeNotifier {
   void fire() => notifyListeners();
 }
 
-const List<double> qdLen = [10, 12, 10, 12];
-const List<List<double>> qdAt = [
-  [-12.6, -20.5],
-  [-9.4, -21.8],
-  [12.6, -20.5],
-  [9.4, -21.8],
-];
-
 /// The Daily Wall gets snow above this height.
 const double snowY = 2000;
 
@@ -256,11 +217,17 @@ String fmtTime(double t) {
 }
 
 class Game {
-  Game({required this.store, required this.audio, DateTime? today}) {
+  Game({required this.store, required this.audio, DateTime? today}) : _fixedDay = today {
     final day = today ?? DateTime.now();
     todayKey = dateKey(day);
     routes = [...buildRoutes(), dailyWallFor(day)];
     mode = Mode.fromName(store.getString('mode'));
+    climber = Climber.byId(store.getString('climber'));
+    outfit = Look.of(climber.id);
+    for (var k = 0; k < 18; k++) {
+      motes.add(Mote(_rand.nextDouble(), _rand.nextDouble(), (_rand.nextDouble() - 0.5) * 0.012, -0.004 - _rand.nextDouble() * 0.01,
+          0.7 + _rand.nextDouble() * 1.3, _rand.nextDouble() * 6.3, 0.6 + _rand.nextDouble() * 1.4));
+    }
     final l = store.getMap('log');
     if (l != null) {
       logTops = (l['tops'] as num?)?.toInt() ?? 0;
@@ -273,7 +240,10 @@ class Game {
 
   final Store store;
   final GameAudio audio;
-  late final String todayKey;
+
+  /// Set by tests to pin the Daily Wall to one day.
+  final DateTime? _fixedDay;
+  late String todayKey;
   late final List<ClimbRoute> routes;
   final _rand = math.Random();
 
@@ -295,6 +265,8 @@ class Game {
 
   // ---- state
   Mode mode = Mode.normal;
+  Climber climber = Climber.base;
+  Look outfit = Look.of(Climber.base.id);
   ClimbRoute? route;
   Phase phase = Phase.menu;
   Screen screen = Screen.menu;
@@ -345,6 +317,18 @@ class Game {
   Cele? cele;
   List<Bird> birds = [];
   double nextFlock = 4;
+  final List<Mote> motes = [];
+
+  /// A dark veil over the scene that lifts after the view jumps (a new route,
+  /// the title screen), from 1 down to 0.
+  double curtain = 1;
+
+  /// A red glow at the edges of the screen after a hand slips, from 1 down to 0.
+  double slipFlash = 0;
+
+  /// Time since a climber was picked on the title screen (they hop).
+  double _menuHop = 9;
+  bool _menuLanded = true;
 
   // ---- overlay data
   String? tipText;
@@ -364,6 +348,22 @@ class Game {
 
   final List<_Later> _later = [];
   double _acc = 0, _tipAcc = 0;
+
+  /// When each hold was last grabbed, for the little give it shows.
+  final Map<int, double> _grabbedAt = {};
+
+  void _grabbed(int k) {
+    _grabbedAt.removeWhere((_, t) => clock - t > 1);
+    _grabbedAt[k] = clock;
+  }
+
+  /// How much hold [k] is squashed by a grab right now, 0 to about 0.6.
+  double grabPulse(int k) {
+    final t = _grabbedAt[k];
+    if (t == null || reducedMotion) return 0;
+    final u = (clock - t) / 0.3;
+    return u >= 1 || u < 0 ? 0 : math.sin(u * math.pi) * (1 - u);
+  }
 
   List<Hold> get holds => route!.holds;
   ClimbRoute get menuRoute => routes[0];
@@ -447,6 +447,12 @@ class Game {
 
   String bestKey(ClimbRoute r) => 'best.${r.id}.${mode.name}';
   double? bestTime(ClimbRoute r) => (store.getMap(bestKey(r))?['time'] as num?)?.toDouble();
+
+  /// Who climbed the best time, or null for records from before there were climbers.
+  Climber? bestClimber(ClimbRoute r) {
+    final id = store.getMap(bestKey(r))?['climber'];
+    return id is String ? Climber.byId(id) : null;
+  }
   double bestEverDaily() => store.getNum('height.daily.all.${mode.name}', 0);
 
   void _saveLog() => store.set('log', {'tops': logTops, 'metres': logMetres, 'falls': logFalls, 'secs': logSecs});
@@ -514,6 +520,7 @@ class Game {
     cpLedge = 0;
     lit.clear();
     litAt.clear();
+    _grabbedAt.clear();
     chalked = {...r.startHands};
     dyno = null;
     hangT = 0;
@@ -534,6 +541,8 @@ class Game {
     toastText = null;
     audio.muffle(false);
     if (r.tutorial) later(0.5, () => maybeTips(true));
+    curtain = 1;
+    slipFlash = 0;
     _ui();
   }
 
@@ -554,29 +563,74 @@ class Game {
   }
 
   void setMenuPose() {
-    final top = menuRoute.topY;
-    const x = 252.0;
-    cd = Pt(x, top + 105);
+    endDraw = [for (var i = 0; i < 4; i++) Pt(0, 0)];
+    _placeMenuClimber(0);
     c = cd.copy();
-    endDraw = [Pt(x - 21, top + 82), Pt(x + 21, top + 82), Pt(x - 13, top), Pt(x + 13, top)];
     resetPoseState([HandStyle.fist, HandStyle.fist]);
     lookX = -2.2;
     lookUp = 0.9;
   }
 
+  /// The climber on the summit of the title screen, [hop] units off the ground.
+  void _placeMenuClimber(double hop) {
+    final top = menuRoute.topY;
+    const x = 252.0;
+    cd = Pt(x, top + standHeight(climber) + hop);
+    final e = endDraw;
+    e[0]
+      ..x = x - 21
+      ..y = cd.y - 23;
+    e[1]
+      ..x = x + 21
+      ..y = cd.y - 23;
+    e[2]
+      ..x = x - 13
+      ..y = top + hop * 0.85;
+    e[3]
+      ..x = x + 13
+      ..y = top + hop * 0.85;
+  }
+
+  /// Picks the climber for the next climbs. Only on the title screen, where they hop and chalk up.
+  void setClimber(Climber k) {
+    if (k == climber || phase != Phase.menu) return;
+    climber = k;
+    outfit = Look.of(k.id);
+    store.set('climber', k.id);
+    setMenuPose(); // the hair and the height are different
+    _menuHop = 0;
+    _menuLanded = false;
+    burst(cd.x, cd.y - 18, PartKind.chalk, 10);
+    _play(Sfx.chalk, pan: panOf(cd.x));
+    _ui();
+  }
+
   void showMenu() {
     if (drag != null) endDrag(true);
     commitSegment();
+    _refreshDaily();
     phase = Phase.menu;
     cele = null;
     parts = [];
     _later.clear();
     setMenuPose();
+    curtain = 1;
+    slipFlash = 0;
     screen = Screen.menu;
     tipText = null;
     toastText = null;
     audio.muffle(false);
     _ui();
+  }
+
+  /// A new day brings a new Daily Wall, even if the app stayed open.
+  void _refreshDaily() {
+    if (_fixedDay != null) return;
+    final now = DateTime.now(), key = dateKey(now);
+    if (key == todayKey) return;
+    todayKey = key;
+    _heights.clear();
+    routes[routes.length - 1] = dailyWallFor(now);
   }
 
   void setMode(Mode m) {
@@ -598,6 +652,7 @@ class Game {
   }
 
   void nextRoute() {
+    if (phase != Phase.top) return; // a second tap while the card fades out
     final i = routes.indexOf(route!);
     startRoute(routes[(i + 1) % routes.length]);
   }
@@ -821,10 +876,10 @@ class Game {
       } else {
         pt = attachPoint(hold, d.i);
       }
-      if (feasible(limbs, d.i, pt, c) != null) {
+      if (feasible(limbs, d.i, pt, c, climber) != null) {
         d.status[k] = q == Quality.good ? HoldStatus.good : HoldStatus.weak;
       } else {
-        d.status[k] = isHand[d.i] && dynoCheck(limbs, d.i, pt, c).ok ? HoldStatus.dyno : HoldStatus.far;
+        d.status[k] = isHand[d.i] && dynoCheck(limbs, d.i, pt, c, climber).ok ? HoldStatus.dyno : HoldStatus.far;
       }
     }
   }
@@ -856,8 +911,8 @@ class Game {
       final hold = h[best], q = quality(hold, d.i), pt = attachPoint(hold, d.i, w.x);
       if (q == Quality.no) {
         d.why = hold.t == HoldType.ground ? '' : (isHand[d.i] ? 'Too small for a hand.' : "Your foot can't go there.");
-      } else if (feasible(limbs, d.i, pt, c) == null) {
-        final dc = dynoCheck(limbs, d.i, pt, c);
+      } else if (feasible(limbs, d.i, pt, c, climber) == null) {
+        final dc = dynoCheck(limbs, d.i, pt, c, climber);
         if (dc.ok) {
           d.candOk = true;
           d.candPt = pt;
@@ -894,6 +949,7 @@ class Game {
         holdTime[d.i] = 0;
         chalked.add(d.cand);
       }
+      _grabbed(d.cand);
       final hand = isHand[d.i];
       burst(l.x, l.y + (hand ? 3 : 0), hand ? PartKind.chalk : PartKind.dust, hand ? 8 : 6);
       _play(hand ? _grabSound(holds[d.cand].t) : Sfx.foot, pan: panOf(l.x));
@@ -960,7 +1016,7 @@ class Game {
     _ui();
   }
 
-  /// Keyboard: U undo, L look, Esc pause, Space or Enter to try again.
+  /// Keyboard: U undo, L look, Esc pause or back, Space or Enter to try again or go on.
   bool key(LogicalKeyboardKey k, {bool ctrl = false}) {
     if (phase == Phase.climb) {
       if (k == LogicalKeyboardKey.keyU || (k == LogicalKeyboardKey.keyZ && ctrl)) {
@@ -977,6 +1033,15 @@ class Game {
       }
     } else if (phase == Phase.fallCard && (k == LogicalKeyboardKey.space || k == LogicalKeyboardKey.enter)) {
       retry();
+      return true;
+    } else if (phase == Phase.fallCard && k == LogicalKeyboardKey.escape) {
+      showMenu();
+      return true;
+    } else if (phase == Phase.top && screen == Screen.topCard && k == LogicalKeyboardKey.enter) {
+      nextRoute();
+      return true;
+    } else if (phase == Phase.top && screen == Screen.topCard && k == LogicalKeyboardKey.escape) {
+      showMenu();
       return true;
     } else if (phase == Phase.paused && k == LogicalKeyboardKey.escape) {
       resume();
@@ -1020,10 +1085,10 @@ class Game {
     final sol = solve(c, anc, 24);
     c.x = sol.x;
     c.y = sol.y;
-    final g = gripRates(limbs, holds, mode), s = g.s;
+    final g = gripRates(limbs, holds, mode, climber), s = g.s;
     for (var i = 0; i < 2; i++) {
       var r = g.rates[i];
-      if (r < 0 && drag != null) r *= slowWhileAiming;
+      if (r < 0 && drag != null) r *= climber.aimSlow;
       grip[i] = clampD(grip[i] + r * dt, 0, 100);
       if (limbs[i].h != null) holdTime[i] += dt;
     }
@@ -1064,6 +1129,7 @@ class Game {
       newBestShown = true;
       toast('New best!', ToastKind.ok);
       _play(Sfx.best);
+      burst(cd.x, cd.y + 50, PartKind.spark, 12);
     }
     if (s.standing) _checkpointAt(s);
     final h0 = limbs[0].h, h1 = limbs[1].h;
@@ -1084,10 +1150,11 @@ class Game {
     l.x = dy.pt.x;
     l.y = dy.pt.y;
     chalked.add(dy.hold);
-    grip[dy.i] = math.max(1.0, grip[dy.i] - catchCost[dy.q == Quality.good ? Quality.good : Quality.weak]!);
+    _grabbed(dy.hold);
+    grip[dy.i] = math.max(1.0, grip[dy.i] - climber.catchCostFor(dy.q));
     holdTime[dy.i] = 0;
     dyno = null;
-    hangT = hangTime;
+    hangT = climber.hangTime;
     burst(l.x, l.y + 3, PartKind.chalk, 14);
     camShake = math.max(camShake, 3.0);
     _play(Sfx.catchHold, pan: panOf(l.x));
@@ -1101,6 +1168,7 @@ class Game {
     burst(l.x, l.y, PartKind.pebble, 5);
     camShake = math.max(camShake, 3.0);
     _play(Sfx.slip, pan: panOf(l.x));
+    slipFlash = 1;
     l.h = null;
     holdTime[i] = 0;
     if (drag != null && !supportInfo(limbs, holds).supported) endDrag(true);
@@ -1269,8 +1337,8 @@ class Game {
       isBest = false;
       note = 'Best time: ${fmtTime(best)}';
     }
-    if (isBest) store.set(bestKey(r), {'time': time, 'moves': moves});
-    cele = Cele(c.copy(), Pt(clampD(c.x, 70, 290), r.topY + 105));
+    if (isBest) store.set(bestKey(r), {'time': time, 'moves': moves, 'climber': climber.id});
+    cele = Cele(c.copy(), Pt(clampD(c.x, 70, 290), r.topY + standHeight(climber)));
     for (final l in limbs) {
       l.h = null;
     }
@@ -1279,12 +1347,13 @@ class Game {
       if (route != r || phase != Phase.top) return;
       topCard = TopCardData(
         r.name,
-        fmtTime(t),
+        t,
         mv,
         fl,
         note,
         !isBest,
         routes.indexOf(r) == routes.length - 1 ? 'First route' : 'Next route',
+        climber.name,
       );
       screen = Screen.topCard;
       _ui();
@@ -1298,6 +1367,9 @@ class Game {
     clock += dt;
     _updateParts(dt);
     _updateBirds(dt);
+    _updateMotes(dt);
+    curtain = math.max(0.0, curtain - dt / 0.45);
+    slipFlash = math.max(0.0, slipFlash - dt * 1.4);
     camShake = math.max(0.0, camShake - dt * 18);
     br = reducedMotion
         ? 0.0
@@ -1307,6 +1379,14 @@ class Game {
       camX = 180;
       camY = menuRoute.topY - 0.11 * ch / scale;
       lookX = -2.2 + math.sin(clock * 0.3) * 0.5;
+      _menuHop += dt;
+      final u = _menuHop / 0.42;
+      _placeMenuClimber(u < 1 && !reducedMotion ? math.sin(u * math.pi) * 15 : 0);
+      if (u >= 1 && !_menuLanded) {
+        _menuLanded = true;
+        burst(cd.x, menuRoute.topY + 2, PartKind.dust, 8);
+        _play(Sfx.foot, pan: panOf(cd.x));
+      }
       pose = buildPose();
       if (gear == null) _gearInit();
       _gearUpdate(dt);
@@ -1315,6 +1395,7 @@ class Game {
     }
     final r = route;
     if (r == null) return;
+    drag?.age += dt;
     lookK += ((look ? 1 : 0) - lookK) * math.min(1.0, dt * (reducedMotion ? 30 : 7));
     final f = fall;
     final ce = cele;
@@ -1431,7 +1512,7 @@ class Game {
         final dx = dy.pt.x - j.x, ddy = dy.pt.y - j.y;
         var len = hypot(dx, ddy);
         if (len == 0) len = 1;
-        final m = math.min(1.0, (reach[i] + 2) / len);
+        final m = math.min(1.0, (climber.reach[i] + 2) / len);
         tx = j.x + dx * m;
         ty = j.y + ddy * m;
       } else if (d != null && d.i == i) {
@@ -1439,7 +1520,7 @@ class Game {
         final dx = target.x - j.x, ddy = target.y - j.y;
         var len = hypot(dx, ddy);
         if (len == 0) len = 1;
-        final m = math.min(1.0, (reach[i] + 2) / len);
+        final m = math.min(1.0, (climber.reach[i] + 2) / len);
         tx = j.x + dx * m;
         ty = j.y + ddy * m;
       } else if (l.h != null) {
@@ -1489,6 +1570,16 @@ class Game {
     }
   }
 
+  void _updateMotes(double dt) {
+    for (final m in motes) {
+      m.x += (m.vx + math.sin(clock * 0.5 + m.ph) * 0.006) * dt;
+      m.y += m.vy * dt;
+      if (m.x < -0.05) m.x += 1.1;
+      if (m.x > 1.05) m.x -= 1.1;
+      if (m.y < -0.05) m.y += 1.1;
+    }
+  }
+
   void _updateBirds(double dt) {
     nextFlock -= dt;
     if (nextFlock <= 0) {
@@ -1514,140 +1605,39 @@ class Game {
 
   // ================================================================ pose
 
-  static ({Pt mid, Pt end}) _ikJoint(Pt j, Pt e, double a, double b, double side, bool leg) {
-    var dx = e.x - j.x, dy = e.y - j.y;
-    var d = hypot(dx, dy);
-    if (d == 0) d = 1e-6;
-    final maxd = a + b - 0.6;
-    if (d > maxd) {
-      dx *= maxd / d;
-      dy *= maxd / d;
-      d = maxd;
-    }
-    d = math.max(d, (a - b).abs() + 0.6);
-    final ang = math.acos(clampD((a * a + d * d - b * b) / (2 * a * d), -1, 1)), base = math.atan2(dy, dx);
-    final p1 = Pt(j.x + math.cos(base + ang) * a, j.y + math.sin(base + ang) * a);
-    final p2 = Pt(j.x + math.cos(base - ang) * a, j.y + math.sin(base - ang) * a);
-    double score(Pt p) => side * p.x + (leg ? 0.6 : -0.6) * p.y; // elbows out and down, knees out and up
-    return (mid: score(p1) > score(p2) ? p1 : p2, end: Pt(j.x + dx, j.y + dy));
-  }
-
-  Pose buildPose() {
-    final p = Pose(cd.copy(), tilt, br, lookX, lookUp);
-    p.shoulders = [
-      for (final i in [0, 1]) (rot(p.c, p.tilt, jointOffset[i][0], jointOffset[i][1])..y += 0.5 * p.br),
-    ];
-    p.hips = [for (final i in [2, 3]) rot(p.c, p.tilt, jointOffset[i][0], jointOffset[i][1])];
-    final hc = rot(p.c, p.tilt, 0, 38.5);
-    p.head = Pt(hc.x + p.lookX * 0.5, hc.y + p.lookUp * 1.4 + 0.3 * p.br);
-    p.arms = [_armGeo(0, p), _armGeo(1, p)];
-    p.legs = [_legGeo(2, p), _legGeo(3, p)];
-    return p;
-  }
-
-  ArmGeo _armGeo(int i, Pose p) {
-    final s = p.shoulders[i], e0 = endDraw[i].copy(), st = hStyle[i];
-    if (st == HandStyle.grip && grip[i] < 35 && !reducedMotion && phase == Phase.climb) {
+  /// The hand at the end of arm [i], shaking a little when it is very tired.
+  Pt _handEnd(int i) {
+    final e0 = endDraw[i].copy();
+    if (hStyle[i] == HandStyle.grip && grip[i] < 35 && !reducedMotion && phase == Phase.climb) {
       final amp = (35 - grip[i]) / 35 * 1.6;
       e0.x += math.sin(clock * 47 + i) * amp;
       e0.y += math.cos(clock * 39 + i * 2) * amp * 0.5;
     }
     if (shake != null && shake!.i == i && !reducedMotion) e0.x += math.sin(clock * 60) * 3;
-    var dx = e0.x - s.x, dy = e0.y - s.y;
-    var d = hypot(dx, dy);
-    if (d == 0) d = 1;
-    dx /= d;
-    dy /= d;
-    Pt dir;
-    if (st == HandStyle.grip) {
-      final bx = dx * 0.4, by = dy * 0.4 + 0.6;
-      var bl = hypot(bx, by);
-      if (bl == 0) bl = 1;
-      dir = Pt(bx / bl, by / bl);
-    } else {
-      dir = Pt(dx, dy);
-    }
-    final ik = _ikJoint(s, Pt(e0.x - dir.x * 7, e0.y - dir.y * 7), 34, 26.5, sideOf[i], false);
-    final w = ik.end;
-    return ArmGeo(s, ik.mid, w, Pt(w.x + dir.x * 7, w.y + dir.y * 7), dir, st, hKind[i]);
+    return e0;
   }
 
-  LegGeo _legGeo(int i, Pose p) {
-    final h = p.hips[i - 2], e0 = endDraw[i], side = sideOf[i];
-    final ik = _ikJoint(h, Pt(e0.x - side * 3.5, e0.y + 6.5), 41, 36, side, true);
-    final k = ik.mid.copy();
-    if (tremble > 0 && !reducedMotion) k.x += math.sin(clock * 41 + i * 1.7) * tremble;
-    final a = ik.end;
-    return LegGeo(h, k, a, Pt(a.x + side * 3.5, a.y - 6.5), fFree[i - 2]);
+  Pose buildPose() {
+    final p = Pose(cd.copy(), tilt, br, lookX, lookUp), k = climber;
+    p.arms = [for (final i in [0, 1]) armGeo(i, p.shoulders[i], _handEnd(i), hStyle[i], hKind[i], k.armScale)];
+    p.legs = [
+      for (final i in [2, 3])
+        legGeo(i, p.hips[i - 2], endDraw[i], fFree[i - 2], k.legScale,
+            tremble > 0 && !reducedMotion ? math.sin(clock * 41 + i * 1.7) * tremble : 0),
+    ];
+    return p;
   }
-
-  Pt tailRoot(Pose p) {
-    final o = rot(Pt(0, 0), p.tilt * 0.5, -p.lookX * 0.8, -8.2);
-    return Pt(p.head.x + o.x, p.head.y + o.y);
-  }
-
-  Pt bagAnchor(Pose p) => rot(p.c, p.tilt, 0, -21);
-  Pt qdAnchor(Pose p, int k) => rot(p.c, p.tilt, qdAt[k][0], qdAt[k][1]);
 
   void _gearInit() {
-    final p = pose = buildPose(), root = tailRoot(p), g = gear = Gear();
-    for (var k = 0; k < 5; k++) {
-      final q = Pt(root.x, root.y - k * 3.5);
-      g.tail.add(q);
-      g.tailPrev.add(q.copy());
-    }
-    final ba = bagAnchor(p);
-    g.bag = Pt(ba.x, ba.y - 7);
-    g.bagPrev = g.bag.copy();
-    for (var k = 0; k < qdLen.length; k++) {
-      final a = qdAnchor(p, k), q = Pt(a.x, a.y - qdLen[k]);
-      g.qd.add(QuickdrawState(q, q.copy()));
-    }
-  }
-
-  static void _verlet(Pt p, Pt prev, double ax, double ay, double h, double damp) {
-    final vx = (p.x - prev.x) * damp, vy = (p.y - prev.y) * damp;
-    prev.x = p.x;
-    prev.y = p.y;
-    p.x += vx + ax * h * h;
-    p.y += vy + ay * h * h;
-  }
-
-  static void _tie(Pt a, Pt p, double len) {
-    final dx = p.x - a.x, dy = p.y - a.y;
-    var d = hypot(dx, dy);
-    if (d == 0) d = 1e-6;
-    p.x = a.x + dx / d * len;
-    p.y = a.y + dy / d * len;
+    final p = pose = buildPose();
+    gear = Gear(p, links: outfit.tailLinks, link: outfit.tailLink);
   }
 
   void _gearUpdate(double dt) {
     if (gear == null) _gearInit();
-    final p = pose!, g = gear!, h = math.min(dt, 1 / 30), damp = math.pow(0.965, h * 60).toDouble();
     final windy = phase == Phase.menu || cele != null;
     final wind = (windy ? 360.0 : 25.0) * (0.6 + 0.4 * math.sin(clock * 0.9)) + (windy ? 90 * math.sin(clock * 3.1) : 0.0);
-    final root = tailRoot(p);
-    g.tail[0]
-      ..x = root.x
-      ..y = root.y;
-    g.tailPrev[0]
-      ..x = root.x
-      ..y = root.y;
-    for (var k = 1; k < g.tail.length; k++) {
-      _verlet(g.tail[k], g.tailPrev[k], wind, -900, h, damp);
-    }
-    for (var it = 0; it < 3; it++) {
-      for (var k = 1; k < g.tail.length; k++) {
-        _tie(g.tail[k - 1], g.tail[k], 3.5);
-      }
-    }
-    _verlet(g.bag, g.bagPrev, wind * 0.15, -900, h, damp);
-    _tie(bagAnchor(p), g.bag, 7);
-    for (var k = 0; k < g.qd.length; k++) {
-      final q = g.qd[k];
-      _verlet(q.p, q.prev, wind * 0.1, -900, h, damp);
-      _tie(qdAnchor(p, k), q.p, qdLen[k]);
-    }
+    gear!.update(pose!, dt, wind);
   }
 
   // ================================================================ HUD data

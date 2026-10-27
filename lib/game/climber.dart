@@ -1,5 +1,6 @@
-// Draws the climber, seen from behind: cel shaded, with a helmet, ponytail,
-// harness, quickdraws, chalk bag and climbing shoes.
+// Draws a climber, seen from behind: cel shaded, with a helmet, hair,
+// harness, quickdraws, chalk bag and climbing shoes. The colours and the hair
+// come from the climber's [Look].
 //
 // All coordinates are world units with y pointing up. The same code draws the
 // shadow (sil = true), which fills every shape in black.
@@ -7,8 +8,8 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'art.dart';
+import 'body.dart';
 import 'core.dart';
-import 'game.dart';
 import 'palette.dart';
 
 final Paint _fill = Paint();
@@ -102,6 +103,7 @@ final Path _helmet = Path()
   ..cubicTo(6.5, -7.2, -6.5, -7.2, -10.9, -5.0)
   ..close();
 final Path _hairBase = ellipsePath(0, -3.8, 7.9, 5.4);
+final Path _hairShort = ellipsePath(0, -3.3, 7.5, 4.5);
 
 /// Toe points to +x, origin under the ball of the foot.
 final Path _shoe = Path()
@@ -121,25 +123,25 @@ final Path _bagBody = Path()
   ..close();
 
 class ClimberPainter {
-  ClimberPainter(this.g);
-  final Game g;
+  const ClimberPainter();
 
-  void draw(Canvas c, Pose p, Gear gear, {bool sil = false}) {
-    _leg(c, p.legs[0], 2, sil);
-    _leg(c, p.legs[1], 3, sil);
-    _torso(c, p, sil);
+  /// Draws the whole climber. With [sil] every shape is filled black (the shadow).
+  void draw(Canvas c, Pose p, Gear gear, Look look, {bool sil = false}) {
+    _leg(c, p.legs[0], 2, look, sil);
+    _leg(c, p.legs[1], 3, look, sil);
+    _torso(c, p, look, sil);
     _risers(c, p, sil);
     _quickdraws(c, p, gear, sil);
-    _chalkBag(c, p, gear, sil);
-    _arm(c, p.arms[0], 0, p, sil);
-    _arm(c, p.arms[1], 1, p, sil);
-    _ponytail(c, gear, sil);
-    _head(c, p, sil);
+    _chalkBag(c, p, gear, look, sil);
+    _arm(c, p.arms[0], 0, p, look, sil);
+    _arm(c, p.arms[1], 1, p, look, sil);
+    _hair(c, gear, look, sil);
+    _head(c, p, look, sil);
   }
 
-  void _leg(Canvas c, LegGeo l, int i, bool sil) {
-    cel(c, limbPath(l.h, l.k, 7.6, 5.8, 0.9), Body.pants, sil);
-    cel(c, limbPath(l.k, l.a, 5.8, 3.9, 1.3), Body.pants, sil);
+  void _leg(Canvas c, LegGeo l, int i, Look look, bool sil) {
+    cel(c, limbPath(l.h, l.k, 7.6, 5.8, 0.9), look.pants, sil);
+    cel(c, limbPath(l.k, l.a, 5.8, 3.9, 1.3), look.pants, sil);
     if (!sil) {
       final ux = l.k.x - l.h.x, uy = l.k.y - l.h.y;
       var len = hypot(ux, uy);
@@ -155,15 +157,15 @@ class ClimberPainter {
       _strokePath(c, loop, Body.harness[0], 2.6);
       // knee patch
       final ca = math.atan2(l.a.y - l.k.y, l.a.x - l.k.x);
-      cel(c, ellipsePath(l.k.x, l.k.y, 3.7, 3.0, ca), Body.patch, false, ow: 1.3, kl: 0.6, kd: 1);
+      cel(c, ellipsePath(l.k.x, l.k.y, 3.7, 3.0, ca), look.patch, false, ow: 1.3, kl: 0.6, kd: 1);
       // rolled cuff
       final c0 = Pt(lerpD(l.k.x, l.a.x, 0.8), lerpD(l.k.y, l.a.y, 0.8));
-      cel(c, limbPath(c0, l.a, 4.7, 4.5), Body.patch, false, ow: 1.8, kl: 0.6, kd: 1.1);
+      cel(c, limbPath(c0, l.a, 4.7, 4.5), look.patch, false, ow: 1.8, kl: 0.6, kd: 1.1);
     }
-    _shoeAt(c, l, i, sil);
+    _shoeAt(c, l, i, look, sil);
   }
 
-  void _shoeAt(Canvas c, LegGeo l, int i, bool sil) {
+  void _shoeAt(Canvas c, LegGeo l, int i, Look look, bool sil) {
     final side = sideOf[i];
     final calf = math.atan2(l.a.y - l.k.y, l.a.x - l.k.x);
     final tilt = l.free ? -0.6 : clampD((calf + math.pi / 2) * side * 0.25, -0.3, 0.3);
@@ -171,7 +173,7 @@ class ClimberPainter {
     c.translate(l.e.x, l.e.y);
     c.scale(side, 1);
     c.rotate(tilt);
-    cel(c, _shoe, Body.shoe, sil, fx: side, ow: 2.4, kl: 0.8, kd: 1.4);
+    cel(c, _shoe, look.shoe, sil, fx: side, ow: 2.4, kl: 0.8, kd: 1.4);
     if (!sil) {
       c.save();
       c.clipPath(_shoe);
@@ -191,18 +193,18 @@ class ClimberPainter {
         _strokePath(c, strap, Pal.outline, 3.4);
         _strokePath(c, strap, hex(0xe4f4ef), 2);
       }
-      c.drawRRect(roundRect(-8.2, 6.2, 1.8, 2.8, 0.8), _fill..color = Pal.signal);
+      c.drawRRect(roundRect(-8.2, 6.2, 1.8, 2.8, 0.8), _fill..color = look.stripe);
     }
     c.restore();
   }
 
-  void _torso(Canvas c, Pose p, bool sil) {
+  void _torso(Canvas c, Pose p, Look look, bool sil) {
     c.save();
     c.translate(p.c.x, p.c.y);
     c.rotate(p.tilt);
     c.scale(1 + 0.012 * p.br, 1 + 0.006 * p.br);
-    cel(c, _neck, Body.skin, sil, ow: 2.2);
-    cel(c, _pants, Body.pants, sil);
+    cel(c, _neck, look.skin, sil, ow: 2.2);
+    cel(c, _pants, look.pants, sil);
     if (!sil) {
       final seam = rgba(10, 12, 24, 0.45);
       _strokePath(c, Path()..moveTo(0, -21)..quadraticBezierTo(0.6, -30, 0, -36.5), seam, 1);
@@ -216,9 +218,9 @@ class ClimberPainter {
               ..strokeWidth = 1);
       }
     }
-    cel(c, _shirt, Body.shirt, sil);
+    cel(c, _shirt, look.shirt, sil);
     if (!sil) {
-      final fold = rgba(120, 36, 8, 0.35);
+      final fold = Color.lerp(look.shirt[1], const Color(0xFF000000), 0.42)!.withAlpha(89);
       for (final s in const [-1.0, 1.0]) {
         final blade = ellipseArc(s * 7.6, 16.5, 5.6, 7.4, s * 0.25, s > 0 ? math.pi * 0.55 : math.pi * 0.45,
             s > 0 ? math.pi * 1.3 : -math.pi * 0.3,
@@ -276,7 +278,7 @@ class ClimberPainter {
 
   void _quickdraws(Canvas c, Pose p, Gear gear, bool sil) {
     for (var k = 0; k < gear.qd.length; k++) {
-      final a = g.qdAnchor(p, k), q = gear.qd[k].p;
+      final a = qdAnchor(p, k), q = gear.qd[k].p;
       final dx = q.x - a.x, dy = q.y - a.y;
       var len = hypot(dx, dy);
       if (len == 0) len = 1;
@@ -301,8 +303,8 @@ class ClimberPainter {
     }
   }
 
-  void _chalkBag(Canvas c, Pose p, Gear gear, bool sil) {
-    final a = g.bagAnchor(p), b = gear.bag, th = math.atan2(b.x - a.x, a.y - b.y);
+  void _chalkBag(Canvas c, Pose p, Gear gear, Look look, bool sil) {
+    final a = bagAnchor(p), b = gear.bag, th = math.atan2(b.x - a.x, a.y - b.y);
     c.save();
     c.translate(a.x, a.y);
     c.rotate(th + p.tilt * 0.3);
@@ -311,7 +313,7 @@ class ClimberPainter {
       c.restore();
       return;
     }
-    cel(c, _bagBody, Body.bag, false, ow: 2.2, kl: 0.8, kd: 1.4);
+    cel(c, _bagBody, look.bag, false, ow: 2.2, kl: 0.8, kd: 1.4);
     final band = roundRect(-5.6, -4.2, 11.2, 2.8, 1.2);
     c.drawRRect(band, _fill..color = Body.harness[0]);
     c.drawRRect(
@@ -324,19 +326,19 @@ class ClimberPainter {
     c.restore();
   }
 
-  void _arm(Canvas c, ArmGeo a, int i, Pose p, bool sil) {
-    cel(c, limbPath(a.s, a.m, 5.4, 4.4, 0.5), Body.skin, sil);
+  void _arm(Canvas c, ArmGeo a, int i, Pose p, Look look, bool sil) {
+    cel(c, limbPath(a.s, a.m, 5.4, 4.4, 0.5), look.skin, sil);
     final sl = Pt(lerpD(a.s.x, a.m.x, 0.42), lerpD(a.s.y, a.m.y, 0.42));
-    cel(c, limbPath(a.s, sl, 5.9, 5.5, 0.3), Body.shirt, sil);
-    cel(c, limbPath(a.m, a.w, 4.6, 3.3, 0.9), Body.skin, sil);
-    _hand(c, a, i, p, sil);
+    cel(c, limbPath(a.s, sl, 5.9, 5.5, 0.3), look.shirt, sil);
+    cel(c, limbPath(a.m, a.w, 4.6, 3.3, 0.9), look.skin, sil);
+    _hand(c, a, i, p, look, sil);
   }
 
-  void _hand(Canvas c, ArmGeo a, int i, Pose p, bool sil) {
+  void _hand(Canvas c, ArmGeo a, int i, Pose p, Look look, bool sil) {
     final w = a.w, e = a.e, dir = a.dir, nx = -dir.y, ny = dir.x;
     var tin = ((p.c.x - w.x) * nx + (p.c.y - w.y) * ny).sign;
     if (tin == 0) tin = -sideOf[i];
-    final sk = Body.skin;
+    final sk = look.skin;
     final fingers = <Path>[];
     if (a.style == HandStyle.grip || a.style == HandStyle.fist) {
       final k = a.style == HandStyle.fist ? HoldType.jug : a.kind;
@@ -388,8 +390,22 @@ class ClimberPainter {
     }
   }
 
-  void _ponytail(Canvas c, Gear gear, bool sil) {
+  void _hair(Canvas c, Gear gear, Look look, bool sil) {
+    switch (look.hairStyle) {
+      case HairStyle.ponytail:
+      case HairStyle.braid:
+        _tail(c, gear, look, sil);
+      case HairStyle.bun:
+      case HairStyle.short:
+        break; // drawn with the head
+    }
+  }
+
+  /// A ponytail or a braid that swings: a strip around the gear's hair chain.
+  void _tail(Canvas c, Gear gear, Look look, bool sil) {
     final pts = gear.tail, n = pts.length;
+    if (n < 2) return;
+    final braid = look.hairStyle == HairStyle.braid;
     final left = <Pt>[], right = <Pt>[];
     for (var k = 0; k < n; k++) {
       final a = pts[math.max(0, k - 1)], b = pts[math.min(n - 1, k + 1)];
@@ -398,7 +414,7 @@ class ClimberPainter {
       if (d == 0) d = 1;
       dx /= d;
       dy /= d;
-      final r = lerpD(3.1, 0.9, k / (n - 1)) * (k == 1 ? 1.2 : 1);
+      final r = braid ? lerpD(2.5, 1.2, k / (n - 1)) : lerpD(3.1, 0.9, k / (n - 1)) * (k == 1 ? 1.2 : 1);
       left.add(Pt(pts[k].x - dy * r, pts[k].y + dx * r));
       right.add(Pt(pts[k].x + dy * r, pts[k].y - dx * r));
     }
@@ -417,14 +433,27 @@ class ClimberPainter {
       c.drawPath(p, _sil);
       return;
     }
-    cel(c, p, Body.hair, false, ow: 2, kl: 0.6, kd: 1);
-    final strand = Path()..moveTo(pts[0].x - 0.6, pts[0].y);
-    for (var k = 1; k < n - 1; k++) {
-      strand.lineTo(pts[k].x - 0.6, pts[k].y);
+    cel(c, p, look.hair, false, ow: 2, kl: 0.6, kd: 1);
+    if (braid) {
+      // the crossings of the braid
+      final cross = Path();
+      for (var k = 1; k < n - 1; k++) {
+        cross
+          ..moveTo(left[k].x, left[k].y)
+          ..lineTo(lerpD(right[k].x, right[k + 1].x, 0.5), lerpD(right[k].y, right[k + 1].y, 0.5));
+      }
+      _strokePath(c, cross, look.hair[1], 0.8);
+      final end = pts[n - 2];
+      c.drawCircle(Offset(end.x, end.y), 1.5, _fill..color = look.stripe);
+    } else {
+      final strand = Path()..moveTo(pts[0].x - 0.6, pts[0].y);
+      for (var k = 1; k < n - 1; k++) {
+        strand.lineTo(pts[k].x - 0.6, pts[k].y);
+      }
+      _strokePath(c, strand, rgba(255, 226, 190, 0.45), 0.9);
     }
-    _strokePath(c, strand, rgba(255, 226, 190, 0.45), 0.9);
-    final tie = Rect.fromCenter(center: Offset(pts[0].x, pts[0].y - 0.6), width: 5.4, height: 3.2);
-    c.drawOval(tie, _fill..color = Body.shoe[0]);
+    final tie = Rect.fromCenter(center: Offset(pts[0].x, pts[0].y - 0.6), width: braid ? 4.6 : 5.4, height: 3.2);
+    c.drawOval(tie, _fill..color = look.shoe[0]);
     c.drawOval(
         tie,
         _stroke
@@ -432,27 +461,36 @@ class ClimberPainter {
           ..strokeWidth = 1);
   }
 
-  void _head(Canvas c, Pose p, bool sil) {
+  void _head(Canvas c, Pose p, Look look, bool sil) {
     final h = p.head, lx = p.lookX;
     c.save();
     c.translate(h.x, h.y);
     c.rotate(p.tilt * 0.5);
-    cel(c, _hairBase, Body.hair, sil, ow: 2.2);
+    cel(c, look.hairStyle == HairStyle.short ? _hairShort : _hairBase, look.hair, sil, ow: 2.2);
     for (final s in const [-1.0, 1.0]) {
       final toward = lx * s > 0, ex = s * (8.3 - (toward ? lx.abs() * 0.55 : -lx.abs() * 0.2));
-      cel(c, ellipsePath(ex, -5.6, 1.8, 2.7), Body.skin, sil, ow: 1.8, kl: 0.4, kd: 0.8);
+      cel(c, ellipsePath(ex, -5.6, 1.8, 2.7), look.skin, sil, ow: 1.8, kl: 0.4, kd: 0.8);
     }
     if (lx.abs() > 0.8) {
       final s = lx.sign;
-      cel(c, ellipsePath(s * 7.6, -7.2, 0.5 + lx.abs() * 0.5, 2.6), Body.skin, sil, ow: 1.8, kl: 0.4, kd: 0.8);
+      cel(c, ellipsePath(s * 7.6, -7.2, 0.5 + lx.abs() * 0.5, 2.6), look.skin, sil, ow: 1.8, kl: 0.4, kd: 0.8);
     }
-    cel(c, _helmet, Body.helmet, sil);
+    if (look.hairStyle == HairStyle.bun) {
+      // a round bun low on the back of the head, with a band around it
+      final bx = -lx * 0.8;
+      cel(c, ellipsePath(bx, -10.4, 4.9, 4.1), look.hair, sil, ow: 2, kl: 0.6, kd: 1);
+      if (!sil) {
+        _strokePath(c, Path()..moveTo(bx - 3.6, -7.4)..quadraticBezierTo(bx, -8.8, bx + 3.6, -7.4), look.stripe, 1.3);
+        _strokePath(c, Path()..moveTo(bx - 2.2, -11.8)..quadraticBezierTo(bx, -13.2, bx + 2.4, -11.4), look.hair[1], 0.8);
+      }
+    }
+    cel(c, _helmet, look.helmet, sil);
     if (!sil) {
       final sx = -lx * 0.8;
       final dark = hex(0x2b2f3a);
       c.save();
       c.clipPath(_helmet);
-      c.drawRect(Rect.fromLTWH(sx - 1.9, -6, 3.8, 22), _fill..color = Pal.signal);
+      c.drawRect(Rect.fromLTWH(sx - 1.9, -6, 3.8, 22), _fill..color = look.stripe);
       c.drawRRect(roundRect(sx - 1.1, 7.2, 2.2, 4.8, 1.1), _fill..color = dark);
       for (final s in const [-1.0, 1.0]) {
         c.save();

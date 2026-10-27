@@ -4,6 +4,10 @@ analyzer:
   exclude:
     - web_prototype/**
     - tool/**
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
 
 linter:
   rules:

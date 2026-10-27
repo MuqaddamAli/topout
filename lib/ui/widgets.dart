@@ -31,6 +31,86 @@ class Txt {
       );
 }
 
+/// Shrinks a little while a finger or the mouse is down on it, then eases
+/// back. It only listens, so buttons inside still get their taps.
+class PressScale extends StatefulWidget {
+  const PressScale({super.key, required this.child, this.enabled = true, this.scale = 0.95});
+  final Widget child;
+  final bool enabled;
+  final double scale;
+
+  @override
+  State<PressScale> createState() => _PressScaleState();
+}
+
+class _PressScaleState extends State<PressScale> {
+  bool _down = false;
+
+  void _set(bool v) {
+    if (_down != v && mounted) setState(() => _down = v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final still = MediaQuery.disableAnimationsOf(context);
+    return Listener(
+      onPointerDown: widget.enabled ? (_) => _set(true) : null,
+      onPointerUp: (_) => _set(false),
+      onPointerCancel: (_) => _set(false),
+      child: AnimatedScale(
+        scale: _down && !still ? widget.scale : 1,
+        duration: Duration(milliseconds: _down ? 70 : 180),
+        curve: _down ? Curves.easeOut : Curves.easeOutBack,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// Something you can tap that is not a button: it presses in and shows a hand cursor.
+class Pressable extends StatelessWidget {
+  const Pressable({super.key, required this.child, required this.onTap});
+  final Widget child;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: PressScale(child: child),
+      ),
+    );
+  }
+}
+
+/// Fades and lifts its child in, a little after the ones above it ([index]).
+class Stagger extends StatelessWidget {
+  const Stagger({super.key, required this.index, required this.child, this.step = 55, this.lift = 10});
+  final int index;
+  final Widget child;
+  final int step;
+  final double lift;
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) return child;
+    final delay = index * step, total = 340 + delay;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: Duration(milliseconds: total),
+      curve: Interval(delay / total, 1, curve: Curves.easeOutCubic),
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        child: Transform.translate(offset: Offset(0, (1 - t) * lift), child: child),
+      ),
+      child: child,
+    );
+  }
+}
+
 /// Button in the game's style. [primary] is the orange one.
 class GameButton extends StatelessWidget {
   const GameButton({
@@ -84,26 +164,30 @@ class GameButton extends StatelessWidget {
       enabled: !disabled,
       label: semanticLabel ?? label,
       excludeSemantics: true,
-      child: Opacity(
+      child: AnimatedOpacity(
         opacity: disabled ? 0.38 : 1,
-        child: SizedBox(
-          width: width,
-          child: Material(
-            color: filled ? Pal.signal : Pal.ink2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(radius),
-              side: filled ? BorderSide.none : BorderSide(color: Pal.line, width: 1.5),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: onTap,
-              splashColor: Pal.chalk.withAlpha(30),
-              highlightColor: Pal.chalk.withAlpha(18),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: minHeight),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: compact || label.isEmpty ? 0 : 18, vertical: compact ? 6 : 0),
-                  child: Center(widthFactor: width == null ? 1 : null, heightFactor: 1, child: content),
+        duration: const Duration(milliseconds: 180),
+        child: PressScale(
+          enabled: !disabled,
+          child: SizedBox(
+            width: width,
+            child: Material(
+              color: filled ? Pal.signal : Pal.ink2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(radius),
+                side: filled ? BorderSide.none : BorderSide(color: Pal.line, width: 1.5),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: onTap,
+                splashColor: Pal.chalk.withAlpha(30),
+                highlightColor: Pal.chalk.withAlpha(18),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: minHeight),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: compact || label.isEmpty ? 0 : 18, vertical: compact ? 6 : 0),
+                    child: Center(widthFactor: width == null ? 1 : null, heightFactor: 1, child: content),
+                  ),
                 ),
               ),
             ),
@@ -204,16 +288,28 @@ class DailyBadge extends StatelessWidget {
       );
 }
 
-/// The ring that shows how strong a hand still is.
+/// The ring that shows how strong a hand still is. [glow] (0 to 1) is a red
+/// halo that pulses while the hand is about to slip.
 class GaugePainter extends CustomPainter {
-  GaugePainter(this.value);
+  GaugePainter(this.value, {this.glow = 0});
   final double value;
+  final double glow;
 
   @override
   void paint(Canvas canvas, Size size) {
     final s = size.width / 64;
     canvas.scale(s);
     const center = Offset(32, 32);
+    if (glow > 0) {
+      canvas.drawCircle(
+          center,
+          27 + glow * 2,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 6
+            ..color = Pal.bad.withAlpha((glow * 110).round())
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
+    }
     final track = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 5
@@ -231,15 +327,17 @@ class GaugePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant GaugePainter old) => old.value != value;
+  bool shouldRepaint(covariant GaugePainter old) => old.value != value || old.glow != glow;
 }
 
 /// Hand strength over the last seconds before a fall. Red shading shows
-/// moments with no feet on the wall, yellow with one foot.
+/// moments with no feet on the wall, yellow with one foot. [progress] (0 to 1)
+/// draws the line from the left, so it can be played in.
 class TracePainter extends CustomPainter {
-  TracePainter(this.trace, this.hand);
+  TracePainter(this.trace, this.hand, {this.progress = 1});
   final List<List<double>> trace;
   final int hand;
+  final double progress;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -261,9 +359,15 @@ class TracePainter extends CustomPainter {
         Paint()
           ..color = rgba(242, 237, 228, 0.18)
           ..strokeWidth = 1);
+    // the line, up to where it has been played in
+    final upTo = (n - 1) * progress.clamp(0.0, 1.0), last = upTo.floor();
     final line = Path()..moveTo(px(0), py(trace[0][hand]));
-    for (var k = 1; k < n; k++) {
+    for (var k = 1; k <= last; k++) {
       line.lineTo(px(k), py(trace[k][hand]));
+    }
+    if (last < n - 1) {
+      final f = upTo - last;
+      line.lineTo(px(last) + (px(last + 1) - px(last)) * f, py(trace[last][hand] + (trace[last + 1][hand] - trace[last][hand]) * f));
     }
     canvas.drawPath(
         line,
@@ -272,11 +376,11 @@ class TracePainter extends CustomPainter {
           ..strokeWidth = 2.2
           ..strokeJoin = StrokeJoin.round
           ..color = Pal.chalk);
-    canvas.drawCircle(Offset(px(n - 1), py(trace[n - 1][hand])), 4, Paint()..color = Pal.bad);
+    if (progress >= 1) canvas.drawCircle(Offset(px(n - 1), py(trace[n - 1][hand])), 4, Paint()..color = Pal.bad);
   }
 
   @override
-  bool shouldRepaint(covariant TracePainter old) => old.trace != trace || old.hand != hand;
+  bool shouldRepaint(covariant TracePainter old) => old.trace != trace || old.hand != hand || old.progress != progress;
 }
 
 /// A small map of a route for the route cards.

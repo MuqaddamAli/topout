@@ -1,5 +1,6 @@
 // Art that is made once: the rock texture, the clouds, stars, grass, and the
 // rock facets of each route. Everything is drawn in code, no image files.
+// Things drawn every frame are batched here so a frame needs few draw calls.
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -37,18 +38,28 @@ ui.Path ellipseArc(double x, double y, double rx, double ry, double rotation, do
 ui.RRect roundRect(double x, double y, double w, double h, double r) =>
     ui.RRect.fromRectAndRadius(ui.Rect.fromLTWH(x, y, w, h), ui.Radius.circular(r));
 
-/// Cuts a path into dashes ([pattern] is on, off, on, off...).
-ui.Path dashed(ui.Path src, List<double> pattern) {
-  final out = ui.Path();
-  for (final m in src.computeMetrics()) {
-    var d = 0.0;
-    var k = 0;
-    while (d < m.length) {
-      final len = pattern[k % pattern.length];
-      if (k.isEven) out.addPath(m.extractPath(d, math.min(d + len, m.length)), ui.Offset.zero);
-      d += len;
-      k++;
-    }
+/// Dashes along the straight line from (ax, ay) to (bx, by): [on] long, [off] apart.
+ui.Path dashLine(double ax, double ay, double bx, double by, double on, double off, [ui.Path? into]) {
+  final out = into ?? ui.Path();
+  final dx = bx - ax, dy = by - ay, len = math.sqrt(dx * dx + dy * dy);
+  if (len == 0) return out;
+  final ux = dx / len, uy = dy / len;
+  for (var d = 0.0; d < len; d += on + off) {
+    final e = math.min(d + on, len);
+    out
+      ..moveTo(ax + ux * d, ay + uy * d)
+      ..lineTo(ax + ux * e, ay + uy * e);
+  }
+  return out;
+}
+
+/// A dashed circle: arcs [on] long, [off] apart (both measured along the edge).
+ui.Path dashCircle(double cx, double cy, double r, double on, double off) {
+  final out = ui.Path(), rect = ui.Rect.fromCircle(center: ui.Offset(cx, cy), radius: r);
+  final n = math.max(1, (math.pi * 2 * r / (on + off)).floor()), step = math.pi * 2 / n;
+  final sweep = step * on / (on + off);
+  for (var k = 0; k < n; k++) {
+    out.addArc(rect, k * step, sweep);
   }
   return out;
 }
@@ -70,11 +81,35 @@ class Pebble {
   final bool light;
 }
 
-class Facet {
-  Facet(this.path, this.color, this.y0, this.y1, this.x0, this.x1);
-  final ui.Path path;
-  final ui.Color color;
-  final double y0, y1, x0, x1;
+/// A few rows of rock facets, merged into one path per shade.
+class FacetBand {
+  FacetBand(this.y0, this.y1, this.paths, this.colors);
+  final double y0, y1;
+  final List<ui.Path> paths;
+  final List<ui.Color> colors;
+}
+
+/// What the painter keeps for one route: the rock facets in bands, and the
+/// holds sorted by height so only the ones in view are looked at.
+class RouteArt {
+  RouteArt(this.bands, this.byY, this.ys);
+  final List<FacetBand> bands;
+  final List<int> byY;
+  final List<double> ys;
+
+  /// The first position in [byY] whose hold is at or above [y].
+  int firstAbove(double y) {
+    var lo = 0, hi = ys.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (ys[mid] < y) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  }
 }
 
 class CloudSprite {
@@ -278,12 +313,13 @@ class Art {
     return CloudSprite(img, w, h);
   }
 
-  /// The light and dark facets that give the rock its shape. Made once per route.
-  List<Facet> facetsFor(ClimbRoute r) {
-    final cached = r.facets;
-    if (cached is List<Facet>) return cached;
+  /// The light and dark facets that give the rock its shape, and the hold
+  /// index. Made once per route.
+  RouteArt artFor(ClimbRoute r) {
+    final cached = r.art;
+    if (cached is RouteArt) return cached;
     final rng = Rng((r.topY * 7 + r.id.length * 131).toInt());
-    const step = 62.0;
+    const step = 62.0, rowsPerBand = 4, levels = 8;
     final cols = (1220 / step).ceil() + 1, rows = ((r.topY + 300) / step).ceil() + 1;
     final pts = <List<ui.Offset>>[];
     for (var j = 0; j < rows; j++) {
@@ -295,7 +331,21 @@ class Art {
       }
       pts.add(row);
     }
-    final out = <Facet>[];
+    final bands = <FacetBand>[];
+    var paths = <int, ui.Path>{};
+    var y0 = double.infinity, y1 = -double.infinity;
+    void flush() {
+      if (paths.isEmpty) return;
+      final keys = paths.keys.toList()..sort();
+      bands.add(FacetBand(y0, y1, [for (final k in keys) paths[k]!], [
+        // shades are rounded to a few steps, so many facets share one path
+        for (final k in keys) k > 0 ? rgba(255, 232, 205, k / levels * 0.085) : rgba(10, 12, 22, -k / levels * 0.6 * 0.13),
+      ]));
+      paths = {};
+      y0 = double.infinity;
+      y1 = -double.infinity;
+    }
+
     for (var j = 0; j < rows - 1; j++) {
       for (var i = 0; i < cols - 1; i++) {
         final a = pts[j][i], b = pts[j][i + 1], c = pts[j + 1][i], d = pts[j + 1][i + 1], flip = rng() < 0.5;
@@ -310,18 +360,27 @@ class Art {
               ];
         for (final t in tris) {
           final s = (rng() * 2 - 1) * 0.8 + 0.2;
-          final col = s > 0 ? rgba(255, 232, 205, s * 0.085) : rgba(10, 12, 22, -s * 0.13);
-          final path = ui.Path()
+          final k = s > 0 ? (s * levels).round().clamp(1, levels) : -(-s / 0.6 * levels).round().clamp(1, levels);
+          (paths[k] ??= ui.Path())
             ..moveTo(t[0].dx, t[0].dy)
             ..lineTo(t[1].dx, t[1].dy)
             ..lineTo(t[2].dx, t[2].dy)
             ..close();
-          final ys = t.map((o) => o.dy), xs = t.map((o) => o.dx);
-          out.add(Facet(path, col, ys.reduce(math.min), ys.reduce(math.max), xs.reduce(math.min), xs.reduce(math.max)));
+          for (final o in t) {
+            y0 = math.min(y0, o.dy);
+            y1 = math.max(y1, o.dy);
+          }
         }
       }
+      if ((j + 1) % rowsPerBand == 0) flush();
     }
-    r.facets = out;
+    flush();
+    final byY = [
+      for (var k = 0; k < r.holds.length; k++)
+        if (r.holds[k].t != HoldType.ground) k,
+    ]..sort((a, b) => r.holds[a].y.compareTo(r.holds[b].y));
+    final out = RouteArt(bands, byY, [for (final k in byY) r.holds[k].y]);
+    r.art = out;
     return out;
   }
 }

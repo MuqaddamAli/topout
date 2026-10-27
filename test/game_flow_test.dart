@@ -202,6 +202,45 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('pick each climber and climb with them', (tester) async {
+    await _loadFonts();
+    tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final store = Store.memory();
+    final game = Game(store: store, audio: GameAudio(musicOn: true, sfxOn: true, enabled: false), today: DateTime(2026, 10, 27));
+    await tester.pumpWidget(RepaintBoundary(key: shotKey, child: TopoutApp(game: game)));
+    await frames(tester, 0.6);
+    expect(game.climber, Climber.ada);
+    expect(find.text('ADA · ALL-ROUNDER'), findsOneWidget);
+    for (final k in Climber.all) {
+      await tester.tap(find.text(k.name.toUpperCase()));
+      await frames(tester, 0.2);
+      expect(game.climber, k);
+      if (k != Climber.ada) expect(store.getString('climber'), k.id);
+      await frames(tester, 0.6);
+      expect(find.text('${k.name} · ${k.role}'.toUpperCase()), findsOneWidget);
+      expect(find.textContaining(k.perk.note), findsOneWidget);
+      await shot(tester, '3${Climber.all.indexOf(k)}_${k.id}_menu');
+      // climb the first lesson moves with this climber
+      game.startRoute(game.routes[0]);
+      await frames(tester, 0.5);
+      expect(find.textContaining(k.name.toUpperCase()), findsWidgets);
+      await drag(tester, game, 3, 210, 102);
+      await drag(tester, game, 2, 152, 96);
+      await drag(tester, game, 0, 138, 218);
+      expect(game.moves, 3, reason: k.name);
+      await frames(tester, 0.4);
+      await shot(tester, '3${Climber.all.indexOf(k)}_${k.id}_climb');
+      game.showMenu();
+      await frames(tester, 0.3);
+    }
+    // the choice is remembered
+    final again = Game(store: store, audio: GameAudio(musicOn: true, sfxOn: true, enabled: false), today: DateTime(2026, 10, 27));
+    expect(again.climber, Climber.kai);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('title screen on a wide screen', (tester) async {
     await _loadFonts();
     tester.view.physicalSize = const Size(1280, 800);

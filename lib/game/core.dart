@@ -140,8 +140,8 @@ double holdDist(Hold h, double px, double py) {
 }
 
 /// Torso solver: gravity pulls the body down (or standing pushes it up) while
-/// each attached limb keeps it within reach.
-SolveResult solve(Pt c0, List<Anchor> anchors, [int iters = 40]) {
+/// each attached limb keeps it within reach ([rch], one length per limb).
+SolveResult solve(Pt c0, List<Anchor> anchors, [int iters = 40, List<double> rch = reach]) {
   var x = c0.x, y = c0.y;
   if (anchors.isEmpty) return SolveResult(x, y, 0);
   final hang = anchors.any((a) => a.i < 2 && (a.w == null || a.w! >= 1));
@@ -155,8 +155,8 @@ SolveResult solve(Pt c0, List<Anchor> anchors, [int iters = 40]) {
       final dx = a.x - jx, dy = a.y - jy;
       var l = hypot(dx, dy);
       if (l == 0) l = 1e-6;
-      if (l > reach[a.i]) {
-        final c = (l - reach[a.i]) * 0.6 * w;
+      if (l > rch[a.i]) {
+        final c = (l - rch[a.i]) * 0.6 * w;
         x += dx / l * c;
         y += dy / l * c;
       } else if (l < minReach[a.i]) {
@@ -170,7 +170,7 @@ SolveResult solve(Pt c0, List<Anchor> anchors, [int iters = 40]) {
   for (final a in anchors) {
     if (a.w != null && a.w! < 1) continue;
     final l = hypot(a.x - x - jointOffset[a.i][0], a.y - y - jointOffset[a.i][1]);
-    err = math.max(err, math.max(l - reach[a.i], minReach[a.i] - l));
+    err = math.max(err, math.max(l - rch[a.i], minReach[a.i] - l));
   }
   return SolveResult(x, y, err);
 }
@@ -216,36 +216,38 @@ class GripRates {
   final Support s;
 }
 
-GripRates gripRates(List<Limb> limbs, List<Hold> holds, Mode mode) {
+/// How fast each hand gains (+) or loses (-) grip per second, for climber [k].
+GripRates gripRates(List<Limb> limbs, List<Hold> holds, Mode mode, [Climber? k]) {
+  final kk = k ?? Climber.base;
   final s = supportInfo(limbs, holds);
   final rates = <double>[0, 0];
   for (var i = 0; i < 2; i++) {
     final l = limbs[i];
     if (l.h == null) {
-      rates[i] = 14;
+      rates[i] = 14 * kk.restMul;
       continue;
     }
     if (s.standing) {
-      rates[i] = 12;
+      rates[i] = 12 * kk.restMul;
       continue;
     }
-    rates[i] = -holds[l.h!].t.drain * feetMult(s.feetW) * (s.hands == 1 ? 1.5 : 1) * mode.drain;
+    rates[i] = -kk.holdDrain(holds[l.h!].t) * feetMult(s.feetW) * (s.hands == 1 ? kk.oneHand : 1) * mode.drain;
   }
   return GripRates(rates, s);
 }
 
 /// Can limb [i] reach [pt] while the other attached limbs stay where they are?
-SolveResult? feasible(List<Limb> limbs, int i, Pt pt, Pt c) {
+SolveResult? feasible(List<Limb> limbs, int i, Pt pt, Pt c, [Climber? k]) {
   final anc = <Anchor>[];
-  for (var k = 0; k < 4; k++) {
-    if (k == i) {
-      anc.add(Anchor(k, pt.x, pt.y));
+  for (var n = 0; n < 4; n++) {
+    if (n == i) {
+      anc.add(Anchor(n, pt.x, pt.y));
       continue;
     }
-    final l = limbs[k];
-    if (l.h != null) anc.add(Anchor(k, l.x, l.y));
+    final l = limbs[n];
+    if (l.h != null) anc.add(Anchor(n, l.x, l.y));
   }
-  final r = solve(c, anc, 50);
+  final r = solve(c, anc, 50, (k ?? Climber.base).reach);
   return r.err < 1.2 ? r : null;
 }
 
@@ -272,24 +274,127 @@ class DynoResult {
   final Pt? end;
 }
 
-/// A hand can jump to a hold just out of reach if a foot is on a hold.
-DynoResult dynoCheck(List<Limb> limbs, int i, Pt pt, Pt c) {
+/// A hand can jump to a hold just out of reach if a foot is on a hold
+/// (climbers with [Perk.freeJump] do not need the foot).
+DynoResult dynoCheck(List<Limb> limbs, int i, Pt pt, Pt c, [Climber? k]) {
   if (!isHand[i]) return const DynoResult.no('Only hands can jump.');
+  final kk = k ?? Climber.base, rch = kk.reach;
   final feet = (limbs[2].h != null ? 1 : 0) + (limbs[3].h != null ? 1 : 0);
   // stand up as far as the other holds allow, then measure what is left for the jump
   final hard = <Anchor>[];
-  for (var k = 0; k < 4; k++) {
-    if (k != i && limbs[k].h != null) hard.add(Anchor(k, limbs[k].x, limbs[k].y));
+  for (var n = 0; n < 4; n++) {
+    if (n != i && limbs[n].h != null) hard.add(Anchor(n, limbs[n].x, limbs[n].y));
   }
-  final lean = solve(c, [...hard, Anchor(i, pt.x, pt.y, 0.6)], 60);
-  final p = solve(Pt(lean.x, lean.y), hard, 1);
+  final lean = solve(c, [...hard, Anchor(i, pt.x, pt.y, 0.6)], 60, rch);
+  final p = solve(Pt(lean.x, lean.y), hard, 1, rch);
   final sx = p.x + jointOffset[i][0], sy = p.y + jointOffset[i][1];
   final d = hypot(pt.x - sx, pt.y - sy);
-  if (d > reach[i] + dynoExtra) return const DynoResult.no('Too far, even with a jump.');
+  if (d > rch[i] + kk.dynoExtra) return const DynoResult.no('Too far, even with a jump.');
   if (pt.y < sy - 4) return const DynoResult.no('You can only jump up.');
-  if (feet == 0) return const DynoResult.no('Put a foot on a hold first.');
-  final end = solve(c, [Anchor(i, pt.x, pt.y)], 60);
+  if (feet == 0 && kk.perk != Perk.freeJump) return const DynoResult.no('Put a foot on a hold first.');
+  final end = solve(c, [Anchor(i, pt.x, pt.y)], 60, rch);
   return DynoResult.yes(Pt(end.x, end.y));
+}
+
+// ---------------------------------------------------------------- climbers
+
+/// The one rule that makes a climber different from the others.
+enum Perk {
+  calm('Calm', 'Grip lasts longer while you aim.'),
+  strongArm('Strong arm', 'Hanging on one hand costs less grip.'),
+  strongFingers('Strong fingers', 'Small edges tire the hands less.'),
+  freeJump('Free jump', 'Can jump with no feet on the wall, even right after a catch.');
+
+  const Perk(this.label, this.note);
+  final String label;
+  final String note;
+}
+
+// The Climber class has fields with these names, so it reads the base values here.
+const List<double> _baseReach = reach;
+const double _baseDynoExtra = dynoExtra, _baseHangTime = hangTime;
+
+/// Each climber's four stats (1 to 5) add up to this, so nobody is best at everything.
+const int statBudget = 12;
+
+/// A climber you can pick. Stat 3 is the original game; every point above or
+/// below moves one number a small step.
+class Climber {
+  Climber({
+    required this.id,
+    required this.name,
+    required this.role,
+    required this.reachStat,
+    required this.gripStat,
+    required this.restStat,
+    required this.jumpStat,
+    required this.perk,
+  })  : reach = List.unmodifiable([
+          _baseReach[0] + 3.0 * (reachStat - 3),
+          _baseReach[1] + 3.0 * (reachStat - 3),
+          _baseReach[2] + 3.0 * (reachStat - 3),
+          _baseReach[3] + 3.0 * (reachStat - 3),
+        ]),
+        drainMul = 1 - 0.1 * (gripStat - 3),
+        restMul = 1 + 0.15 * (restStat - 3),
+        dynoExtra = _baseDynoExtra + 10.0 * (jumpStat - 3),
+        hangTime = _baseHangTime + 0.2 * (jumpStat - 3),
+        catchMul = 1 - 0.1 * (jumpStat - 3);
+
+  final String id;
+  final String name;
+
+  /// What the climber is good at, in two or three words.
+  final String role;
+  final int reachStat, gripStat, restStat, jumpStat;
+  final Perk perk;
+
+  /// Arm, arm, leg, leg reach in cm.
+  final List<double> reach;
+
+  /// Multiplies how fast a hand tires on a hold.
+  final double drainMul;
+
+  /// Multiplies how fast a hand gets its grip back.
+  final double restMul;
+
+  /// Extra reach a jump gives, and the time to grab a second hold after it.
+  final double dynoExtra, hangTime;
+
+  /// Multiplies the grip a catch costs.
+  final double catchMul;
+
+  int get statTotal => reachStat + gripStat + restStat + jumpStat;
+
+  /// Arm and leg length compared to the original climber (for drawing).
+  double get armScale => reach[0] / _baseReach[0];
+  double get legScale => reach[2] / _baseReach[2];
+
+  /// Grip drain while you aim a limb, as a share of the normal drain.
+  double get aimSlow => perk == Perk.calm ? 0.2 : slowWhileAiming;
+
+  /// Grip drain when only one hand holds on.
+  double get oneHand => perk == Perk.strongArm ? 1.2 : 1.5;
+
+  double holdDrain(HoldType t) => t.drain * (perk == Perk.strongFingers && t == HoldType.crimp ? 0.7 : 1) * drainMul;
+
+  double catchCostFor(Quality q) => catchCost[q == Quality.good ? Quality.good : Quality.weak]! * catchMul;
+
+  static final Climber ada = Climber(
+      id: 'ada', name: 'Ada', role: 'All-rounder', reachStat: 3, gripStat: 3, restStat: 3, jumpStat: 3, perk: Perk.calm);
+  static final Climber rio = Climber(
+      id: 'rio', name: 'Rio', role: 'Long reach', reachStat: 5, gripStat: 2, restStat: 3, jumpStat: 2, perk: Perk.strongArm);
+  static final Climber mei = Climber(
+      id: 'mei', name: 'Mei', role: 'Small holds', reachStat: 2, gripStat: 4, restStat: 4, jumpStat: 2, perk: Perk.strongFingers);
+  static final Climber kai = Climber(
+      id: 'kai', name: 'Kai', role: 'Jumper', reachStat: 3, gripStat: 2, restStat: 2, jumpStat: 5, perk: Perk.freeJump);
+
+  static final List<Climber> all = List.unmodifiable([ada, rio, mei, kai]);
+
+  /// The original climber: every stat at 3. The prototype's rules are hers.
+  static Climber get base => ada;
+
+  static Climber byId(String? id) => all.firstWhere((k) => k.id == id, orElse: () => ada);
 }
 
 // ---------------------------------------------------------------- random numbers
@@ -366,7 +471,7 @@ class ClimbRoute {
   double topY = 0;
 
   /// Art caches that belong to this route (set by the painter).
-  Object? facets;
+  Object? art;
 
   int get ledgeCount => holds.where((h) => h.t == HoldType.ledge).length;
 }

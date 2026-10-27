@@ -7,10 +7,11 @@ import '../game/audio.dart';
 import '../game/core.dart';
 import '../game/game.dart';
 import '../game/palette.dart';
+import 'climbers.dart';
 import 'widgets.dart';
 
-/// Title screen: the climber on the summit, the routes, mode, sound,
-/// how to play, and your climbing log.
+/// Title screen: the climber on the summit, who climbs, the routes, mode,
+/// sound, how to play, and your climbing log.
 class MenuScreen extends StatelessWidget {
   const MenuScreen({super.key, required this.game});
   final Game game;
@@ -44,17 +45,40 @@ class MenuScreen extends StatelessWidget {
               constraints: const BoxConstraints(maxWidth: 1040),
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 SizedBox(height: math.min(42 * vh, 380)),
-                _Brand(width: size.width),
+                Stagger(index: 0, step: 90, lift: 16, child: _Brand(width: size.width)),
                 const SizedBox(height: 22),
-                Text('ROUTES', style: Txt.eyebrow()),
-                const SizedBox(height: 10),
-                _Grid(minWidth: 270, children: [for (final r in game.routes) _RouteCard(game: game, route: r)]),
+                Stagger(
+                  index: 1,
+                  step: 90,
+                  lift: 16,
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    Text('CLIMBER', style: Txt.eyebrow()),
+                    const SizedBox(height: 10),
+                    ClimberPicker(game: game),
+                  ]),
+                ),
                 const SizedBox(height: 22),
-                _Grid(minWidth: 280, children: [
-                  _ModePanel(game: game),
-                  const _HowToPanel(),
-                  _LogPanel(game: game),
-                ]),
+                Stagger(
+                  index: 2,
+                  step: 90,
+                  lift: 16,
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    Text('ROUTES', style: Txt.eyebrow()),
+                    const SizedBox(height: 10),
+                    _Grid(minWidth: 270, children: [for (final r in game.routes) _RouteCard(game: game, route: r)]),
+                  ]),
+                ),
+                const SizedBox(height: 22),
+                Stagger(
+                  index: 3,
+                  step: 90,
+                  lift: 16,
+                  child: _Grid(minWidth: 280, children: [
+                    _ModePanel(game: game),
+                    const _HowToPanel(),
+                    _LogPanel(game: game),
+                  ]),
+                ),
               ]),
             ),
           ),
@@ -102,7 +126,7 @@ class _Brand extends StatelessWidget {
   Widget build(BuildContext context) {
     final big = (width * 0.21).clamp(68.0, 150.0);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('BUILD 0.4', style: Txt.eyebrow()),
+      Text('BUILD 0.5', style: Txt.eyebrow()),
       const SizedBox(height: 8),
       Text.rich(
         TextSpan(children: [
@@ -162,7 +186,10 @@ class _RouteCard extends StatelessWidget {
       subColor = Pal.jump;
       facts = [r.date];
     } else {
-      sub = best != null ? 'Best time ${fmtTime(best)}' : (hb > 0 ? 'Highest: ${hb.toStringAsFixed(1)} m' : 'Not climbed yet');
+      final who = game.bestClimber(r);
+      sub = best != null
+          ? 'Best time ${fmtTime(best)}${who != null ? ' · ${who.name}' : ''}'
+          : (hb > 0 ? 'Highest: ${hb.toStringAsFixed(1)} m' : 'Not climbed yet');
       subColor = best != null || hb > 0 ? Pal.good : Pal.chalkDim;
       facts = ['${(r.topY / unitsPerMetre).toStringAsFixed(1)} m', '$nl ledge${nl == 1 ? '' : 's'}'];
     }
@@ -171,7 +198,9 @@ class _RouteCard extends StatelessWidget {
       button: true,
       label: r.endless ? '${r.name}, ${r.date}' : '${r.name}, $level, ${(r.topY / unitsPerMetre).toStringAsFixed(1)} metres',
       excludeSemantics: true,
-      child: Material(
+      child: PressScale(
+        scale: 0.98,
+        child: Material(
         color: Pal.ink2,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
@@ -215,6 +244,7 @@ class _RouteCard extends StatelessWidget {
           ),
         ),
       ),
+      ),
     );
   }
 }
@@ -256,8 +286,15 @@ class _ModeChoice extends StatelessWidget {
       label: mode.label,
       button: true,
       excludeSemantics: true,
-      child: Material(
-        color: on ? Pal.signal : Colors.transparent,
+      child: PressScale(
+        child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        decoration: BoxDecoration(
+          color: on ? Pal.signal : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Material(
+        color: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
           side: on ? BorderSide.none : BorderSide(color: Pal.line, width: 1.5),
@@ -278,6 +315,8 @@ class _ModeChoice extends StatelessWidget {
           ),
         ),
       ),
+      ),
+      ),
     );
   }
 }
@@ -287,10 +326,10 @@ class _HowToPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final desktop = !kIsWeb &&
-        (defaultTargetPlatform == TargetPlatform.macOS ||
-            defaultTargetPlatform == TargetPlatform.windows ||
-            defaultTargetPlatform == TargetPlatform.linux);
+    // also true in a desktop browser, where the keys work too
+    final desktop = defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux;
     return _Panel(title: 'How to play', children: [
       Row(children: [
         Icon(Icons.touch_app_outlined, size: 28, color: Pal.chalk),
@@ -310,7 +349,7 @@ class _HowToPanel extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(child: Text('Stand on a ledge to rest. The lamp saves your place.', style: Txt.body(15, height: 1.35))),
       ]),
-      if (desktop) Text('U undo · L look · Esc pause', style: Txt.body(13, color: Pal.chalkDim)),
+      if (desktop) Text('U undo · L look · Esc pause · Enter go on', style: Txt.body(13, color: Pal.chalkDim)),
     ]);
   }
 }

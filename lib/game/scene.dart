@@ -12,14 +12,23 @@ import 'game.dart';
 import 'palette.dart';
 
 class ScenePainter extends CustomPainter {
-  ScenePainter(this.g) : climber = ClimberPainter(g), super(repaint: g.frameTick);
+  ScenePainter(this.g) : super(repaint: g.frameTick);
   final Game g;
-  final ClimberPainter climber;
+  static const ClimberPainter climber = ClimberPainter();
 
   final Paint _p = Paint();
   final Paint _s = Paint()..style = PaintingStyle.stroke;
   final Map<String, TextPainter> _labels = {};
   ImageShader? _tileShader;
+
+  // gradients that only change with the screen size or the route
+  ui.Gradient? _vignetteG;
+  Size? _vignetteFor;
+  ui.Gradient? _lightG;
+  ClimbRoute? _lightFor;
+
+  /// Each kind of hold drawn once (with and without chalk and snow), then stamped.
+  static final Map<int, ui.Picture> _holdPics = {};
 
   late final Paint _shadowLayer = Paint()..color = const Color.fromRGBO(0, 0, 0, 0.24);
   static final ui.Gradient _jug = ui.Gradient.radial(
@@ -31,6 +40,11 @@ class ScenePainter extends CustomPainter {
   static final ui.Gradient _ledge = ui.Gradient.linear(Offset.zero, const Offset(0, -11), [hex(0xa8a39b), hex(0x5f5b56)]);
   static final ui.Gradient _glass =
       ui.Gradient.linear(const Offset(-4, 0), const Offset(4, 0), [hex(0xfff1c4), hex(0xffd27a), hex(0xf2a548)], [0, 0.5, 1]);
+  static final ui.Gradient _ledgeShadow =
+      ui.Gradient.linear(const Offset(0, -10), const Offset(0, -30), [rgba(8, 10, 16, 0.45), rgba(8, 10, 16, 0)]);
+  static final ui.Gradient _footShade =
+      ui.Gradient.linear(Offset.zero, const Offset(0, 90), [rgba(8, 10, 16, 0.45), rgba(8, 10, 16, 0)]);
+  static final ui.Gradient _earth = ui.Gradient.linear(Offset.zero, const Offset(0, -140), [Pal.earthTop, hex(0x1b1815)]);
 
   void _fill(Canvas c, Rect r, Color col) => c.drawRect(r, _p..shader = null..color = col);
   void _oval(Canvas c, double x, double y, double rx, double ry, Color col) =>
@@ -68,9 +82,9 @@ class ScenePainter extends CustomPainter {
       // cast shadow on the rock, sun from the upper left
       canvas.saveLayer(null, _shadowLayer);
       canvas.translate(7, -10);
-      climber.draw(canvas, pose, gear, sil: true);
+      climber.draw(canvas, pose, gear, g.outfit, sil: true);
       canvas.restore();
-      climber.draw(canvas, pose, gear);
+      climber.draw(canvas, pose, gear, g.outfit);
       if (!menu) {
         _rings(canvas, pose);
         _hang(canvas);
@@ -79,11 +93,36 @@ class ScenePainter extends CustomPainter {
     }
     _parts(canvas);
     canvas.restore();
+    _motes(canvas, r);
     _vignette(canvas, size);
+    if (g.slipFlash > 0) _slipGlow(canvas, size);
     if (!menu) {
       if (bestY != null) _bestLabel(canvas, r, bestY);
       _finger(canvas);
     }
+    if (g.curtain > 0) _fill(canvas, Offset.zero & size, Pal.ink.withAlpha((g.curtain * g.curtain * 235).round()));
+  }
+
+  /// Dust in the evening light. It drifts slowly and moves a little with the view.
+  void _motes(Canvas c, ClimbRoute r) {
+    if (g.reducedMotion || (r.endless && g.cd.y > snowY - 400)) return;
+    final cw = g.cw, ch = g.ch, shift = g.camY * g.scale * 0.25;
+    for (final m in g.motes) {
+      final y = (m.y * ch * 1.1 + shift) % (ch * 1.1) - ch * 0.05;
+      final a = 0.08 + 0.2 * (0.5 + 0.5 * math.sin(g.clock * m.f + m.ph));
+      c.drawCircle(Offset(m.x * cw, y), m.r, _p..color = rgba(255, 222, 176, a));
+    }
+  }
+
+  /// The edges of the screen glow red for a moment after a hand slips.
+  void _slipGlow(Canvas c, Size size) {
+    final cw = size.width, ch = size.height, k = g.slipFlash * g.slipFlash;
+    _p
+      ..color = const Color(0xFF000000)
+      ..shader = ui.Gradient.radial(Offset(cw / 2, ch / 2), math.max(cw, ch) * 0.72,
+          [rgba(255, 70, 60, 0), rgba(255, 70, 60, 0.26 * k)], [0.55, 1]);
+    c.drawRect(Offset.zero & size, _p);
+    _p.shader = null;
   }
 
   // ---------------------------------------------------------------- sky
@@ -195,14 +234,22 @@ class ScenePainter extends CustomPainter {
     _p.shader = null;
     c.save();
     c.clipPath(edge);
-    for (final t in art.facetsFor(r)) {
-      if (t.y1 < v.y0 || t.y0 > v.y1 || t.x1 < v.x0 || t.x0 > v.x1) continue;
-      c.drawPath(t.path, _p..color = t.color);
+    for (final b in art.artFor(r).bands) {
+      if (b.y1 < v.y0 || b.y0 > v.y1) continue;
+      for (var k = 0; k < b.paths.length; k++) {
+        c.drawPath(b.paths[k], _p..color = b.colors[k]);
+      }
     }
+    // warm light from the low sun on the upper left, shade toward the foot
     final top = math.max(-60.0, v.y0), bottom = math.min(r.topY + 200, v.y1);
-    _p.color = const Color(0xFF000000);
-    _p.shader = ui.Gradient.linear(Offset(v.x0 - 200, r.topY + 120), Offset(v.x1 + 200, -60),
-        [rgba(255, 170, 115, 0.26), rgba(255, 170, 115, 0.05), rgba(20, 24, 46, 0.30)], [0, 0.5, 1]);
+    if (_lightFor != r) {
+      _lightFor = r;
+      _lightG = ui.Gradient.linear(Offset(-220, r.topY + 120), const Offset(580, -60),
+          [rgba(255, 170, 115, 0.26), rgba(255, 170, 115, 0.05), rgba(20, 24, 46, 0.30)], [0, 0.5, 1]);
+    }
+    _p
+      ..color = const Color(0xFF000000)
+      ..shader = _lightG;
     c.drawRect(Rect.fromLTRB(v.x0, top, v.x1, bottom), _p);
     _p.shader = null;
     if (r.endless) {
@@ -210,8 +257,9 @@ class ScenePainter extends CustomPainter {
       if (a > 0) _fill(c, Rect.fromLTRB(v.x0, v.y0, v.x1, v.y1), rgba(205, 225, 255, a));
     }
     if (v.y0 < 90) {
-      _p.color = const Color(0xFF000000);
-      _p.shader = ui.Gradient.linear(Offset.zero, const Offset(0, 90), [rgba(8, 10, 16, 0.45), rgba(8, 10, 16, 0)]);
+      _p
+        ..color = const Color(0xFF000000)
+        ..shader = _footShade;
       c.drawRect(Rect.fromLTRB(v.x0, 0, v.x1, 90), _p);
       _p.shader = null;
     }
@@ -235,8 +283,9 @@ class ScenePainter extends CustomPainter {
   void _ground(Canvas c) {
     final v = g.viewRange();
     if (v.y0 > 40) return;
-    _p.color = const Color(0xFF000000);
-    _p.shader = ui.Gradient.linear(Offset.zero, const Offset(0, -140), [Pal.earthTop, hex(0x1b1815)]);
+    _p
+      ..color = const Color(0xFF000000)
+      ..shader = _earth;
     c.drawRect(Rect.fromLTRB(v.x0, -500, v.x1, 0), _p);
     _p.shader = null;
     _fill(c, Rect.fromLTRB(v.x0, -5, v.x1, 0), rgba(0, 0, 0, 0.3));
@@ -245,17 +294,19 @@ class ScenePainter extends CustomPainter {
       if (p.x < v.x0 || p.x > v.x1) continue;
       _oval(c, p.x, p.y, p.rx, p.ry, p.light ? hex(0x6b645a) : hex(0x4a443d));
     }
-    final grass = _line(Pal.grass, 1.3, cap: StrokeCap.round);
+    // grass, swaying a little in the wind
+    final grass = Path(), still = g.reducedMotion;
     for (final t in art.tufts) {
       if (t.x < v.x0 || t.x > v.x1 || (t.x > 108 && t.x < 256)) continue;
+      final sway = still ? 0.0 : math.sin(g.clock * 1.6 + t.x * 0.05) * 1.6 + math.sin(g.clock * 3.7 + t.x * 0.13) * 0.5;
       for (var k = 0; k < t.n; k++) {
-        c.drawPath(
-            Path()
-              ..moveTo(t.x + k * 2, 0)
-              ..quadraticBezierTo(t.x + k * 2 + t.lean * 4, t.h * 0.6, t.x + k * 2 + t.lean * 7 + (k - 1) * 2, t.h),
-            grass);
+        grass
+          ..moveTo(t.x + k * 2, 0)
+          ..quadraticBezierTo(t.x + k * 2 + t.lean * 4 + sway * 0.4, t.h * 0.6,
+              t.x + k * 2 + t.lean * 7 + (k - 1) * 2 + sway, t.h - sway.abs() * 0.15);
       }
     }
+    c.drawPath(grass, _line(Pal.grass, 1.3, cap: StrokeCap.round));
     // crash pad
     _fill(c, const Rect.fromLTWH(114, -24, 138, 6), rgba(0, 0, 0, 0.35));
     c.drawRRect(roundRect(112, -22, 140, 18, 4), _p..color = Pal.pad);
@@ -267,10 +318,10 @@ class ScenePainter extends CustomPainter {
   // ---------------------------------------------------------------- holds
 
   void _holds(Canvas c, ClimbRoute r, bool menu) {
-    final v = g.viewRange();
-    for (var k = 0; k < r.holds.length; k++) {
-      final h = r.holds[k];
-      if (h.t == HoldType.ground || h.y < v.y0 - 30 || h.y > v.y1 + 60) continue;
+    final v = g.viewRange(), art = Art.instance.artFor(r), idx = art.byY;
+    for (var n = art.firstAbove(v.y0 - 30); n < idx.length; n++) {
+      final k = idx[n], h = r.holds[k];
+      if (h.y > v.y1 + 60) break;
       if (h.x2 == null && (h.x < v.x0 - 20 || h.x > v.x1 + 20)) continue;
       if (h.t.wide) {
         _ledgeAt(c, r, h, k, menu);
@@ -303,12 +354,27 @@ class ScenePainter extends CustomPainter {
   }
 
   void _hold(Canvas c, ClimbRoute r, Hold h, int k, bool menu) {
-    c.drawPath(holdPath(h.t, h.x + 2.6, h.y - 3.4), _p..color = rgba(8, 10, 16, 0.42));
+    final chalk = !menu && g.chalked.contains(k) && h.t != HoldType.chip, snow = r.endless && h.y > snowY;
+    final pic = _holdPics.putIfAbsent(h.t.index * 4 + (chalk ? 1 : 0) + (snow ? 2 : 0), () {
+      final rec = ui.PictureRecorder();
+      _drawHold(Canvas(rec), h.t, chalk, snow);
+      return rec.endRecording();
+    });
     c.save();
     c.translate(h.x, h.y);
-    final shape = holdPath(h.t, 0, 0);
+    // a hold you just grabbed gives a little
+    final pulse = menu ? 0.0 : g.grabPulse(k);
+    if (pulse > 0) c.scale(1 + 0.09 * pulse, 1 - 0.05 * pulse);
+    c.drawPicture(pic);
+    c.restore();
+  }
+
+  /// One hold at (0, 0) with its shadow, highlights, chalk and snow.
+  void _drawHold(Canvas c, HoldType t, bool chalk, bool snow) {
+    c.drawPath(holdPath(t, 2.6, -3.4), _p..color = rgba(8, 10, 16, 0.42));
+    final shape = holdPath(t, 0, 0);
     _p
-      ..shader = switch (h.t) {
+      ..shader = switch (t) {
         HoldType.jug => _jug,
         HoldType.crimp => _crimp,
         HoldType.sloper => _sloper,
@@ -318,7 +384,7 @@ class ScenePainter extends CustomPainter {
     c.drawPath(shape, _p);
     _p.shader = null;
     c.drawPath(shape, _line(rgba(20, 20, 26, 0.45), 0.8));
-    switch (h.t) {
+    switch (t) {
       case HoldType.jug:
         _oval(c, 0.6, 1.8, 7.6, 3.9, hex(0x25242b));
         c.drawPath(ellipseArc(0.6, 1.8, 7.6, 3.9, 0, math.pi * 1.08, math.pi * 1.92), _line(rgba(255, 255, 255, 0.92), 1.7));
@@ -333,43 +399,44 @@ class ScenePainter extends CustomPainter {
       default:
         break;
     }
-    if (!menu && g.chalked.contains(k) && h.t != HoldType.chip) {
+    if (chalk) {
       // chalk left by your hands
-      final chalk = rgba(255, 255, 255, 0.55);
-      if (h.t == HoldType.jug) {
-        _oval(c, -2, 4.4, 5.5, 1.8, chalk);
-        _oval(c, 3.5, 4.8, 2.4, 1.2, chalk);
-      } else if (h.t == HoldType.crimp) {
-        _oval(c, -1, 2.4, 6.5, 1.1, chalk);
+      final white = rgba(255, 255, 255, 0.55);
+      if (t == HoldType.jug) {
+        _oval(c, -2, 4.4, 5.5, 1.8, white);
+        _oval(c, 3.5, 4.8, 2.4, 1.2, white);
+      } else if (t == HoldType.crimp) {
+        _oval(c, -1, 2.4, 6.5, 1.1, white);
       } else {
-        _oval(c, 0, 4.6, 8, 2.2, chalk);
+        _oval(c, 0, 4.6, 8, 2.2, white);
       }
     }
-    if (r.endless && h.y > snowY) {
-      final snow = rgba(248, 250, 255, 0.92);
-      switch (h.t) {
+    if (snow) {
+      final white = rgba(248, 250, 255, 0.92);
+      switch (t) {
         case HoldType.jug:
-          _oval(c, -1, 8, 9, 2.6, snow);
+          _oval(c, -1, 8, 9, 2.6, white);
         case HoldType.crimp:
-          c.drawRRect(roundRect(-9.5, 2, 19, 2.6, 1.3), _p..color = snow);
+          c.drawRRect(roundRect(-9.5, 2, 19, 2.6, 1.3), _p..color = white);
         case HoldType.sloper:
-          _oval(c, 0, 5.2, 12, 3, snow);
+          _oval(c, 0, 5.2, 12, 3, white);
         case HoldType.chip:
-          _oval(c, 0, 3.4, 5, 1.3, snow);
+          _oval(c, 0, 3.4, 5, 1.3, white);
         default:
           break;
       }
     }
-    c.restore();
   }
 
   void _ledgeAt(Canvas c, ClimbRoute r, Hold h, int k, bool menu) {
     final x2 = h.x2!, w = x2 - h.x, isTop = h.t == HoldType.top;
-    _p.color = const Color(0xFF000000);
-    _p.shader = ui.Gradient.linear(Offset(0, h.y - 10), Offset(0, h.y - 30), [rgba(8, 10, 16, 0.45), rgba(8, 10, 16, 0)]);
-    c.drawRect(Rect.fromLTWH(h.x - 4, h.y - 30, w + 8, 21), _p);
     c.save();
     c.translate(0, h.y);
+    _p
+      ..color = const Color(0xFF000000)
+      ..shader = _ledgeShadow;
+    c.drawRect(Rect.fromLTWH(h.x - 4, -30, w + 8, 21), _p);
+    _p.shader = null;
     final plank = Path()
       ..moveTo(h.x - 3, 0)
       ..lineTo(x2 + 3, 0)
@@ -417,6 +484,11 @@ class ScenePainter extends CustomPainter {
 
   void _lamp(Canvas c, double x, double y, bool lit, int k) {
     final since = lit ? g.clock - (g.litAt[k] ?? -9) : 0.0, on = lit ? clampD(since * 2.5, 0, 1) : 0.0;
+    if (lit && since < 1.4 && !g.reducedMotion) {
+      // a ring of light spreads out as the lamp comes on
+      final e = 1 - math.pow(1 - since / 1.4, 3).toDouble();
+      c.drawCircle(Offset(x, y + 7), 10 + e * 56, _line(rgba(255, 210, 122, (1 - e) * 0.55), 1.6));
+    }
     if (on > 0) {
       final fl = 1.0 + (g.reducedMotion ? 0.0 : 0.06 * math.sin(g.clock * 13 + k) + 0.03 * math.sin(g.clock * 29 + k * 2));
       final glow = Paint()
@@ -464,8 +536,8 @@ class ScenePainter extends CustomPainter {
   /// Subtle markers while you aim: thin rings on holds you can reach, nothing else.
   void _dragAids(Canvas c) {
     final d = g.drag!, h = g.holds, j = g.jointAt(d.i);
-    c.drawPath(dashed(Path()..addOval(Rect.fromCircle(center: Offset(j.x, j.y), radius: reach[d.i])), const [2, 6]),
-        _line(rgba(242, 237, 228, 0.16), 1.2));
+    final f = g.reducedMotion ? 1.0 : clampD(d.age / 0.18, 0, 1), fade = 1 - (1 - f) * (1 - f);
+    c.drawPath(dashCircle(j.x, j.y, g.climber.reach[d.i], 2, 6), _line(rgba(242, 237, 228, 0.16), 1.2));
     for (final entry in d.status.entries) {
       final hold = h[entry.key], st = entry.value;
       if (hold.t == HoldType.ground || st == HoldStatus.no) continue;
@@ -479,16 +551,21 @@ class ScenePainter extends CustomPainter {
       }
       if (st == HoldStatus.dyno && holdDist(hold, d.px, d.py) > 90) continue; // jump holds show only near your finger
       final col = st == HoldStatus.good ? Pal.good : (st == HoldStatus.weak ? Pal.weak : Pal.jump);
-      final paint = _line(col.withAlpha(((st == HoldStatus.dyno ? 0.6 : 0.55) * 255).round()), 1.3);
-      Path ring;
+      final paint = _line(col.withAlpha(((st == HoldStatus.dyno ? 0.6 : 0.55) * 255 * fade).round()), 1.3);
+      final rr = hold.t == HoldType.sloper ? 16.0 : 13.5;
       if (hold.t.wide) {
-        ring = Path()
-          ..moveTo(hold.x, hold.y - 13)
-          ..lineTo(hold.x2!, hold.y - 13);
+        c.drawPath(
+            st == HoldStatus.dyno
+                ? dashLine(hold.x, hold.y - 13, hold.x2!, hold.y - 13, 3, 3)
+                : (Path()
+                  ..moveTo(hold.x, hold.y - 13)
+                  ..lineTo(hold.x2!, hold.y - 13)),
+            paint);
+      } else if (st == HoldStatus.dyno) {
+        c.drawPath(dashCircle(hold.x, hold.y, rr, 3, 3), paint);
       } else {
-        ring = Path()..addOval(Rect.fromCircle(center: Offset(hold.x, hold.y), radius: hold.t == HoldType.sloper ? 16 : 13.5));
+        c.drawCircle(Offset(hold.x, hold.y), rr * (0.85 + 0.15 * fade), paint);
       }
-      c.drawPath(st == HoldStatus.dyno ? dashed(ring, const [3, 3]) : ring, paint);
     }
     final pt = d.candPt;
     if (d.candDyno != null && pt != null) {
@@ -524,7 +601,7 @@ class ScenePainter extends CustomPainter {
 
   void _hang(Canvas c) {
     if (!(g.hangT > 0)) return;
-    final at = Offset(g.cd.x, g.cd.y), f = clampD(g.hangT / hangTime, 0, 1);
+    final at = Offset(g.cd.x, g.cd.y), f = clampD(g.hangT / g.climber.hangTime, 0, 1);
     c.drawCircle(at, 44, _line(rgba(12, 14, 20, 0.4), 3));
     c.drawArc(Rect.fromCircle(center: at, radius: 44), math.pi / 2, -math.pi * 2 * f, false, _line(Pal.bad, 2));
   }
@@ -537,7 +614,7 @@ class ScenePainter extends CustomPainter {
     if (u > 1) return;
     final e = u * u * (3 - 2 * u), x = lerpD(from.x, 210, e), y = lerpD(from.y, 102, e);
     final a = math.sin(math.min(1.0, u * 1.15) * math.pi);
-    c.drawPath(dashed(Path()..moveTo(from.x, from.y)..lineTo(x, y), const [2, 4]), _line(rgba(242, 237, 228, 0.35 * a), 1.5));
+    c.drawPath(dashLine(from.x, from.y, x, y, 2, 4), _line(rgba(242, 237, 228, 0.35 * a), 1.5));
     _oval(c, x, y, 8, 8, rgba(242, 237, 228, 0.55 * a));
   }
 
@@ -547,7 +624,9 @@ class ScenePainter extends CustomPainter {
     if (!r.endless && hb * unitsPerMetre + 100 >= r.topY - 30) return null;
     final y = hb * unitsPerMetre + 100, v = g.viewRange();
     if (y < v.y0 || y > v.y1) return null;
-    c.drawPath(dashed(Path()..moveTo(v.x0, y)..lineTo(v.x1, y), const [12, 9]), _line(rgba(124, 200, 255, 0.55), 1.6));
+    // dashes stay fixed on the wall as the view moves
+    final x0 = (v.x0 / 21).floorToDouble() * 21;
+    c.drawPath(dashLine(x0, y, v.x1, y, 12, 9), _line(rgba(124, 200, 255, 0.55), 1.6));
     return y;
   }
 
@@ -589,9 +668,14 @@ class ScenePainter extends CustomPainter {
 
   void _vignette(Canvas c, Size size) {
     final cw = size.width, ch = size.height;
-    _p.color = const Color(0xFF000000);
-    _p.shader = ui.Gradient.radial(Offset(cw / 2, ch * 0.5), math.max(cw, ch) * 0.75,
-        [rgba(6, 8, 14, 0), rgba(6, 8, 14, 0.5)], null, TileMode.clamp, null, Offset(cw / 2, ch * 0.45), math.min(cw, ch) * 0.35);
+    if (_vignetteFor != size) {
+      _vignetteFor = size;
+      _vignetteG = ui.Gradient.radial(Offset(cw / 2, ch * 0.5), math.max(cw, ch) * 0.75,
+          [rgba(6, 8, 14, 0), rgba(6, 8, 14, 0.5)], null, TileMode.clamp, null, Offset(cw / 2, ch * 0.45), math.min(cw, ch) * 0.35);
+    }
+    _p
+      ..color = const Color(0xFF000000)
+      ..shader = _vignetteG;
     c.drawRect(Offset.zero & size, _p);
     _p.shader = null;
   }
@@ -599,7 +683,7 @@ class ScenePainter extends CustomPainter {
   void _finger(Canvas c) {
     final d = g.drag, f = d?.finger, aim = d?.aim;
     if (f == null || aim == null) return;
-    c.drawPath(dashed(Path()..moveTo(f.dx, f.dy)..lineTo(aim.dx, aim.dy), const [3, 4]), _line(rgba(242, 237, 228, 0.3), 1.5));
+    c.drawPath(dashLine(f.dx, f.dy, aim.dx, aim.dy, 3, 4), _line(rgba(242, 237, 228, 0.3), 1.5));
     c.drawCircle(f, 20, _p..color = rgba(242, 237, 228, 0.14));
   }
 

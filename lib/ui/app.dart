@@ -138,18 +138,37 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
 
+  /// The widgets on top of the scene. The title screen and the HUD cross-fade,
+  /// and the cards come in and go out softly.
   Widget _overlay() {
-    switch (game.screen) {
-      case Screen.menu:
-        return MenuScreen(game: game);
-      case Screen.hud:
-        return Hud(game: game);
-      case Screen.fallCard:
-        return Stack(children: [Hud(game: game), Positioned.fill(child: FallCard(game: game))]);
-      case Screen.topCard:
-        return Stack(children: [Hud(game: game), Positioned.fill(child: TopCard(game: game))]);
-      case Screen.pause:
-        return Stack(children: [Hud(game: game), Positioned.fill(child: PauseCard(game: game))]);
-    }
+    final screen = game.screen;
+    final fall = game.fallCard, top = game.topCard;
+    final Widget? card = switch (screen) {
+      Screen.fallCard when fall != null => FallCard(game: game, data: fall),
+      Screen.topCard when top != null => TopCard(game: game, data: top),
+      Screen.pause => PauseCard(game: game),
+      _ => null,
+    };
+    final menu = screen == Screen.menu;
+    return Stack(children: [
+      Positioned.fill(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 320),
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeIn,
+          child: KeyedSubtree(key: ValueKey(menu), child: menu ? MenuScreen(game: game) : Hud(game: game)),
+        ),
+      ),
+      Positioned.fill(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 280),
+          reverseDuration: const Duration(milliseconds: 180),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeIn,
+          transitionBuilder: (child, a) => FadeTransition(opacity: a, child: child),
+          child: card == null ? const SizedBox.shrink() : KeyedSubtree(key: ValueKey(screen), child: card),
+        ),
+      ),
+    ]);
   }
 }
