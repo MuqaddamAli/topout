@@ -10,6 +10,7 @@ import '../game/game.dart';
 import '../game/online.dart';
 import '../game/palette.dart';
 import 'climbers.dart';
+import 'hud.dart' show FrameSelect;
 import 'widgets.dart';
 
 /// Play online: make a room or join one with its code, then the lobby with
@@ -228,7 +229,12 @@ class _OnlineScreenState extends State<OnlineScreen> {
       const SizedBox(height: 18),
       if (online.error case final e?) ...[_ErrorLine(e), const SizedBox(height: 12)],
       if (room.started)
-        Text('Starting…', textAlign: TextAlign.center, style: Txt.display(28, color: Pal.good))
+        FrameSelect<int>(
+          game: game,
+          select: (g) => (g.countdown ?? 0).ceil(),
+          builder: (context, left) => Text(left > 0 ? 'Starting in $left' : 'Starting…',
+              textAlign: TextAlign.center, style: Txt.display(28, color: Pal.good)),
+        )
       else if (online.isHost)
         GameButton(
           label: 'Start',

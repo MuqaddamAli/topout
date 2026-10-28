@@ -15,6 +15,7 @@ import 'effects.dart';
 import 'online.dart';
 import 'palette.dart';
 import 'records.dart';
+import 'remote.dart';
 import 'store.dart';
 
 export 'body.dart';
@@ -247,6 +248,8 @@ class Game {
   Game({required this.store, required this.audio, DateTime? today, NetLink Function()? netLink})
       : _fixedDay = today,
         online = Online(netLink ?? () => SocketLink(mpServer)) {
+    online.addListener(_onlineChanged);
+    online.onState = (id, s) => remotes.receive(id, s, _netMs.round());
     final day = today ?? DateTime.now();
     todayKey = dateKey(day);
     routes = [...buildRoutes(), dailyWallFor(day)];
@@ -263,6 +266,22 @@ class Game {
 
   /// Rooms for climbing with others. Connects only when Play online opens.
   final Online online;
+
+  /// The other climbers in the room.
+  final RemoteClimbers remotes = RemoteClimbers();
+
+  /// This climb was started from an online room.
+  bool onlineClimb = false;
+
+  /// Seconds until the room's climb starts (after the creator taps Start).
+  double? countdown;
+  int _startsSeen = 0;
+
+  /// Our clock for climber states, in ms, and the time since the last one went out.
+  double _netMs = 0, _sendAcc = 0;
+
+  /// The mode picked on the title screen, while a room's mode is in use.
+  Mode? _modeBefore;
 
   /// Set by tests to pin the Daily Wall to one day.
   final DateTime? _fixedDay;
@@ -638,9 +657,90 @@ class Game {
     _ui();
   }
 
+  void _onlineChanged() {
+    final r = online.room;
+    if (r == null) {
+      remotes.clear();
+      countdown = null;
+    } else {
+      remotes.sync(r.players, online.you);
+    }
+    if (online.starts != _startsSeen) {
+      _startsSeen = online.starts;
+      if (r != null && phase == Phase.menu && screen == Screen.online) countdown = (online.startsInMs ?? 0) / 1000;
+    }
+  }
+
+  /// The route of room [r]. The Daily Wall is the one of the creator's day.
+  ClimbRoute roomRoute(RoomView r) {
+    if (r.route == 'daily') {
+      final day = DateTime.tryParse(r.dateKey);
+      return day == null || r.dateKey == todayKey ? routes.last : dailyWallFor(day);
+    }
+    return routes.firstWhere((x) => x.id == r.route, orElse: () => routes.first);
+  }
+
+  /// Everyone in the room starts the same route in the same mode.
+  void _startOnline() {
+    final r = online.room;
+    if (r == null || phase != Phase.menu) return;
+    _modeBefore ??= mode;
+    mode = Mode.fromName(r.mode);
+    onlineClimb = true;
+    _sendAcc = 0;
+    startRoute(roomRoute(r));
+  }
+
+  /// What the others need to draw your climber.
+  ClimberState myState() => ClimberState(
+        t: _netMs.round(),
+        climber: climber.id,
+        c: cd,
+        tilt: tilt,
+        lookX: lookX,
+        lookUp: lookUp,
+        ends: endDraw,
+        styles: hStyle,
+        kinds: hKind,
+        footFree: fFree,
+        falling: phase == Phase.falling,
+        topped: phase == Phase.top,
+        metres: climberHeight(),
+      );
+
+  /// The countdown, sending your state and moving the others. Your own
+  /// climber never waits for any of this.
+  void _net(double rawDt) {
+    _netMs += rawDt * 1000;
+    if (countdown case final left?) {
+      countdown = left - rawDt;
+      if (countdown! <= 0) {
+        countdown = null;
+        _startOnline();
+      }
+    }
+    if (!onlineClimb) return;
+    if (route != null && endDraw.length == 4 && (_sendAcc += rawDt) >= 0.1) {
+      _sendAcc = math.min(_sendAcc - 0.1, 0.1);
+      online.sendState(myState().encode());
+    }
+    remotes.update(_netMs.round(), math.min(0.1, rawDt), clock, still: reducedMotion);
+  }
+
+  /// Back from a card: to the title screen, or out of the room when online.
+  void goBack() => onlineClimb ? leaveOnline() : showMenu();
+  String get backLabel => onlineClimb ? 'Leave' : 'Routes';
+
   /// Leaves the room, closes the connection and goes back to the title screen.
   void leaveOnline() {
     online.close();
+    remotes.clear();
+    countdown = null;
+    onlineClimb = false;
+    if (_modeBefore case final m?) {
+      mode = m;
+      _modeBefore = null;
+    }
     if (phase == Phase.menu) {
       screen = Screen.menu;
       _ui();
@@ -682,6 +782,7 @@ class Game {
 
   void nextRoute() {
     if (phase != Phase.top) return; // a second tap while the card fades out
+    if (onlineClimb) return restart(); // the room climbs one route
     final i = routes.indexOf(route!);
     startRoute(routes[(i + 1) % routes.length]);
   }
@@ -1044,13 +1145,13 @@ class Game {
       retry();
       return true;
     } else if (phase == Phase.fallCard && k == LogicalKeyboardKey.escape) {
-      showMenu();
+      goBack();
       return true;
     } else if (phase == Phase.top && screen == Screen.topCard && k == LogicalKeyboardKey.enter) {
       nextRoute();
       return true;
     } else if (phase == Phase.top && screen == Screen.topCard && k == LogicalKeyboardKey.escape) {
-      showMenu();
+      goBack();
       return true;
     } else if (phase == Phase.paused && k == LogicalKeyboardKey.escape) {
       resume();
@@ -1065,6 +1166,7 @@ class Game {
   // ================================================================ simulation
 
   void frame(double rawDt) {
+    _net(rawDt);
     final dt = math.min(0.1, rawDt);
     // Once a card fully covers the scene, nothing behind it needs to move or
     // be drawn again (it sits under an 86% dark backdrop).
@@ -1799,16 +1901,20 @@ class Game {
     return e0;
   }
 
-  Pose buildPose() {
-    final p = Pose(cd.copy(), tilt, br, lookX, lookUp), k = climber;
-    p.arms = [for (final i in [0, 1]) armGeo(i, p.shoulders[i], _handEnd(i), hStyle[i], hKind[i], k.armScale)];
-    p.legs = [
-      for (final i in [2, 3])
-        legGeo(i, p.hips[i - 2], endDraw[i], fFree[i - 2], k.legScale,
-            tremble > 0 && !reducedMotion ? math.sin(clock * 41 + i * 1.7) * tremble : 0),
-    ];
-    return p;
-  }
+  Pose buildPose() => climberPose(
+        climber,
+        cd.copy(),
+        tilt,
+        br,
+        lookX,
+        lookUp,
+        [_handEnd(0), _handEnd(1)],
+        hStyle,
+        hKind,
+        [endDraw[2], endDraw[3]],
+        fFree,
+        [for (final i in [2, 3]) tremble > 0 && !reducedMotion ? math.sin(clock * 41 + i * 1.7) * tremble : 0.0],
+      );
 
   void _gearInit() {
     final p = pose = buildPose();

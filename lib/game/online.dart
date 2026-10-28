@@ -156,6 +156,14 @@ class Online extends ChangeNotifier {
   /// Set when the host starts the climb: when it begins here.
   DateTime? startsAt;
 
+  /// The start signal, as ms from when it came in, and how many have come
+  /// in (so the game can tell a new one).
+  int? startsInMs;
+  int starts = 0;
+
+  /// Called with a player id and their climber state.
+  void Function(String id, Object? state)? onState;
+
   bool get isHost => room != null && room!.host == you;
   bool get inRoom => room != null;
 
@@ -167,6 +175,9 @@ class Online extends ChangeNotifier {
       if (d is! Map) return;
       room = RoomView.fromJson(d);
       notifyListeners();
+    });
+    link.listen('state', (d) {
+      if (d is List && d.length == 2 && d[0] is String) onState?.call(d[0] as String, d[1]);
     });
     link.listen('started', (d) {
       _started(d is Map ? d['startsIn'] : null);
@@ -229,6 +240,8 @@ class Online extends ChangeNotifier {
   void _started(Object? startsIn) {
     final ms = startsIn is num ? startsIn.toInt() : 0;
     startsAt = DateTime.now().add(Duration(milliseconds: ms));
+    startsInMs = ms;
+    starts++;
   }
 
   /// Handles the answer to create, join or rejoin.
@@ -242,7 +255,8 @@ class Online extends ChangeNotifier {
       room = RoomView.fromJson(r['room'] as Map);
       you = '${r['you']}';
       _token = '${r['token']}';
-      if (room!.started) _started(r['startsIn']);
+      // a rejoin after the start is already climbing: no new start for it
+      if (room!.started && !lost) _started(r['startsIn']);
     } else {
       final e = r is Map ? r['error'] : null;
       if (lost) {
@@ -294,12 +308,18 @@ class Online extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Sends your climber's state to the others (only while climbing).
+  void sendState(List<Object> state) {
+    if (status == NetStatus.online && room != null && room!.started) _link?.emit('state', state);
+  }
+
   /// Leaves the room (the connection stays open).
   void leave() {
     if (room != null) _link?.emit('leave');
     room = null;
     you = _token = null;
     startsAt = null;
+    startsInMs = null;
     error = null;
     notifyListeners();
   }

@@ -157,7 +157,7 @@ class FallCard extends StatelessWidget {
           child: _buttons([
             GameButton(label: d.retryLabel, primary: true, minHeight: 52, onTap: () => _tap(game.retry)),
             if (d.showRestart) GameButton(label: 'Start over', minHeight: 52, onTap: () => _tap(game.restart)),
-            GameButton(label: 'Routes', minHeight: 52, onTap: () => _tap(game.showMenu)),
+            GameButton(label: game.backLabel, minHeight: 52, onTap: () => _tap(game.goBack)),
           ]),
         ),
       ]),
@@ -231,9 +231,11 @@ class TopCard extends StatelessWidget {
         Stagger(
           index: i++,
           child: _buttons([
-            GameButton(label: d.nextLabel, primary: true, minHeight: 52, onTap: () => _tap(game.nextRoute)),
-            GameButton(label: 'Again', minHeight: 52, onTap: () => _tap(game.restart)),
-            GameButton(label: 'Routes', minHeight: 52, onTap: () => _tap(game.showMenu)),
+            // online, the room climbs one route: no next route
+            if (!game.onlineClimb)
+              GameButton(label: d.nextLabel, primary: true, minHeight: 52, onTap: () => _tap(game.nextRoute)),
+            GameButton(label: 'Again', primary: game.onlineClimb, minHeight: 52, onTap: () => _tap(game.restart)),
+            GameButton(label: game.backLabel, minHeight: 52, onTap: () => _tap(game.goBack)),
           ]),
         ),
       ]),
@@ -275,7 +277,7 @@ class PauseCard extends StatelessWidget {
           child: _buttons([
             GameButton(label: 'Resume', primary: true, minHeight: 52, onTap: () => _tap(game.resume)),
             GameButton(label: 'Start over', minHeight: 52, onTap: () => _tap(game.restart)),
-            GameButton(label: 'Routes', minHeight: 52, onTap: () => _tap(game.showMenu)),
+            GameButton(label: game.backLabel, minHeight: 52, onTap: () => _tap(game.goBack)),
           ]),
         ),
       ]),
