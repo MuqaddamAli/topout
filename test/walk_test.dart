@@ -175,6 +175,136 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  /// Puts the climber on First Wall just under its ledge (3.45 m, in lane
+  /// 1): hands on the jugs above it, the left foot already on the ledge and
+  /// the right one on a jug below. Returns the ledge.
+  int underLedge(Game g) {
+    final r = g.route!, h = r.holds;
+    final ledge = h.indexWhere((x) => x.t == HoldType.ledge && x.x < Wall.right);
+    int at(double x, double y) => h.indexWhere((o) => o.x == x && o.y == y);
+    final hands = [at(150, 396), at(214, 408)], foot = at(226, 302);
+    g.standOn = null;
+    g.limbs = [
+      Limb(hands[0], h[hands[0]].x - 3, h[hands[0]].y),
+      Limb(hands[1], h[hands[1]].x + 3, h[hands[1]].y),
+      Limb(ledge, 160, h[ledge].y),
+      Limb(foot, h[foot].x + 3, h[foot].y),
+    ];
+    final s = solve(Pt(185, 380), g.anchors(), 80, g.climber.reach);
+    g.c = Pt(s.x, s.y);
+    g.cd = g.c.copy();
+    g.camY = g.c.y + 40;
+    return ledge;
+  }
+
+  /// Steps the right foot up onto [ledge], where it can reach.
+  Future<void> stepUp(WidgetTester tester, Game g, int ledge) async {
+    final h = g.holds[ledge];
+    final x = [for (var x = h.x + 8; x < h.x2! - 8; x += 4) x]
+        .firstWhere((x) => feasible(g.limbs, 3, Pt(x, h.y), g.c, g.climber) != null);
+    await dragTo(tester, g, 3, Pt(x, h.y + 2));
+  }
+
+  testWidgets('on a ledge: both feet on it stand you up, it saves, and you walk to its ends', (tester) async {
+    final g = await open(tester);
+    final ledge = underLedge(g), h = g.holds[ledge];
+    await frames(tester, 0.3);
+    g.grip[0] = g.grip[1] = 30;
+    await stepUp(tester, g, ledge);
+    expect(g.standOn, ledge, reason: 'standing on the ledge');
+    expect([g.limbs[0].h, g.limbs[1].h], [null, null], reason: 'the hands let go');
+    expect(g.c.y, closeTo(h.y + standHeight(g.climber) + 2.5, 0.5));
+    await frames(tester, 0.3);
+    expect(g.lit, contains(ledge), reason: 'the lamp is lit: saved');
+    expect(g.checkpoint!.ledge, ledge);
+    expect(g.climberHeight(), closeTo(h.y / 100, 0.01));
+    expect(g.pillText, 'Resting');
+    // the grip comes back while you stand
+    await frames(tester, 2);
+    expect(g.grip[0], greaterThan(50));
+    // walking stops at both ends, the feet stay on the ledge
+    await walk(tester, g, LogicalKeyboardKey.keyD, 6);
+    expect(g.c.x, closeTo(h.x2! - standMargin, 0.5));
+    expect(g.limbs[3].x, lessThan(h.x2!));
+    expect(g.standOn, ledge);
+    await shot(tester, '52_ledge_end');
+    await walk(tester, g, LogicalKeyboardKey.keyA, 6);
+    expect(g.c.x, closeTo(h.x + standMargin, 0.5));
+    expect(g.limbs[2].x, greaterThan(h.x));
+    expect(g.phase, Phase.climb, reason: 'no walking off into a fall');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('from a ledge: climb on with a hand, undo, and a fall brings you back to where you left it', (tester) async {
+    final g = await open(tester);
+    final ledge = underLedge(g), r = g.route!;
+    await frames(tester, 0.3);
+    await stepUp(tester, g, ledge);
+    await frames(tester, 0.3);
+    expect(g.standOn, ledge);
+    // walk a little along the ledge first
+    await walk(tester, g, LogicalKeyboardKey.keyD, 0.8);
+    await frames(tester, 0.4);
+    final x0 = g.c.x;
+    final k = [
+      for (var n = 0; n < r.holds.length; n++)
+        if (r.holds[n].t == HoldType.jug && r.holds[n].y > r.holds[ledge].y + 40 &&
+            feasible(g.limbs, 1, attachPoint(r.holds[n], 1), g.c, g.climber) != null)
+          n
+    ].first;
+    await dragTo(tester, g, 1, attachPoint(r.holds[k], 1));
+    expect(g.limbs[1].h, k);
+    expect(g.standOn, isNull, reason: 'climbing again');
+    // undo stands you on the ledge again, where you were
+    g.undo();
+    await frames(tester, 0.3);
+    expect(g.standOn, ledge);
+    expect(g.c.x, closeTo(x0, 1));
+    // climb on, let go and fall: Try again puts you back on the ledge, where you left it
+    await dragTo(tester, g, 1, attachPoint(r.holds[k], 1));
+    g.limbs[2].h = null;
+    g.limbs[3].h = null;
+    g.grip[0] = g.grip[1] = 1;
+    await frames(tester, 2.5);
+    expect(g.phase, Phase.fallCard);
+    g.retry();
+    await frames(tester, 0.4);
+    expect(g.standOn, ledge);
+    expect(g.c.x, closeTo(x0, 1));
+    expect(g.limbs.map((l) => l.h).toList(), [null, null, ledge, ledge]);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('No saves: you still stand and walk on a ledge, but a fall is from the ground', (tester) async {
+    final g = await open(tester);
+    g.setMode(Mode.solo);
+    g.startRoute(g.routes[0]);
+    await frames(tester, 0.4);
+    final start = g.c.x, ledge = underLedge(g);
+    await frames(tester, 0.3);
+    await stepUp(tester, g, ledge);
+    await frames(tester, 0.3);
+    expect(g.standOn, ledge);
+    expect(g.lit, isNot(contains(ledge)));
+    final k = [
+      for (var n = 0; n < g.holds.length; n++)
+        if (g.holds[n].t == HoldType.jug && g.holds[n].y > 400 &&
+            feasible(g.limbs, 1, attachPoint(g.holds[n], 1), g.c, g.climber) != null)
+          n
+    ].first;
+    await dragTo(tester, g, 1, attachPoint(g.holds[k], 1));
+    g.limbs[2].h = null;
+    g.limbs[3].h = null;
+    g.grip[0] = g.grip[1] = 1;
+    await frames(tester, 2.5);
+    expect(g.phase, Phase.fallCard);
+    g.retry();
+    await frames(tester, 0.4);
+    expect(g.standOn, 0, reason: 'back on the ground');
+    expect(g.c.x, closeTo(start, 1));
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('a climb alone is as it always was: no standing, no walking', (tester) async {
     final g = await open(tester, lanes: 1);
     final r = g.route!;

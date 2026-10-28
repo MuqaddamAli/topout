@@ -717,11 +717,12 @@ class Game {
     if (g.s.standing) _checkpointAt(g.s);
   }
 
-  /// After a foot move: with both feet on the same flat hold, you stand up
-  /// there and the hands let go.
+  /// After a foot move: with both feet on the same flat hold (the ground or
+  /// a ledge), you stand up there and the hands let go.
   void _maybeStand() {
     final a = limbs[2].h, b = limbs[3].h;
-    if (!social || a == null || a != b || holds[a].t != HoldType.ground) return;
+    if (!social || a == null || a != b) return;
+    if (holds[a].t != HoldType.ground && holds[a].t != HoldType.ledge) return;
     _standOn(a, (limbs[2].x + limbs[3].x) / 2);
     resetPoseState([HandStyle.open, HandStyle.open]);
   }
@@ -1081,7 +1082,7 @@ class Game {
     }
     if (standOn != null && social && !store.getBool('tip.walk', false)) {
       store.set('tip.walk', true);
-      showTip('Hold beside your climber to walk (A and D on a keyboard). Grab a hold to climb.');
+      showTip('Hold beside your climber to walk (A and D on a keyboard). Grab a hold to climb. On a ledge you can stand and walk too.');
       return;
     }
     if (!route!.tutorial) return;
@@ -1337,9 +1338,11 @@ class Game {
     drag = null;
     if (!cancelled && d.candOk && standOn != null) {
       // the first grab from standing (or a jump from it): now you climb. A
-      // fall from here brings you back to where you stood, unless a ledge
-      // saved you higher.
-      if (holds[standOn!].t == HoldType.ground && (cpLedge ?? 0) == 0) checkpoint = Checkpoint(d.snap, 0);
+      // fall from here brings you back to where you stood: on the ground
+      // until a ledge saves you, and on the ledge that saved you.
+      final at = standOn!, t = holds[at].t;
+      final saved = t == HoldType.ground ? (cpLedge ?? 0) == 0 : t == HoldType.ledge && mode.ledges && cpLedge == at;
+      if (saved && !route!.endless) checkpoint = Checkpoint(d.snap, at);
       standOn = null;
       walkAmt = 0;
     }
