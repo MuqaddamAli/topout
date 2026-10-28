@@ -55,6 +55,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     _painter = ScenePainter(game);
     _ticker = createTicker(_onTick)..start();
     WidgetsBinding.instance.addObserver(this);
+    game.uiChanged.addListener(_keysToGame);
     // On the web, sound may only start after the first tap.
     if (!kIsWeb) game.audio.start();
   }
@@ -62,9 +63,20 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    game.uiChanged.removeListener(_keysToGame);
     _ticker.dispose();
     _focus.dispose();
     super.dispose();
+  }
+
+  /// Once the screen with the text fields (Play online) is gone, the keys go
+  /// to the game again: a field that had the keyboard (say, the room code,
+  /// joined with Enter) would otherwise keep it, and keys would do nothing.
+  void _keysToGame() {
+    if (game.screen == Screen.online || _focus.hasPrimaryFocus) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && game.screen != Screen.online) _focus.requestFocus();
+    });
   }
 
   void _onTick(Duration elapsed) {
@@ -118,7 +130,11 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 Positioned.fill(
                   child: Listener(
                     behavior: HitTestBehavior.opaque,
-                    onPointerDown: (e) => game.pointerDown(e.pointer, e.localPosition, _isTouch(e.kind)),
+                    onPointerDown: (e) {
+                      // a touch on the scene gives the keys back to the game too
+                      if (!_focus.hasPrimaryFocus && game.screen != Screen.online) _focus.requestFocus();
+                      game.pointerDown(e.pointer, e.localPosition, _isTouch(e.kind));
+                    },
                     onPointerMove: (e) => game.pointerMove(e.pointer, e.localPosition),
                     onPointerUp: (e) => game.pointerUp(e.pointer),
                     onPointerCancel: (e) => game.pointerUp(e.pointer, cancelled: true),

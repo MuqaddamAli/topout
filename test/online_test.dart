@@ -183,6 +183,48 @@ void main() {
     });
   }
 
+  testWidgets('a player who joined by typing the code and Enter can walk with the keys', (tester) async {
+    await open(tester);
+    await connected(tester, name: 'Bo');
+    final room = {
+      ...roomJson(host: 'h', names: ['Host', 'Bo']),
+      'players': [
+        {'id': 'h', 'name': 'Host', 'climber': 'ada', 'connected': true},
+        {'id': 'me', 'name': 'Bo', 'climber': 'ada', 'connected': true},
+      ],
+    };
+    link().answer = (e, d) => entered(room);
+    // the code field has the keyboard, and Enter joins
+    await tester.tap(find.byType(TextField).last);
+    await tester.enterText(find.byType(TextField).last, 'KXMP');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await settle(tester);
+    expect(game.online.inRoom, isTrue);
+    link().push('room', {
+      ...room,
+      'started': true,
+      'lanes': 1,
+      'players': [
+        {'id': 'h', 'name': 'Host', 'climber': 'ada', 'connected': true, 'lane': 0, 'side': 0},
+        {'id': 'me', 'name': 'Bo', 'climber': 'ada', 'connected': true, 'lane': 0, 'side': 1},
+      ],
+    });
+    link().push('started', {'startsIn': 1000, 'lanes': 1});
+    for (var k = 0; k < 6; k++) {
+      await settle(tester);
+    }
+    expect(game.phase, Phase.climb);
+    expect(game.standOn, 0);
+    final x0 = game.c.x;
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyD);
+    await settle(tester);
+    await settle(tester);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyD);
+    await settle(tester);
+    expect(game.c.x, greaterThan(x0 + 20), reason: 'the keys reach the game, not the old text field');
+    await done(tester);
+  });
+
   testWidgets('a player who joined waits, and becomes the creator when the creator leaves', (tester) async {
     await open(tester);
     await connected(tester, name: 'Bo');
