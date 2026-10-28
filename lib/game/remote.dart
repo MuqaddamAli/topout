@@ -8,6 +8,7 @@ import 'body.dart';
 import 'core.dart';
 import 'online.dart';
 import 'palette.dart';
+import 'walk.dart';
 
 /// One moment of a climber, as sent over the network. On the wire it is
 /// one JSON array (see server/bots.js):
@@ -15,6 +16,8 @@ import 'palette.dart';
 ///    leftHandX, leftHandY, rightHandX, rightHandY, leftFootX, leftFootY, rightFootX, rightFootY,
 ///    bits, metres, secs]
 /// secs (seconds since the room's start) may be missing in older states.
+/// bits: see [encode]; 14 standing on a flat hold (walking there is played
+/// back from how the body moves), 15 facing left.
 class ClimberState {
   ClimberState({
     required this.t,
@@ -29,6 +32,8 @@ class ClimberState {
     required this.footFree,
     this.falling = false,
     this.topped = false,
+    this.standing = false,
+    this.facingLeft = false,
     this.metres = 0,
     this.secs,
   });
@@ -45,6 +50,9 @@ class ClimberState {
   final List<HoldType> kinds;
   final List<bool> footFree;
   final bool falling, topped;
+
+  /// Standing on a flat hold with both hands free (online), facing left or right.
+  final bool standing, facingLeft;
   final double metres;
 
   /// Seconds since this player's climb started (everyone started together).
@@ -58,6 +66,8 @@ class ClimberState {
     if (footFree[1]) bits |= 1 << 11;
     if (falling) bits |= 1 << 12;
     if (topped) bits |= 1 << 13;
+    if (standing) bits |= 1 << 14;
+    if (facingLeft) bits |= 1 << 15;
     return [
       t,
       climber,
@@ -99,6 +109,8 @@ class ClimberState {
       footFree: [bits & (1 << 10) != 0, bits & (1 << 11) != 0],
       falling: bits & (1 << 12) != 0,
       topped: bits & (1 << 13) != 0,
+      standing: bits & (1 << 14) != 0,
+      facingLeft: bits & (1 << 15) != 0,
       metres: n[15],
       secs: secs != null && secs.isFinite ? secs : null,
     );
@@ -124,6 +136,8 @@ class ClimberState {
       footFree: n.footFree,
       falling: n.falling,
       topped: n.topped,
+      standing: n.standing,
+      facingLeft: n.facingLeft,
       metres: lerpD(a.metres, b.metres, u),
       secs: n.secs,
     );
@@ -160,6 +174,11 @@ class RemoteClimber {
   double? finish;
   bool _wasFalling = false, _wasTopped = false;
   final double _breathAt = math.Random().nextDouble() * 6;
+
+  /// Walking, played back from how the shown body moves: the step cycle,
+  /// how much they walk (0 to 1) and where the body was last frame.
+  double _phase = 0, _walk = 0;
+  double? _lastX;
 
   void add(ClimberState s, int nowMs) {
     if (states.isNotEmpty && s.t <= states.last.t) return; // late or doubled
@@ -203,8 +222,23 @@ class RemoteClimber {
     _wasTopped = s.topped;
     final k = Climber.byId(s.climber), lk = look = Look.of(k.id);
     final br = still ? 0.0 : math.sin((clock + _breathAt) * 2.1);
-    final p = pose = climberPose(k, s.c, s.tilt, br, s.lookX, s.lookUp, [s.ends[0], s.ends[1]], s.styles, s.kinds,
-        [s.ends[2], s.ends[3]], s.footFree);
+    final Pose p;
+    if (s.standing) {
+      // the steps come from how far the body moves, so they stay smooth
+      final dx = (s.c.x - (_lastX ?? s.c.x)).abs();
+      final speed = dt > 0 ? dx / dt : 0.0;
+      _walk += (clampD(speed / walkSpeed, 0, 1) - _walk) * math.min(1.0, dt * 8);
+      _phase = (_phase + dx / strideLength * 2 * math.pi) % (math.pi * 200);
+      final facing = s.facingLeft ? -1.0 : 1.0;
+      final sp = standAt(k, s.c.x, math.min(s.ends[2].y, s.ends[3].y), facing: facing, phase: _phase, walk: _walk);
+      p = pose = climberPose(k, sp.c, sp.tilt, br, _walk > 0.05 ? facing * 2.2 : s.lookX, s.lookUp, [sp.ends[0], sp.ends[1]],
+          const [HandStyle.open, HandStyle.open], s.kinds, [sp.ends[2], sp.ends[3]], [sp.ends[2].y > sp.ends[3].y + 0.5, sp.ends[3].y > sp.ends[2].y + 0.5]);
+    } else {
+      _walk = 0;
+      p = pose = climberPose(k, s.c, s.tilt, br, s.lookX, s.lookUp, [s.ends[0], s.ends[1]], s.styles, s.kinds,
+          [s.ends[2], s.ends[3]], s.footFree);
+    }
+    _lastX = s.c.x;
     // a new climber needs new hair
     if (gear == null || _gearFor != k.id) {
       gear = Gear(p, links: lk.tailLinks, link: lk.tailLink);

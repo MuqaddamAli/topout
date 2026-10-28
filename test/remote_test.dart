@@ -324,15 +324,14 @@ void main() {
         expect(r.lanes.length, lanesFor(n));
         expect(game.spawn, same(r.lanes[lane].spawns[side]));
         final s = game.spawn!;
-        expect(game.limbs[s.hand].h, s.hold, reason: 'one hand on the start jug of your side');
-        expect(game.limbs[1 - s.hand].h, isNull);
+        expect(game.standOn, 0, reason: 'standing on the ground');
+        expect([game.limbs[0].h, game.limbs[1].h], [null, null], reason: 'both hands free');
         expect([game.limbs[2].h, game.limbs[3].h], [0, 0], reason: 'both feet on the ground');
-        expect(game.c.x, inInclusiveRange(r.lanes[lane].x0, r.lanes[lane].x1));
+        expect(game.c.x, closeTo(s.x, 0.5));
         expect(game.camX, closeTo(game.camXFor(game.cd.x), 30));
-        expect(game.chalked, {s.hold});
+        expect(game.chalked, isEmpty);
         // the other spawn of the lane is far enough away not to overlap (a body is about 40 wide)
-        final other = spawnPose(r, r.lanes[lane].spawns[1 - side], game.climber).c;
-        expect((other.x - game.c.x).abs(), greaterThan(55));
+        expect((r.lanes[lane].spawns[1 - side].x - game.c.x).abs(), greaterThan(100));
         await done(tester);
       });
     }
@@ -353,49 +352,64 @@ void main() {
       await done(tester);
     });
 
+    /// A hold in lane [lane] that hand [i] can grab from where the climber is.
+    int reachable(ClimbRoute r, Lane lane, int i) => [
+          for (var k = 0; k < r.holds.length; k++)
+            if (r.holds[k].t == HoldType.jug && r.holds[k].x > lane.x0 && r.holds[k].x < lane.x1 &&
+                feasible(game.limbs, i, attachPoint(r.holds[k], i), game.c, game.climber) != null)
+              k
+        ].first;
+
+    /// Drags hand [i] to hold [k], straight to the game (a room message may
+    /// cover that part of the screen).
+    Future<void> grab(WidgetTester tester, int i, int k) async {
+      final from = game.w2s(game.limbEnd(i).x, game.limbEnd(i).y), to = attachPoint(game.holds[k], i);
+      game.pointerDown(1, from, false);
+      for (var n = 1; n <= 8; n++) {
+        game.pointerMove(1, Offset.lerp(from, game.w2s(to.x, to.y), n / 8)!);
+        await frames(tester, 0.03);
+      }
+      game.pointerUp(1);
+      await frames(tester, 0.4);
+    }
+
+    /// Feet off and no grip left: a fall, then the fall card.
+    Future<void> fallOff(WidgetTester tester) async {
+      game.limbs[2].h = null;
+      game.limbs[3].h = null;
+      game.grip[0] = game.grip[1] = 1;
+      await frames(tester, 2.5);
+      expect(game.phase, Phase.fallCard);
+    }
+
     testWidgets('undo, a fall and Try again keep you in your own lane', (tester) async {
       await startIn(tester, laneRoom(4, 3));
       final r = game.route!, s = game.spawn!, lane = r.lanes[1];
       expect((s.lane, s.side), (1, 1));
       final start = game.c.copy();
-      // a move with the free (left) hand to a hold within reach, then undo it
-      final free = 1 - s.hand;
-      final target = [
-        for (var k = 0; k < r.holds.length; k++)
-          if (r.holds[k].t == HoldType.jug && k != s.hold && r.holds[k].x > lane.x0 && r.holds[k].x < lane.x1 &&
-              feasible(game.limbs, free, attachPoint(r.holds[k], free), game.c, game.climber) != null)
-            k
-      ].first;
-      // straight to the game (a room message may cover that part of the screen)
-      final from = game.w2s(game.limbEnd(free).x, game.limbEnd(free).y), to = attachPoint(r.holds[target], free);
-      game.pointerDown(1, from, false);
-      for (var k = 1; k <= 8; k++) {
-        game.pointerMove(1, Offset.lerp(from, game.w2s(to.x, to.y), k / 8)!);
-        await frames(tester, 0.03);
-      }
-      game.pointerUp(1);
-      await frames(tester, 0.4);
-      expect(game.limbs[free].h, target);
+      // a grab from standing starts the climb; undo stands you up again
+      final k = reachable(r, lane, 0);
+      await grab(tester, 0, k);
+      expect(game.limbs[0].h, k);
+      expect(game.standOn, isNull);
       game.undo();
       await frames(tester, 0.4);
-      expect(game.limbs[free].h, isNull);
+      expect(game.standOn, 0);
+      expect(game.limbs[0].h, isNull);
       expect(game.c.x, closeTo(start.x, 1));
-      // let go and fall: Try again puts you back at your spawn, in lane 2
-      game.limbs[2].h = null;
-      game.limbs[3].h = null;
-      game.grip[s.hand] = 1;
-      await frames(tester, 2.5);
-      expect(game.phase, Phase.fallCard);
+      // climb, let go and fall: Try again puts you back where you stood, in lane 2
+      await grab(tester, 0, k);
+      await fallOff(tester);
       game.retry();
       await frames(tester, 0.4);
       expect(game.phase, Phase.climb);
-      expect(game.limbs[s.hand].h, s.hold);
+      expect(game.standOn, 0);
       expect(game.c.x, closeTo(start.x, 1));
       expect(r.laneAt(game.c.x), lane);
       // starting again from the ground: the same spawn
       game.restart();
       await frames(tester, 0.2);
-      expect(game.limbs[s.hand].h, s.hold);
+      expect(game.standOn, 0);
       expect(game.c.x, closeTo(start.x, 1));
       await done(tester);
     });
@@ -406,14 +420,11 @@ void main() {
       expect(r.endless, isTrue);
       expect((r.lanes.length, s.lane, s.side), (2, 1, 0));
       final start = game.c.copy();
-      game.limbs[2].h = null;
-      game.limbs[3].h = null;
-      game.grip[s.hand] = 1;
-      await frames(tester, 2.5);
-      expect(game.phase, Phase.fallCard);
+      await grab(tester, 1, reachable(r, r.lanes[1], 1));
+      await fallOff(tester);
       game.retry();
       await frames(tester, 0.3);
-      expect(game.limbs[s.hand].h, s.hold);
+      expect(game.standOn, 0);
       expect(game.c.x, closeTo(start.x, 1));
       await done(tester);
     });
@@ -434,6 +445,7 @@ void main() {
       expect(game.keepsRecords, isFalse);
       final r = game.route!, top = r.holds.indexWhere((h) => h.t == HoldType.top);
       game.maxY = 500;
+      game.standOn = null;
       game.limbs[0].h = top;
       game.limbs[1].h = top;
       await frames(tester, 0.3);

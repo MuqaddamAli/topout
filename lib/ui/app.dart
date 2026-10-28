@@ -87,6 +87,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent e) {
+    if (e is KeyUpEvent) return game.keyUp(e.logicalKey) ? KeyEventResult.handled : KeyEventResult.ignored;
     if (e is! KeyDownEvent) return KeyEventResult.ignored;
     final k = HardwareKeyboard.instance;
     return game.key(e.logicalKey, ctrl: k.isControlPressed || k.isMetaPressed)

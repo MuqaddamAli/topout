@@ -16,6 +16,7 @@ import 'online.dart';
 import 'palette.dart';
 import 'records.dart';
 import 'remote.dart';
+import 'walk.dart';
 import 'store.dart';
 
 export 'body.dart';
@@ -30,9 +31,12 @@ enum HoldStatus { good, weak, no, dyno, far }
 enum ToastKind { plain, warn, ok }
 
 class Snapshot {
-  Snapshot(this.limbs, this.c);
+  Snapshot(this.limbs, this.c, [this.stand]);
   final List<Limb> limbs;
   final Pt c;
+
+  /// The flat hold the climber stood on (online only), or null while climbing.
+  final int? stand;
 }
 
 class Checkpoint {
@@ -294,6 +298,28 @@ class Game {
   /// start. Null when climbing alone (you start on the route's start holds).
   Spawn? spawn;
 
+  // ---- standing and walking (online, and alone with ?lanes; see walk.dart)
+
+  /// The flat hold (the ground, a ledge or the top) you stand on with both
+  /// hands free, or null while climbing.
+  int? standOn;
+
+  /// Which way you face (-1 left, 1 right), the step cycle and how much you
+  /// walk now (0 still, 1 full stride).
+  double facing = 1, walkPhase = 0, walkAmt = 0;
+  double _walkV = 0;
+
+  /// Where a finger held beside the climber wants to walk to.
+  double? walkTo;
+  ({double sy, double at})? _walkHold;
+
+  /// Walk keys held down: -1 left, 1 right.
+  final Set<int> _walkKeys = {};
+
+  /// Standing and walking are for climbs with others: online, or on a wall
+  /// with lanes. A climb alone stays as it always was.
+  bool get social => onlineClimb || (route?.lanes.length ?? 1) > 1;
+
   /// Seconds until the room's climb starts (after the creator taps Start).
   double? countdown;
   int _startsSeen = 0;
@@ -502,8 +528,12 @@ class Game {
     return Pt(p.x + jointOffset[i][0], p.y + jointOffset[i][1]);
   }
 
-  Snapshot snapshot() => Snapshot(limbs.map((l) => l.copy()).toList(), c.copy());
-  double climberHeight() => math.max(0, c.y - 100) / unitsPerMetre;
+  Snapshot snapshot() => Snapshot(limbs.map((l) => l.copy()).toList(), c.copy(), standOn);
+  double climberHeight() {
+    // standing, you are as high as what you stand on (the ground is 0 m)
+    if (standOn case final s?) return holds[s].y / unitsPerMetre;
+    return math.max(0, c.y - 100) / unitsPerMetre;
+  }
 
   void later(double secs, VoidCallback fn) => _later.add(_Later(clock + secs, fn));
 
@@ -562,12 +592,14 @@ class Game {
     commitSegment();
     route = r;
     keepsRecords = !onlineClimb && r.lanes.length == 1;
-    final h = r.holds, at = onlineClimb ? spawn : null;
+    final h = r.holds, at = onlineClimb ? spawn : (r.lanes.length > 1 ? r.lanes[0].spawns[0] : null);
+    standOn = null;
+    _walkV = walkAmt = walkPhase = 0;
+    _walkKeys.clear();
+    walkTo = null;
     if (at != null) {
-      // online: standing on the ground at your spawn, one hand on a start jug
-      final p = spawnPose(r, at, climber);
-      limbs = p.limbs;
-      c = p.c;
+      // with others: standing on the ground at your spawn, free to walk
+      _standOn(0, at.x);
     } else {
       final p0 = attachPoint(h[r.startHands[0]], 0), p1 = attachPoint(h[r.startHands[1]], 1);
       limbs = [Limb(r.startHands[0], p0.x, p0.y), Limb(r.startHands[1], p1.x, p1.y), Limb(0, 164, 0), Limb(0, 198, 0)];
@@ -603,7 +635,7 @@ class Game {
     lit.clear();
     litAt.clear();
     _grabbedAt.clear();
-    chalked = at != null ? {at.hold} : {...r.startHands};
+    chalked = at != null ? {} : {...r.startHands};
     dyno = null;
     hangT = 0;
     _clearCatch();
@@ -627,6 +659,71 @@ class Game {
     curtain = 1;
     slipFlash = 0;
     _ui();
+  }
+
+  /// Stands up on flat hold [hold] with the body over [x]: both feet on it,
+  /// both hands free.
+  void _standOn(int hold, double x) {
+    final h = holds[hold], w = walkRange(route!, h);
+    final p = standAt(climber, clampD(x, w.lo, w.hi), h.y, facing: facing);
+    standOn = hold;
+    _walkV = walkAmt = 0;
+    c = p.c.copy();
+    limbs = [
+      Limb(null, p.ends[0].x, p.ends[0].y),
+      Limb(null, p.ends[1].x, p.ends[1].y),
+      Limb(hold, c.x - 12, h.y),
+      Limb(hold, c.x + 12, h.y),
+    ];
+    hangT = 0;
+  }
+
+  /// Walks along the flat hold you stand on: keys, or toward a finger held
+  /// beside the climber. Stops at the ends of a ledge.
+  void _stepStand(double dt) {
+    final h = holds[standOn!], w = walkRange(route!, h);
+    var dir = 0.0;
+    if (walkTo case final to?) {
+      final d = to - c.x;
+      dir = d.abs() < 6 ? 0 : d.sign;
+    } else {
+      dir = (_walkKeys.contains(1) ? 1.0 : 0.0) - (_walkKeys.contains(-1) ? 1.0 : 0.0);
+    }
+    if (dir != 0) facing = dir;
+    _walkV += (dir * walkSpeed - _walkV) * math.min(1.0, dt * 8);
+    var x = c.x + _walkV * dt;
+    if (x <= w.lo || x >= w.hi) {
+      x = clampD(x, w.lo, w.hi);
+      _walkV = 0;
+    }
+    walkPhase = (walkPhase + _walkV.abs() * dt / strideLength * 2 * math.pi) % (math.pi * 200);
+    walkAmt = clampD(_walkV.abs() / walkSpeed, 0, 1);
+    final p = standAt(climber, x, h.y, facing: facing, phase: walkPhase, walk: walkAmt);
+    c
+      ..x = p.c.x
+      ..y = p.c.y;
+    for (var i = 0; i < 2; i++) {
+      limbs[i]
+        ..x = p.ends[i].x
+        ..y = p.ends[i].y;
+      limbs[i + 2]
+        ..x = x + sideOf[i + 2] * 12
+        ..y = h.y;
+    }
+    final g = gripRates(limbs, holds, mode, climber);
+    for (var i = 0; i < 2; i++) {
+      grip[i] = clampD(grip[i] + g.rates[i] * dt, 0, 100);
+    }
+    if (g.s.standing) _checkpointAt(g.s);
+  }
+
+  /// After a foot move: with both feet on the same flat hold, you stand up
+  /// there and the hands let go.
+  void _maybeStand() {
+    final a = limbs[2].h, b = limbs[3].h;
+    if (!social || a == null || a != b || holds[a].t != HoldType.ground) return;
+    _standOn(a, (limbs[2].x + limbs[3].x) / 2);
+    resetPoseState([HandStyle.open, HandStyle.open]);
   }
 
   void resetPoseState(List<HandStyle> styles) {
@@ -859,6 +956,8 @@ class Game {
         footFree: fFree,
         falling: phase == Phase.falling,
         topped: phase == Phase.top,
+        standing: standOn != null && drag == null,
+        facingLeft: facing < 0,
         metres: climberHeight(),
         secs: onlineSecs,
       );
@@ -980,6 +1079,11 @@ class Game {
       showTip('Blue holds are far. Let go there to jump. Then grab another hold fast.');
       return;
     }
+    if (standOn != null && social && !store.getBool('tip.walk', false)) {
+      store.set('tip.walk', true);
+      showTip('Hold beside your climber to walk (A and D on a keyboard). Grab a hold to climb.');
+      return;
+    }
     if (!route!.tutorial) return;
     final now = clock;
     _Tip? cur;
@@ -1057,11 +1161,32 @@ class Game {
       _beginDrag(i, pos, touch);
     } else {
       _pan = (sy: pos.dy, cam: camY);
+      // standing: a finger held beside the climber walks there
+      if (standOn != null && _besideClimber(pos)) {
+        _walkHold = (sy: pos.dy, at: clock);
+        walkTo = s2w(pos.dx, pos.dy).x;
+      }
     }
+  }
+
+  /// Is [pos] (on screen) beside the standing climber, about level with them?
+  bool _besideClimber(Offset pos) {
+    final w = s2w(pos.dx, pos.dy), y = holds[standOn!].y;
+    return w.y > y - 60 && w.y < y + 230 && (w.x - cd.x).abs() > 22;
   }
 
   void pointerMove(int id, Offset pos) {
     if (id != _ptr) return;
+    if (_walkHold case final wh?) {
+      // a quick move up or down is a pan after all; otherwise keep walking toward the finger
+      if ((pos.dy - wh.sy).abs() > 12 && clock - wh.at < 0.15) {
+        _walkHold = null;
+        walkTo = null;
+      } else {
+        walkTo = s2w(pos.dx, pos.dy).x;
+        return;
+      }
+    }
     if (drag != null) {
       _updateDrag(pos);
     } else if (_pan != null && route != null) {
@@ -1081,6 +1206,8 @@ class Game {
     _ptr = null;
     if (drag != null) endDrag(cancelled);
     _pan = null;
+    _walkHold = null;
+    walkTo = null;
   }
 
   void recenter() {
@@ -1091,6 +1218,14 @@ class Game {
 
   void _beginDrag(int i, Offset pos, bool touch) {
     final l = limbs[i];
+    if (standOn != null && !isHand[i]) {
+      shake = Shake(i, 0.45);
+      _play(Sfx.no);
+      toast('Grab a hold with a hand first.', ToastKind.warn);
+      return;
+    }
+    walkTo = null;
+    _walkV = 0;
     if (l.h != null) {
       final test = [for (var k = 0; k < 4; k++) k == i ? Limb(null, limbs[k].x, limbs[k].y) : limbs[k]];
       if (!supportInfo(test, holds).supported) {
@@ -1200,6 +1335,14 @@ class Game {
   void endDrag(bool cancelled) {
     final d = drag!, l = limbs[d.i];
     drag = null;
+    if (!cancelled && d.candOk && standOn != null) {
+      // the first grab from standing (or a jump from it): now you climb. A
+      // fall from here brings you back to where you stood, unless a ledge
+      // saved you higher.
+      if (holds[standOn!].t == HoldType.ground && (cpLedge ?? 0) == 0) checkpoint = Checkpoint(d.snap, 0);
+      standOn = null;
+      walkAmt = 0;
+    }
     if (!cancelled && d.candOk && d.candDyno != null) {
       _startDyno(d);
       return;
@@ -1219,6 +1362,7 @@ class Game {
       final hand = isHand[d.i];
       effects.burst(l.x, l.y + (hand ? 3 : 0), hand ? PartKind.chalk : PartKind.dust, hand ? 8 : 6);
       _play(hand ? _grabSound(holds[d.cand].t) : Sfx.foot, pan: panOf(l.x));
+      if (!hand) _maybeStand();
       _ui();
     } else {
       l.h = d.from.h;
@@ -1251,6 +1395,8 @@ class Game {
     final s = history.removeLast();
     limbs = s.limbs.map((l) => l.copy()).toList();
     c = s.c.copy();
+    standOn = s.stand;
+    _walkV = walkAmt = 0;
     holdTime = [0, 0];
     hangT = 0;
     _play(Sfx.foot);
@@ -1268,6 +1414,9 @@ class Game {
     if (drag != null) endDrag(true);
     _ptr = null;
     _pan = null;
+    _walkHold = null;
+    walkTo = null;
+    _walkKeys.clear();
     phase = Phase.paused;
     screen = Screen.pause;
     audio.muffle(true);
@@ -1284,6 +1433,17 @@ class Game {
 
   /// Keyboard: U undo, L look, Esc pause or back, Space or Enter to try again or go on,
   /// Space while falling to catch the easiest hold in reach.
+  /// -1 for a walk-left key (A, left arrow), 1 for walk right (D, right arrow), else 0.
+  static int _walkKey(LogicalKeyboardKey k) => k == LogicalKeyboardKey.keyA || k == LogicalKeyboardKey.arrowLeft
+      ? -1
+      : (k == LogicalKeyboardKey.keyD || k == LogicalKeyboardKey.arrowRight ? 1 : 0);
+
+  /// A key was let go (only walking cares).
+  bool keyUp(LogicalKeyboardKey k) {
+    final dir = _walkKey(k);
+    return dir != 0 && _walkKeys.remove(dir);
+  }
+
   bool key(LogicalKeyboardKey k, {bool ctrl = false}) {
     final f = fall;
     if (phase == Phase.falling && f != null && f.window && k == LogicalKeyboardKey.space) {
@@ -1292,6 +1452,11 @@ class Game {
       return true;
     }
     if (phase == Phase.climb) {
+      final dir = _walkKey(k);
+      if (dir != 0 && social) {
+        _walkKeys.add(dir);
+        return true;
+      }
       if (k == LogicalKeyboardKey.keyU || (k == LogicalKeyboardKey.keyZ && ctrl)) {
         undo();
         return true;
@@ -1359,6 +1524,10 @@ class Game {
     time += dt;
     if (dyno != null) {
       _stepDyno(dt);
+      return;
+    }
+    if (standOn != null && drag == null) {
+      _stepStand(dt);
       return;
     }
     final anc = anchors();
@@ -1685,6 +1854,8 @@ class Game {
     final cp = checkpoint!;
     limbs = cp.snap.limbs.map((l) => l.copy()).toList();
     c = cp.snap.c.copy();
+    standOn = cp.snap.stand;
+    _walkV = walkAmt = 0;
     cd = c.copy();
     endDraw = limbs.map((l) => Pt(l.x, l.y)).toList();
     grip = [100, 100];
@@ -1939,7 +2110,9 @@ class Game {
     _limbTargets(dt);
     // body lean: hands over feet
     final e = endDraw;
-    final tl = clampD(((e[2].x + e[3].x) - (e[0].x + e[1].x)) * 0.5 * 0.0035, -0.16, 0.16) +
+    final tl = standOn != null && drag == null
+        ? facing * 0.03 * walkAmt
+        : clampD(((e[2].x + e[3].x) - (e[0].x + e[1].x)) * 0.5 * 0.0035, -0.16, 0.16) +
         (phase == Phase.falling && !reducedMotion ? math.sin((fall?.t ?? 0) * 7 + 1) * 0.25 : 0);
     tilt += (tl - tilt) * math.min(1.0, dt * 8);
     // where the head looks
@@ -1954,7 +2127,9 @@ class Game {
       tgt = Pt(cd.x - 120, cd.y + 160);
     }
     final hx = cd.x, hy = cd.y + 38;
-    final lkX = tgt != null ? clampD((tgt.x - hx) * 0.045, -3, 3) : math.sin(clock * 0.35) * 1.2;
+    final lkX = tgt != null
+        ? clampD((tgt.x - hx) * 0.045, -3, 3)
+        : (standOn != null && walkAmt > 0.05 ? facing * 2.2 : math.sin(clock * 0.35) * 1.2);
     final lkUp = tgt != null ? clampD((tgt.y - hy) * 0.008, -0.6, 1) : 0.5;
     lookX += (lkX - lookX) * math.min(1.0, dt * 6);
     lookUp += (lkUp - lookUp) * math.min(1.0, dt * 6);
@@ -1965,6 +2140,10 @@ class Game {
   void _limbTargets(double dt) {
     if (limbs.length != 4) return;
     final ph = phase, bag = gear?.bag, r = route!;
+    final at = standOn;
+    final sp = at != null && ph == Phase.climb
+        ? standAt(climber, cd.x, holds[at].y, facing: facing, phase: walkPhase, walk: walkAmt)
+        : null;
     for (var i = 0; i < 4; i++) {
       final l = limbs[i], j = jointAt(i, cd), hand = isHand[i];
       double tx, ty;
@@ -1991,6 +2170,12 @@ class Game {
         (tx, ty) = _toward(i, j, dy.pt);
       } else if (d != null && d.i == i) {
         (tx, ty) = _toward(i, j, d.candOk ? d.candPt! : Pt(d.px, d.py));
+      } else if (sp != null) {
+        // standing: feet step along the hold, hands hang loose
+        tx = sp.ends[i].x;
+        ty = sp.ends[i].y;
+        snap = true;
+        free = !hand && ty > holds[standOn!].y + 0.5;
       } else if (l.h != null) {
         tx = l.x;
         ty = l.y;

@@ -17,7 +17,8 @@
 // bits packs: 0-1 left hand style (0 grip, 1 fist, 2 open), 2-3 right hand
 // style, 4-6 left hand hold kind (0 jug, 1 crimp, 2 sloper, 3 chip, 4 ledge,
 // 5 ground, 6 top), 7-9 right hand hold kind, 10 left foot free, 11 right
-// foot free, 12 falling, 13 topped out.
+// foot free, 12 falling, 13 topped out, 14 standing on a flat hold (the
+// others play the steps back from how the body moves), 15 facing left.
 const { io } = require('socket.io-client');
 
 const [code, countArg, urlArg] = process.argv.slice(2);
@@ -37,6 +38,8 @@ const TOPS = { first: 610, steps: 912, crimps: 1192 };
 // where the spawns are (lib/game/core.dart, laneWall): a lane is 360 wide,
 // every other lane is mirrored; [left, right] spawn in a lane and in a mirrored one
 const LANE_WIDTH = 360;
+// walking speed (cm/s) and the body's height when standing (lib/game/walk.dart)
+const WALK_SPEED = 55, STAND_Y = 107.5;
 const SPAWN_X = [[95, 267], [93, 265]];
 
 /// Where a player of [lane] and [side] (0 left, 1 right) starts.
@@ -54,6 +57,9 @@ class Climb {
   }
 
   reset() {
+    // first a short walk along the ground, like a player choosing where to start
+    this.walkLeft = 2 + Math.random() * 4;
+    this.walkDir = Math.random() < 0.5 ? -1 : 1;
     this.y = 100;
     this.fallV = null;
     this.limbs = [0, 1, 2, 3].map((i) => ({ ...this.ideal(i, 0), from: null, t: 1 }));
@@ -73,6 +79,11 @@ class Climb {
 
   update(dt, t) {
     if (this.topped) return;
+    if (this.walkLeft > 0) {
+      this.walkLeft -= dt;
+      this.x0 += this.walkDir * WALK_SPEED * dt;
+      return;
+    }
     if (this.fallV != null) {
       this.fallV -= 980 * dt;
       this.y = Math.max(100, this.y + this.fallV * dt);
@@ -113,6 +124,13 @@ class Climb {
   }
 
   state(t) {
+    if (this.walkLeft > 0) {
+      // standing, walking: the hands hang, the feet are on the ground
+      const x = this.x0, s = [Date.now(), this.climber, round(x), STAND_Y, 0, 0, 0.5];
+      s.push(round(x - 31), 80, round(x + 31), 80, round(x - 12), 0, round(x + 12), 0);
+      const bits = 2 | (2 << 2) | (5 << 4) | (5 << 7) | (1 << 14) | (this.walkDir < 0 ? 1 << 15 : 0);
+      return [...s, bits, 0, round(t)];
+    }
     if (this.topped) {
       const s = [Date.now(), this.climber, this.x0, round(this.y), 0, -1.2, 0.6];
       for (const l of this.limbs) s.push(round(l.x), round(l.y));
