@@ -100,6 +100,17 @@ LegGeo legGeo(int i, Pt h, Pt e0, bool free, double scale, [double kneeShake = 0
   return LegGeo(h, k, a, Pt(a.x + side * 3.5, a.y - 6.5), free);
 }
 
+/// The pose of climber [k] with the torso at [c] and the hands and feet at
+/// [hands] and [feet]. [kneeShake] moves each knee sideways (tired legs).
+Pose climberPose(Climber k, Pt c, double tilt, double br, double lookX, double lookUp, List<Pt> hands,
+    List<HandStyle> styles, List<HoldType> kinds, List<Pt> feet, List<bool> footFree,
+    [List<double> kneeShake = const [0, 0]]) {
+  final p = Pose(c, tilt, br, lookX, lookUp);
+  p.arms = [for (final i in [0, 1]) armGeo(i, p.shoulders[i], hands[i], styles[i], kinds[i], k.armScale)];
+  p.legs = [for (final i in [2, 3]) legGeo(i, p.hips[i - 2], feet[i - 2], footFree[i - 2], k.legScale, kneeShake[i - 2])];
+  return p;
+}
+
 /// Torso height above the feet when standing straight on a flat ledge.
 double standHeight(Climber k) => -jointOffset[2][1] + k.reach[2];
 

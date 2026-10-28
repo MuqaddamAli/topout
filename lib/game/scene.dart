@@ -12,6 +12,7 @@ import 'core.dart';
 import 'effects.dart';
 import 'game.dart';
 import 'palette.dart';
+import 'remote.dart';
 
 class ScenePainter extends CustomPainter {
   ScenePainter(this.g) : super(repaint: g.frameTick);
@@ -38,6 +39,12 @@ class ScenePainter extends CustomPainter {
   Float32List _xf = Float32List(256), _rects = Float32List(256);
   final List<int> _ledges = [];
   final Paint _atlasPaint = Paint()..filterQuality = FilterQuality.medium;
+
+  /// Other players' climbers are drawn see-through, each in a layer only as big as it.
+  final Paint _ghost = Paint()..color = const Color(0x9EFFFFFF);
+
+  /// Name tags of the other climbers, kept while the name stays the same.
+  final Map<String, (String, TextPainter)> _names = {};
 
   /// Turns whatever is drawn into the layer into a see-through black shadow.
   final Paint _shadowLayer = Paint()..colorFilter = const ColorFilter.mode(Color(0x3D000000), BlendMode.srcIn);
@@ -88,6 +95,7 @@ class ScenePainter extends CustomPainter {
       if (g.drag != null) _dragAids(canvas);
       _catchAids(canvas);
     }
+    final others = !menu && g.onlineClimb ? _remotes(canvas) : const <RemoteClimber>[];
     final pose = g.pose, gear = g.gear;
     if (pose != null && gear != null) {
       // The climber is recorded once and drawn twice: first as the cast
@@ -113,6 +121,7 @@ class ScenePainter extends CustomPainter {
     _parts(canvas);
     canvas.restore();
     _motes(canvas, r);
+    if (others.isNotEmpty || _names.isNotEmpty) _nameTags(canvas, others);
     _vignette(canvas, size);
     if (g.slipFlash > 0) _slipGlow(canvas, size);
     if (!menu) {
@@ -121,6 +130,45 @@ class ScenePainter extends CustomPainter {
       _catchLabel(canvas);
     }
     if (g.curtain > 0) _fill(canvas, Offset.zero & size, Pal.ink.withAlpha((g.curtain * g.curtain * 235).round()));
+  }
+
+  /// The other climbers near the view, behind yours and without a shadow.
+  /// Returns the ones drawn.
+  List<RemoteClimber> _remotes(Canvas canvas) {
+    final v = g.viewRange(), drawn = <RemoteClimber>[];
+    for (final o in g.remotes.all) {
+      final p = o.pose, gear = o.gear, look = o.look;
+      if (p == null || gear == null || look == null) continue;
+      // far outside the view: skip it (a climber is about 1.6 m tall)
+      if (p.c.x < v.x0 - 100 || p.c.x > v.x1 + 100 || p.c.y < v.y0 - 120 || p.c.y > v.y1 + 120) continue;
+      canvas.saveLayer(_bounds(p, gear), _ghost);
+      climber.draw(canvas, p, gear, look, lite: true);
+      canvas.restore();
+      drawn.add(o);
+    }
+    return drawn;
+  }
+
+  /// A name above each climber drawn, in screen space so it stays upright.
+  void _nameTags(Canvas canvas, List<RemoteClimber> drawn) {
+    _names.removeWhere((id, _) => !g.remotes.byId.containsKey(id));
+    for (final o in drawn) {
+      var e = _names[o.id];
+      if (e == null || e.$1 != o.name) {
+        e?.$2.dispose();
+        final tp = TextPainter(
+          text: TextSpan(text: o.name, style: TextStyle(fontFamily: 'Atkinson', fontSize: 13, fontWeight: FontWeight.w700, color: Pal.chalk)),
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+          ellipsis: '…',
+        )..layout(maxWidth: 140);
+        e = _names[o.id] = (o.name, tp);
+      }
+      final tp = e.$2, head = o.pose!.head, at = g.w2s(head.x, head.y + 20);
+      final box = Rect.fromCenter(center: at.translate(0, -tp.height / 2), width: tp.width + 14, height: tp.height + 6);
+      canvas.drawRRect(RRect.fromRectAndRadius(box, const Radius.circular(8)), _p..shader = null..color = rgba(13, 15, 21, 0.62));
+      tp.paint(canvas, Offset(box.left + 7, box.top + 3));
+    }
   }
 
   /// Everything the climber draws, with a margin for outlines and shoes.

@@ -45,7 +45,24 @@ class MenuScreen extends StatelessWidget {
               constraints: const BoxConstraints(maxWidth: 1040),
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 SizedBox(height: math.min(42 * vh, 380)),
-                Stagger(index: 0, step: 90, lift: 16, child: _Brand(width: size.width)),
+                Stagger(
+                  index: 0,
+                  step: 90,
+                  lift: 16,
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    _Brand(width: size.width),
+                    const SizedBox(height: 18),
+                    GameButton(
+                      label: 'Play online',
+                      icon: Icons.groups_rounded,
+                      minHeight: 50,
+                      onTap: () {
+                        game.audio.play(Sfx.tap);
+                        game.showOnline();
+                      },
+                    ),
+                  ]),
+                ),
                 const SizedBox(height: 22),
                 Stagger(
                   index: 1,
@@ -138,28 +155,6 @@ class _Brand extends StatelessWidget {
       const SizedBox(height: 8),
       Text('Climb one hand or foot at a time.', style: Txt.body(18, color: Pal.chalk.withAlpha(217), height: 1.4)),
     ]);
-  }
-}
-
-class _Panel extends StatelessWidget {
-  const _Panel({required this.title, required this.children});
-  final String title;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Pal.ink2,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Pal.line, width: 1.5),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title.toUpperCase(), style: Txt.display(20, spacing: 0.06)),
-        for (final c in children) ...[const SizedBox(height: 12), c],
-      ]),
-    );
   }
 }
 
@@ -256,7 +251,7 @@ class _ModePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Panel(title: 'Mode', children: [
+    return GamePanel(title: 'Mode', children: [
       Row(children: [
         for (final m in Mode.values) ...[
           if (m != Mode.values.first) const SizedBox(width: 6),
@@ -279,47 +274,14 @@ class _ModeChoice extends StatelessWidget {
   final Mode mode;
 
   @override
-  Widget build(BuildContext context) {
-    final on = game.mode == mode;
-    return Semantics(
-      inMutuallyExclusiveGroup: true,
-      checked: on,
-      label: mode.label,
-      button: true,
-      excludeSemantics: true,
-      child: PressScale(
-        child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        decoration: BoxDecoration(
-          color: on ? Pal.signal : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Material(
-        color: Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: on ? BorderSide.none : BorderSide(color: Pal.line, width: 1.5),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () {
-            game.audio.play(Sfx.tap);
-            game.setMode(mode);
-          },
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 46),
-            alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(mode.label,
-                textAlign: TextAlign.center,
-                style: Txt.body(14, weight: FontWeight.w700, color: on ? Pal.signalInk : Pal.chalk, height: 1.1)),
-          ),
-        ),
-      ),
-      ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => GameChoice(
+        label: mode.label,
+        on: game.mode == mode,
+        onTap: () {
+          game.audio.play(Sfx.tap);
+          game.setMode(mode);
+        },
+      );
 }
 
 class _HowToPanel extends StatelessWidget {
@@ -331,7 +293,7 @@ class _HowToPanel extends StatelessWidget {
     final desktop = defaultTargetPlatform == TargetPlatform.macOS ||
         defaultTargetPlatform == TargetPlatform.windows ||
         defaultTargetPlatform == TargetPlatform.linux;
-    return _Panel(title: 'How to play', children: [
+    return GamePanel(title: 'How to play', children: [
       Row(children: [
         Icon(Icons.touch_app_outlined, size: 28, color: Pal.chalk),
         const SizedBox(width: 12),
@@ -371,7 +333,7 @@ class _LogPanel extends StatelessWidget {
       ('Falls', '${game.records.falls}', caught > 0 ? '$caught caught' : null),
       ('Time', time, null),
     ];
-    return _Panel(title: 'Your climbs', children: [
+    return GamePanel(title: 'Your climbs', children: [
       for (var row = 0; row < 2; row++)
         Row(children: [
           for (var k = 0; k < 2; k++) ...[

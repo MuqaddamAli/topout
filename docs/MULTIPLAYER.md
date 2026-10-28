@@ -1,0 +1,183 @@
+# Online play
+
+Up to 8 players, each on their own device, climb the same wall at the same time and see each other live. Each player controls only their own climber; the others are drawn see-through with their names, and nobody can touch anybody.
+
+The game talks to a small room server in `server/` (Node.js and Socket.io). This page shows how to try it on one PC, then with phones on the same Wi-Fi, and how to put the server online on Render's free plan.
+
+The commands are for PowerShell on Windows. They work the same in other terminals.
+
+## How it works
+
+- **Joining.** One player taps **Play online**, enters a name, picks a route and a mode and taps **Create**. The game shows a 4-letter code (never I, L or O) with a **Copy** button. Others tap **Play online**, enter a name and the code, and join the lobby.
+- **The lobby.** It shows everyone and their climber ("5/8 players"), and everyone can pick a climber. Two players may pick the same one.
+- **Starting.** Only the creator has **Start**. When they tap it, every lobby counts down from 3 and everyone starts the same route in the same mode. On the Daily Wall it is the wall of the creator's day, so players in other time zones get the same wall.
+- **Errors.** A 9th player gets "Room is full (8/8)", a wrong code gets "Room not found", and a code for a room that already started gets "This climb has already started".
+- **Leaving.** Anyone can leave at any time. If the creator leaves, the next player becomes the creator. A player whose connection drops keeps their place for 20 seconds and rejoins quietly.
+- **While climbing.** Each game sends its climber 10 times a second (a small array of about 100 bytes). Your own climber never waits for the network. Others are shown 100 ms in the past and blended between states, so they move smoothly.
+- **What you see.** A list in the corner shows everyone's height, highest first. Messages say who joined, left, fell or topped out. At the top, the card shows the finishing order and times.
+- **What stays your own.** Your camera, grip, falls, undo and checkpoints are yours alone, and pausing only pauses you.
+
+| File | What it does |
+| --- | --- |
+| `server/index.js` | The server: `GET /health`, Socket.io events, which sites may connect (CORS) |
+| `server/rooms.js` | Rooms and players, the error messages, the creator hand-over, the grace period |
+| `server/bots.js` | Fake players for testing, and the climber state format |
+| `lib/game/online.dart` | The connection, the room and the lobby state in the game |
+| `lib/game/remote.dart` | The climber state (encode and decode), playing others back smoothly |
+| `lib/ui/online.dart` | The Play online screen and the lobby |
+
+## a) Test on your PC
+
+You need Node.js 20 or newer (`node --version`) and Flutter.
+
+**1. Start the server** (terminal 1):
+
+```powershell
+cd server
+npm install        # the first time only
+npm start
+```
+
+It prints `Topout server on port 3000`. Open http://localhost:3000/health in a browser: it says `ok`.
+
+**2. Run the game in Chrome** (terminal 2, in the project folder):
+
+```powershell
+flutter run -d chrome --web-port 8080
+```
+
+The game connects to `http://localhost:3000` by default.
+
+**3. Open more players.** Open http://localhost:8080 in more Chrome windows; each window is one player. Put two side by side, make a room in one (**Play online**, **Create**) and join it from the other with the code.
+
+**4. Fill the room with bots** (terminal 3), using your room code:
+
+```powershell
+cd server
+npm run bots -- ABCD 6
+```
+
+That makes 6 fake players. With your 2 windows the room is full (8/8), and a third window gets "Room is full (8/8)". Bots wait for the creator's Start, then climb up and down and sometimes fall. On First Wall, Granite Steps and Crimp Ladder they stop on the top, so you can see the top-out messages and the finishing order; on the Daily Wall they keep going. Press Ctrl+C to remove them.
+
+**5. Measure the speed of a full room.** Frame times are only real in a release build:
+
+```powershell
+flutter run -d chrome --release --web-port 8080
+```
+
+Open http://localhost:8080/?perf=online and press F12 for the console. It makes a room and prints the bot command (`npm run bots -- XXXX 7`). Run it in `server`; when 8 climbers are in, the climb starts by itself. After about 18 seconds it switches to Look, so everyone is on screen. The `perf fps … build … raster …` lines come every 2 seconds.
+
+**6. Run the tests:**
+
+```powershell
+cd server
+npm test           # the server: rooms, errors, creator leaving, reconnecting
+cd ..
+flutter test       # the game, online screens and climbing together included
+```
+
+## b) Test with phones on the same Wi-Fi
+
+The phones and the PC must be on the same Wi-Fi network.
+
+**1. Find your PC's address on the Wi-Fi:**
+
+```powershell
+ipconfig
+```
+
+Under **Wireless LAN adapter Wi-Fi**, read the **IPv4 Address**, for example `192.168.18.23`. Use your own address in place of `192.168.18.23` below.
+
+**2. Let the phones in through the Windows firewall.** The phones connect to two ports on your PC: 3000 (the server) and 8080 (the game).
+
+- Your Wi-Fi must be a **private** network: Settings > Network & internet > Wi-Fi > your network > Network profile type > **Private**.
+- The first time Node.js and Dart listen, Windows may ask whether to allow them. Tick **Private networks** and choose **Allow**.
+- If no prompt comes, or the phones still cannot connect, open PowerShell **as administrator** and allow both ports:
+
+  ```powershell
+  New-NetFirewallRule -DisplayName "Topout LAN test" -Direction Inbound -Protocol TCP -LocalPort 3000,8080 -Action Allow -Profile Private
+  ```
+
+  To remove the rule later: `Remove-NetFirewallRule -DisplayName "Topout LAN test"`.
+
+**3. Start the server** as in a) (`cd server`, `npm start`). On a phone, open `http://192.168.18.23:3000/health`: it should say `ok`. If it does not load, it is the firewall or the network (see step 2).
+
+**4. Run the game for the network**, pointed at your PC's address (in the project folder):
+
+```powershell
+flutter run -d web-server --release --web-hostname 0.0.0.0 --web-port 8080 --dart-define=MP_SERVER=http://192.168.18.23:3000
+```
+
+**5. Open the game on the phones** at `http://192.168.18.23:8080`, and on the PC at the same address (not `localhost`). Make a room on one device and join from the others.
+
+On the phones, **Copy** may do nothing: browsers only allow copying on `https` pages or on `localhost`. Read the code out instead. This works normally on the real site.
+
+## c) Put the server online on Render (free)
+
+Do this once everything works on your PC. The game's web version stays on Vercel; only the room server goes to Render.
+
+**1. Make the web service.**
+
+1. Sign in at https://render.com with GitHub.
+2. Click **New** > **Web Service** and pick the `topout` repository.
+3. Fill in:
+
+   | Setting | Value |
+   | --- | --- |
+   | Name | `topout-server` (the address becomes `https://topout-server.onrender.com`; Render adds a few letters if the name is taken) |
+   | Branch | the branch with the server: `feature/online-multiplayer` now, `main` after it is merged |
+   | Region | **Singapore** (the closest to Pakistan), or **Frankfurt** |
+   | Root Directory | `server` |
+   | Runtime | Node |
+   | Build Command | `npm install` |
+   | Start Command | `npm start` |
+   | Instance Type | **Free** |
+
+   The region cannot be changed later. A different region means a new service.
+
+4. Under **Advanced**, set **Health Check Path** to `/health`.
+5. Click **Create Web Service**.
+
+Render sets `PORT` itself, and the server listens on it.
+
+**2. Check it.** When the deploy says **Live**, open `https://topout-server.onrender.com/health` (your service's address). It says `ok`.
+
+**3. Know the free plan.**
+
+- The free server goes to sleep after about 15 minutes with nobody connected. The first player after that waits up to a minute while it wakes: the game shows "Connecting to server…" and that the server may be waking up. After a minute it shows **Retry**.
+- Rooms live in the server's memory. A redeploy or a restart ends all rooms: players are told they lost their place in the room, and someone makes a new one.
+
+**4. Point the Vercel site at it.**
+
+1. In Vercel, open the project and go to **Settings** > **Environment Variables**.
+2. Add **Key** `MP_SERVER` with **Value** `https://topout-server.onrender.com` (your Render address, with no `/` at the end). Tick **Production**, and **Preview** to test branch builds before merging.
+3. **Save**.
+
+The address is built into the game, so it only takes effect in a new build. Go to **Deployments**, open the menu (**…**) of the latest deployment and click **Redeploy**. The build log says `Online play uses the server at https://…`; without the variable it says `MP_SERVER is not set`.
+
+**5. Try it.** Open the Vercel site on two devices, make a room on one and join from the other.
+
+The server lets in pages from any `https://….vercel.app` address, `localhost` and local network addresses (`192.168.x.x`, `10.x.x.x`). If the site gets its own domain, add it in Render under **Environment** as `ALLOWED_ORIGINS`, for example `https://topout.example.com` (several separated by commas). Then the server restarts by itself.
+
+## Going live: the order
+
+Vercel builds the live site from `main`, so merging this work into `main` puts Play online on the live site. Do it in this order, so it works from the first build:
+
+1. Make the Render service (c, steps 1 and 2). Until the merge, it uses the branch `feature/online-multiplayer`.
+2. Set `MP_SERVER` in Vercel (c, step 4).
+3. Merge into `main`. Vercel builds the live site with the server address.
+4. In Render, switch the service's branch to `main` (Settings > Build & Deploy > Branch).
+
+Single-player works the same either way. If `MP_SERVER` is missing, only Play online fails ("Can't reach the server").
+
+## When something does not work
+
+- **"Can't reach the server."**
+  - Is the server running? Does `/health` load in the same browser?
+  - The game shows the server address it tries under the message.
+  - On the Vercel site, check that `MP_SERVER` is set and that you redeployed.
+- **The other phones cannot connect, but the PC can.**
+  - It is the firewall or the Wi-Fi profile (see b, step 2).
+  - Use the PC's IP address everywhere, never `localhost`: on a phone, `localhost` is the phone itself.
+- **"Room not found" for a code that worked before.** The server restarted (a redeploy, or Ctrl+C), and rooms do not survive that. Make a new room.
+- **The browser console shows a CORS error.** The page's address is not on the server's list. Add it with `ALLOWED_ORIGINS` (see c).

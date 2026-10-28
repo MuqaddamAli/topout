@@ -13,6 +13,7 @@ This is the Flutter version of the Topout web prototype (kept in `web_prototype/
 - Jumps: a hand can jump to a hold that is a little too far, if a foot is on a hold. After the catch you must grab a second hold fast.
 - Catch a fall: when you lose your hold, time slows for a moment and every hold within reach on the way down glows. Tap one (or press Space) and your hand snatches it, then the body swings under it and you have a second or two to get a foot or the other hand on. The longer you fell, the more grip the catch costs: green holds leave you plenty, yellow ones little, and red ones are too much for a tired hand (the fingers slip off). Each fall gets one chance, so a fall out of the hang after a catch is final. The moment lasts longest in Relaxed and is shortest in No saves.
 - Three modes: Relaxed, Normal, and No saves.
+- Online play: up to 8 players, each on their own device, climb the same wall at the same time and see each other live (see Online play).
 - After a fall, a card explains why you fell and shows your hand strength before the fall.
 - Records: best time per route, highest point, today's best on the Daily Wall, and a log of tops, metres, falls (and how many you caught) and time.
 - A climber drawn in code (helmet, ponytail, harness, quickdraws and chalk bag that swing), sunset clouds, mountains, birds, lamps and snow.
@@ -50,6 +51,12 @@ The `android`, `ios` and `web` folders are included. If you ever need to rebuild
 
 The game is made for phones held upright (portrait). It also runs on the web and on desktop. On a desktop you can use the keyboard: **U** undo, **L** look, **Space** catch a hold while falling, **Esc** pause or back, **Enter** try again or go on.
 
+## Online play
+
+Tap **Play online**, make a room and send its 4-letter code to friends; up to 8 players climb the same route together, each on their own device. The game talks to a small Node.js server in `server/`. The game reads the server's address at build time from `--dart-define=MP_SERVER=...` (default `http://localhost:3000`); on Vercel it comes from the `MP_SERVER` environment variable.
+
+[docs/MULTIPLAYER.md](docs/MULTIPLAYER.md) has the exact steps: trying it on one PC with bots, with phones on the same Wi-Fi, and putting the server on Render's free plan.
+
 ## Tests
 
 ```bash
@@ -60,6 +67,8 @@ flutter test
 - `test/balance_test.dart` climbs every route with every climber (see Climbers).
 - `test/game_flow_test.dart` plays a full climb with real touch drags (moves, undo, look, a fall, the top, the Daily Wall, pause), catches falls (a tap, the Space key, a hang that runs out, a hand too tired to hold on), picks each climber and climbs with them, and saves screenshots to `build/screens/`.
 - `test/widget_test.dart` is a quick start-up check.
+- `test/online_test.dart` tries the Play online screen and the lobby against a fake server, and `test/remote_test.dart` the climber states sent over the network, playing other climbers back smoothly, the heights list, the messages and a whole online climb.
+- `cd server` and `npm test` checks the room server: making and joining rooms, the errors, the creator leaving and reconnecting.
 
 Every push runs `.github/workflows/build.yml` on GitHub Actions. It analyzes the code, runs the tests, builds the web version and an Android APK, and uploads the APK (`topout-apk`), the web build (`topout-web`) and the test screenshots (`screenshots`) as downloads at the bottom of the run page, under **Actions**.
 
@@ -87,7 +96,11 @@ To build the same thing on your own machine: `bash tool/vercel_build.sh` (set `F
 | `lib/game/audio.dart` | Music, wind and sound effects: when and how loud, plus phone buzzes |
 | `lib/game/audio_engine*.dart` | Plays the files: one Web Audio graph in browsers, `audioplayers` on phones and desktops |
 | `lib/game/store.dart` | Saves settings and records (`shared_preferences`) |
-| `lib/ui/` | Flutter widgets: title screen and climber picker, HUD, fall, top and pause cards |
+| `lib/game/online.dart` | Online play: the connection to the room server, the room and the lobby |
+| `lib/game/remote.dart` | Other players' climbers: the state sent over the network, played back smoothly |
+| `lib/ui/` | Flutter widgets: title screen and climber picker, Play online and the lobby, HUD, fall, top and pause cards |
+| `server/` | The room server for online play (Node.js and Socket.io), with bots for testing |
+| `docs/MULTIPLAYER.md` | How to test online play and put the server online |
 | `assets/audio/` | Music and sounds (MP3) |
 | `assets/fonts/` | Big Shoulders Display, Atkinson Hyperlegible, IBM Plex Mono (SIL Open Font License, see `assets/fonts/licenses`) |
 | `web_prototype/` | The original web version (one HTML file) and its rules (`core.js`) |
@@ -104,7 +117,9 @@ On the web every layer is drawn again each frame (there is no raster cache), so 
 - The HUD is not rebuilt every frame. Each number on it (height, time, grip) rebuilds only when the shown value changes (`FrameSelect` in `lib/ui/hud.dart`).
 - On the web, the sound effects are decoded once and played from memory through a single `AudioContext`.
 
-To measure, open the web build with `?perf` (frame times in the browser console every 2 s) or `?perf=steps` to also start that route (`first`, `steps`, `crimps`, `daily`).
+- Other players' climbers are drawn the cheap way (flat colours, no cel bands, no small gear), and the ones far outside the view are skipped.
+
+To measure, open the web build with `?perf` (frame times in the browser console every 2 s) or `?perf=steps` to also start that route (`first`, `steps`, `crimps`, `daily`). `?perf=online` makes a room and prints the command that fills it with bots; it starts by itself when 8 climbers are in (see docs/MULTIPLAYER.md).
 
 ### Units
 

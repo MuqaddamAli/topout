@@ -10,6 +10,7 @@ import '../game/scene.dart';
 import 'cards.dart';
 import 'hud.dart';
 import 'menu.dart';
+import 'online.dart';
 
 class TopoutApp extends StatelessWidget {
   const TopoutApp({super.key, required this.game});
@@ -79,7 +80,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     } else if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
       game.pause();
       game.audio.suspend();
-    } else if (state == AppLifecycleState.inactive) {
+    } else if (state == AppLifecycleState.inactive && !game.onlineClimb) {
+      // the window lost focus; online the others keep climbing, so you do too
       game.pause();
     }
   }
@@ -149,14 +151,19 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       Screen.pause => PauseCard(game: game),
       _ => null,
     };
-    final menu = screen == Screen.menu;
+    final Widget base = switch (screen) {
+      Screen.menu => MenuScreen(game: game),
+      Screen.online => OnlineScreen(game: game),
+      _ => Hud(game: game),
+    };
+    final baseKey = screen == Screen.menu || screen == Screen.online ? screen : Screen.hud;
     return Stack(children: [
       Positioned.fill(
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 320),
           switchInCurve: Curves.easeOut,
           switchOutCurve: Curves.easeIn,
-          child: KeyedSubtree(key: ValueKey(menu), child: menu ? MenuScreen(game: game) : Hud(game: game)),
+          child: KeyedSubtree(key: ValueKey(baseKey), child: base),
         ),
       ),
       Positioned.fill(

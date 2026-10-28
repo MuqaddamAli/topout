@@ -1,0 +1,19 @@
+{
+  "name": "topout-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Rooms and live climber states for Topout's online play.",
+  "main": "index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "bots": "node bots.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1"
+  }
+}
