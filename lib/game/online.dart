@@ -104,12 +104,16 @@ class SocketLink implements NetLink {
 }
 
 class RoomPlayer {
-  RoomPlayer({required this.id, required this.name, required this.climber, required this.connected, this.lane, this.side});
+  RoomPlayer(
+      {required this.id, required this.name, required this.climber, required this.connected, this.lane, this.side, this.finish});
   final String id, name, climber;
   final bool connected;
 
   /// From the start: the lane (0 is the first) and the side in it (0 left, 1 right).
   final int? lane, side;
+
+  /// Seconds from the start to this player's top-out, this round.
+  final double? finish;
 
   factory RoomPlayer.fromJson(Map m) => RoomPlayer(
         id: '${m['id']}',
@@ -118,6 +122,7 @@ class RoomPlayer {
         connected: m['connected'] != false,
         lane: (m['lane'] as num?)?.toInt(),
         side: (m['side'] as num?)?.toInt(),
+        finish: (m['finish'] as num?)?.toDouble(),
       );
 }
 
@@ -133,9 +138,16 @@ class RoomView {
     required this.max,
     required this.players,
     this.lanes,
+    this.ended = false,
+    this.round = 0,
   });
   final String code, route, mode, dateKey, host;
   final bool started;
+
+  /// The climb is over (everyone topped out, or the creator ended it): the
+  /// results show. [round] counts the climbs (Play again starts the next).
+  final bool ended;
+  final int round;
   final int max;
 
   /// From the start: how many lanes the wall has. It stays so when someone leaves.
@@ -151,6 +163,8 @@ class RoomView {
         started: m['started'] == true,
         max: (m['max'] as num?)?.toInt() ?? 8,
         lanes: (m['lanes'] as num?)?.toInt(),
+        ended: m['ended'] == true,
+        round: (m['round'] as num?)?.toInt() ?? 0,
         players: [for (final p in (m['players'] as List? ?? const [])) RoomPlayer.fromJson(p as Map)],
       );
 
@@ -208,6 +222,9 @@ class Online extends ChangeNotifier {
   int? startsInMs;
   int starts = 0;
 
+  /// Which climb of the room the last start was for (1, then 2 after Play again...).
+  int startedRound = 0;
+
   /// Called with a player id and their climber state.
   void Function(String id, Object? state)? onState;
 
@@ -227,7 +244,7 @@ class Online extends ChangeNotifier {
       if (d is List && d.length == 2 && d[0] is String) onState?.call(d[0] as String, d[1]);
     });
     link.listen('started', (d) {
-      _started(d is Map ? d['startsIn'] : null);
+      _started(d is Map ? d['startsIn'] : null, d is Map ? d['round'] : null);
       notifyListeners();
     });
     link.open(onUp: _up, onDown: _down);
@@ -284,8 +301,9 @@ class Online extends ChangeNotifier {
     connect();
   }
 
-  void _started(Object? startsIn) {
+  void _started(Object? startsIn, [Object? round]) {
     final ms = startsIn is num ? startsIn.toInt() : 0;
+    startedRound = round is num ? round.toInt() : (room?.round ?? 0);
     startsAt = DateTime.now().add(Duration(milliseconds: ms));
     startsInMs = ms;
     starts++;
@@ -349,6 +367,28 @@ class Online extends ChangeNotifier {
     busy = true;
     notifyListeners();
     final r = await link.ask('start');
+    busy = false;
+    final e = r is Map ? r['error'] : null;
+    if (e is String) error = e;
+    notifyListeners();
+  }
+
+  /// Tells the room you reached the top, [secs] after the start.
+  void topped(double secs) {
+    if (room != null && room!.started) _link?.emit('topped', secs);
+  }
+
+  /// The creator ends the climb for everyone (the results show), or after
+  /// the results starts the next climb.
+  Future<void> endClimb() => _hostAsk('end');
+  Future<void> again() => _hostAsk('again');
+
+  Future<void> _hostAsk(String event) async {
+    final link = _link;
+    if (link == null || !isHost || busy) return;
+    busy = true;
+    notifyListeners();
+    final r = await link.ask(event);
     busy = false;
     final e = r is Map ? r['error'] : null;
     if (e is String) error = e;

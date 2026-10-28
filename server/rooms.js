@@ -19,6 +19,7 @@ const Err = {
   started: 'This climb has already started',
   noName: 'Enter a name',
   notHost: 'Only the creator can start',
+  notEnded: 'The climb is still on',
   bad: 'Something went wrong. Try again.',
 };
 
@@ -62,6 +63,8 @@ class Rooms {
       // set at the start: the lane (0 is the first) and the side in it (0 left, 1 right)
       lane: null,
       side: null,
+      // seconds from the start to this player's top-out, this round
+      finish: null,
       code: room.code,
       timer: null,
     };
@@ -76,7 +79,8 @@ class Rooms {
     if (!ROUTES.includes(route) || !MODES.includes(mode)) return { error: Err.bad };
     // the creator's day decides the Daily Wall for everyone in the room
     if (typeof dateKey !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return { error: Err.bad };
-    const room = { code: this.newCode(), route, mode, dateKey, host: null, started: false, players: new Map() };
+    // round: how many climbs have started in this room (Play again starts the next one)
+    const room = { code: this.newCode(), route, mode, dateKey, host: null, started: false, ended: false, round: 0, players: new Map() };
     this.rooms.set(room.code, room);
     const player = this._player(room, name, climber);
     room.host = player.id;
@@ -126,7 +130,15 @@ class Rooms {
     if (!room) return { error: Err.notFound };
     if (room.host !== player.id) return { error: Err.notHost };
     if (room.started) return { error: Err.started };
+    this._begin(room);
+    return { room };
+  }
+
+  /// A new climb in [room]: the countdown, fresh results, and the lanes.
+  _begin(room) {
     room.started = true;
+    room.ended = false;
+    room.round++;
     room.startAt = Date.now() + this.countdownMs;
     // in the order they joined: the first gets lane 1 left, the next lane 1
     // right, then lane 2 left, and so on. The wall keeps this many lanes
@@ -136,8 +148,48 @@ class Rooms {
     for (const p of room.players.values()) {
       p.lane = Math.floor(k / 2);
       p.side = k % 2;
+      p.finish = null;
       k++;
     }
+  }
+
+  /// [player] reached the top [secs] seconds after the start. Only the first
+  /// top-out of a round counts. When everyone is up, the climb ends.
+  /// Returns the room if anything changed.
+  topped(player, secs) {
+    const room = this.roomOf(player);
+    if (!room || !room.started || room.ended || player.finish != null) return null;
+    if (typeof secs !== 'number' || !Number.isFinite(secs) || secs < 0 || secs > 24 * 3600) return null;
+    player.finish = Math.round(secs * 10) / 10;
+    this._endIfAllUp(room);
+    return room;
+  }
+
+  _endIfAllUp(room) {
+    if (room.started && !room.ended && room.players.size > 0 && [...room.players.values()].every((p) => p.finish != null)) {
+      room.ended = true;
+    }
+  }
+
+  /// The creator ends the climb for everyone: the results show.
+  /// Returns { room } or { error }.
+  end(player) {
+    const room = this.roomOf(player);
+    if (!room) return { error: Err.notFound };
+    if (room.host !== player.id) return { error: Err.notHost };
+    if (!room.started || room.ended) return { error: Err.bad };
+    room.ended = true;
+    return { room };
+  }
+
+  /// The creator starts the room's next climb with the same players, after
+  /// the results. Returns { room } or { error }.
+  again(player) {
+    const room = this.roomOf(player);
+    if (!room) return { error: Err.notFound };
+    if (room.host !== player.id) return { error: Err.notHost };
+    if (!room.ended) return { error: Err.notEnded };
+    this._begin(room);
     return { room };
   }
 
@@ -153,6 +205,8 @@ class Rooms {
     }
     // the next player (in the order they joined) becomes the host
     if (room.host === player.id) room.host = room.players.keys().next().value;
+    // the last one still climbing left: everyone who stayed is up
+    this._endIfAllUp(room);
     return room;
   }
 
@@ -177,6 +231,8 @@ class Rooms {
       dateKey: room.dateKey,
       host: room.host,
       started: room.started,
+      ended: room.ended,
+      round: room.round,
       lanes: room.lanes ?? null,
       max: MAX_PLAYERS,
       players: [...room.players.values()].map((p) => ({
@@ -186,6 +242,7 @@ class Rooms {
         connected: p.connected,
         lane: p.lane,
         side: p.side,
+        finish: p.finish,
       })),
     };
   }

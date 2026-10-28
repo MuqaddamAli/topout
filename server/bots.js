@@ -4,9 +4,11 @@
 //
 //   npm run bots -- ABCD 7                          # 7 bots into room ABCD
 //   npm run bots -- ABCD 7 http://192.168.1.5:3000  # another server
+//   npm run bots -- ABCD 7 --top                    # straight up, no falls
 //
-// On a route with a top they stop there and stand, so the top-out messages
-// and the finishing order can be tried; on the Daily Wall they keep going.
+// On a route with a top they tell the room their time there and walk to
+// and fro on the top, so the top-out messages and the results can be tried;
+// on the Daily Wall they keep going. After Play again they climb again.
 //
 // A climber state is one array (the server passes it on without reading it):
 //   [t, climber, cx, cy, tilt, lookX, lookUp,
@@ -21,11 +23,14 @@
 // others play the steps back from how the body moves), 15 facing left.
 const { io } = require('socket.io-client');
 
-const [code, countArg, urlArg] = process.argv.slice(2);
+const args = process.argv.slice(2);
+// --top: climb straight up without falling, so the room reaches its results fast
+const straightUp = args.includes('--top');
+const [code, countArg, urlArg] = args.filter((a) => !a.startsWith('--'));
 const url = urlArg || process.env.MP_SERVER || 'http://localhost:3000';
 const count = Math.max(1, Math.min(7, Number(countArg) || 1));
 if (!code) {
-  console.log('Usage: npm run bots -- ROOMCODE [count] [server url]');
+  console.log('Usage: npm run bots -- ROOMCODE [count] [server url] [--top]');
   process.exit(1);
 }
 
@@ -49,7 +54,7 @@ const spawnX = (lane, side) => lane * LANE_WIDTH + SPAWN_X[lane % 2][side];
 class Climb {
   constructor(n) {
     this.x0 = spawnX(0, n % 2); // until the start says which lane
-    this.speed = 12 + Math.random() * 10; // cm per second
+    this.speed = straightUp ? 30 + Math.random() * 15 : 12 + Math.random() * 10; // cm per second
     this.climber = CLIMBERS[n % CLIMBERS.length];
     this.top = null; // set from the room's route
     this.topped = false;
@@ -78,7 +83,12 @@ class Climb {
   }
 
   update(dt, t) {
-    if (this.topped) return;
+    if (this.topped) {
+      // to and fro, up to a metre either way
+      this.x0 += this.walkDir * WALK_SPEED * dt;
+      if (Math.abs(this.x0 - this.walkHome) > 100) this.walkDir = -Math.sign(this.x0 - this.walkHome);
+      return;
+    }
     if (this.walkLeft > 0) {
       this.walkLeft -= dt;
       this.x0 += this.walkDir * WALK_SPEED * dt;
@@ -94,13 +104,11 @@ class Climb {
     }
     this.y += this.speed * dt;
     if (this.top != null && this.y + 62 >= this.top) {
-      // stand on the top, fists on the hips
+      // on the top: the time goes to the room, then a stroll along the top
       this.topped = true;
-      this.y = this.top + 105;
-      this.limbs = [0, 1, 2, 3].map((i) => {
-        const x = this.x0 + SIDE[i] * (i < 2 ? 21 : 13);
-        return { x, y: i < 2 ? this.y - 23 : this.top, from: null, t: 1 };
-      });
+      this.toppedAt = t;
+      this.walkHome = this.x0;
+      this.onTop?.(t);
       return;
     }
     // every limb moves in turn, a little ahead of the body
@@ -110,7 +118,7 @@ class Climb {
       Object.assign(l, this.ideal(i, 30, t), { from: { x: l.x, y: l.y }, t: 0 });
     }
     for (const l of this.limbs) l.t = Math.min(1, l.t + dt / 0.35);
-    if ((this.top == null && this.y > 2200) || Math.random() < dt / 45) {
+    if ((this.top == null && this.y > 2200) || (!straightUp && Math.random() < dt / 45)) {
       this.fallV = 0;
       this.fallT = 0;
     }
@@ -124,17 +132,13 @@ class Climb {
   }
 
   state(t) {
-    if (this.walkLeft > 0) {
-      // standing, walking: the hands hang, the feet are on the ground
-      const x = this.x0, s = [Date.now(), this.climber, round(x), STAND_Y, 0, 0, 0.5];
-      s.push(round(x - 31), 80, round(x + 31), 80, round(x - 12), 0, round(x + 12), 0);
-      const bits = 2 | (2 << 2) | (5 << 4) | (5 << 7) | (1 << 14) | (this.walkDir < 0 ? 1 << 15 : 0);
-      return [...s, bits, 0, round(t)];
-    }
-    if (this.topped) {
-      const s = [Date.now(), this.climber, this.x0, round(this.y), 0, -1.2, 0.6];
-      for (const l of this.limbs) s.push(round(l.x), round(l.y));
-      return [...s, 1 | (1 << 2) | (1 << 13), round((this.y - 100) / 100), round(t)];
+    if (this.walkLeft > 0 || this.topped) {
+      // standing, walking: the hands hang, the feet are on the ground or the top
+      const x = this.x0, y = this.topped ? this.top : 0, s = [Date.now(), this.climber, round(x), y + STAND_Y, 0, 0, 0.5];
+      s.push(round(x - 31), y + 80, round(x + 31), y + 80, round(x - 12), y, round(x + 12), y);
+      let bits = 2 | (2 << 2) | (5 << 4) | (5 << 7) | (1 << 14) | (this.walkDir < 0 ? 1 << 15 : 0);
+      if (this.topped) bits |= 1 << 13;
+      return [...s, bits, round(y / 100), round(this.topped ? this.toppedAt : t)];
     }
     const falling = this.fallV != null;
     const moving = (i) => falling || (this.limbs[i].t < 1 && this.limbs[i].from);
@@ -160,6 +164,10 @@ function bot(n) {
   let timer = null;
   const name = `Bot ${n + 1}`;
   let you = null;
+  climb.onTop = (secs) => {
+    console.log(`${name}: topped out after ${Math.round(secs)} s`);
+    socket.emit('topped', secs);
+  };
 
   const go = (startsIn) =>
     setTimeout(() => {
@@ -193,8 +201,12 @@ function bot(n) {
     climb.reset();
     console.log(`${name}: lane ${me.lane + 1} ${me.side === 0 ? 'left' : 'right'} of ${room.lanes}`);
   });
-  socket.on('started', ({ startsIn }) => {
-    console.log(`${name}: climbing`);
+  socket.on('started', ({ startsIn, round }) => {
+    // a new climb (the first, or after Play again): from the ground again
+    clearInterval(timer);
+    timer = null;
+    climb.topped = false;
+    console.log(`${name}: climbing${round > 1 ? ` (climb ${round})` : ''}`);
     go(startsIn);
   });
   socket.on('connect_error', (e) => console.log(`${name}: cannot reach ${url} (${e.message})`));

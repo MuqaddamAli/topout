@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../game/audio.dart';
 import '../game/game.dart';
 import '../game/palette.dart';
+import 'hud.dart' show FrameSelect;
 import 'widgets.dart';
 
 /// Dark screen behind a card, with the card in the middle. The card rises
@@ -245,10 +246,12 @@ class TopCard extends StatelessWidget {
 }
 
 /// Online: who reached the top in what order and time, then who is still
-/// climbing and how high. It keeps up while the card is open.
+/// climbing and how high. It keeps up while the card is open. [over]: the
+/// room's climb has ended, so the others did not finish.
 class _FinishOrder extends StatelessWidget {
-  const _FinishOrder({required this.game});
+  const _FinishOrder({required this.game, this.over = false});
   final Game game;
+  final bool over;
 
   @override
   Widget build(BuildContext context) {
@@ -282,10 +285,76 @@ class _FinishOrder extends StatelessWidget {
                 if (s.finish case final f?)
                   Text(fmtTime(f), style: Txt.mono(15, color: Pal.good))
                 else
-                  Text('climbing · ${s.metres.toStringAsFixed(1)} m', style: Txt.body(13, color: Pal.chalkDim)),
+                  Text('${over ? 'did not finish' : 'climbing'} · ${s.metres.toStringAsFixed(1)} m',
+                      style: Txt.body(13, color: Pal.chalkDim)),
               ]),
             ),
         ]);
+      },
+    );
+  }
+}
+
+/// Online: the room's results once its climb is over (everyone topped out,
+/// or the creator ended it). The creator can play again: the same room and
+/// players, a new start. Everyone can leave.
+class ResultsCard extends StatelessWidget {
+  const ResultsCard({super.key, required this.game});
+  final Game game;
+
+  void _tap(VoidCallback f) {
+    game.audio.play(Sfx.tap);
+    f();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: game.online,
+      builder: (context, _) {
+        final o = game.online, room = o.room, host = room?.player(room.host);
+        var i = 0;
+        return _Overlay(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Stagger(
+              index: i++,
+              child: Text('${game.route?.name ?? ''} · Room ${room?.code ?? ''}'.toUpperCase(), style: Txt.eyebrow()),
+            ),
+            _gap(),
+            Stagger(index: i++, child: _title(context, 'Results', '')),
+            _gap(),
+            Stagger(index: i++, child: _FinishOrder(game: game, over: true)),
+            _gap(),
+            Stagger(
+              index: i++,
+              child: FrameSelect<int?>(
+                game: game,
+                select: (g) => g.countdown?.ceil(),
+                builder: (context, left) {
+                  if (left != null) {
+                    return Text(left > 0 ? 'Starting in $left' : 'Starting…',
+                        textAlign: TextAlign.center, style: Txt.display(28, color: Pal.good));
+                  }
+                  return _buttons([
+                    if (o.isHost)
+                      GameButton(
+                        label: 'Play again',
+                        primary: true,
+                        minHeight: 52,
+                        onTap: o.busy ? null : () => _tap(game.playAgain),
+                      ),
+                    GameButton(label: 'Leave', minHeight: 52, onTap: () => _tap(game.leaveOnline)),
+                  ]);
+                },
+              ),
+            ),
+            if (!o.isHost) ...[
+              const SizedBox(height: 10),
+              Text('Waiting for ${host?.name ?? 'the creator'} to play again…',
+                  textAlign: TextAlign.center, style: Txt.body(14, color: Pal.chalkDim)),
+            ],
+          ]),
+        );
       },
     );
   }
@@ -325,6 +394,9 @@ class PauseCard extends StatelessWidget {
           child: _buttons([
             GameButton(label: 'Resume', primary: true, minHeight: 52, onTap: () => _tap(game.resume)),
             GameButton(label: 'Start over', minHeight: 52, onTap: () => _tap(game.restart)),
+            // online, the creator can end the climb for everyone: the results show
+            if (game.onlineClimb && game.online.isHost)
+              GameButton(label: 'End climb', minHeight: 52, onTap: () => _tap(game.endClimb)),
             GameButton(label: game.backLabel, minHeight: 52, onTap: () => _tap(game.goBack)),
           ]),
         ),

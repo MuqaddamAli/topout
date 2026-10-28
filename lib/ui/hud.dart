@@ -188,6 +188,20 @@ class Hud extends StatelessWidget {
           top: pad.top + 124,
           child: IgnorePointer(child: _Heights(game: game)),
         ),
+      // ---------------- online: the creator, at the top, can end the climb for everyone
+      if (game.onlineClimb)
+        Positioned(
+          right: pad.right + 12,
+          top: pad.top + 124,
+          child: FrameSelect(
+            game: game,
+            select: (g) => g.toppedOut && g.online.isHost && !(g.online.room?.ended ?? true),
+            builder: (context, show) => _Appear(
+              visible: show,
+              child: GameButton(label: 'End climb', minHeight: 40, radius: 999, onTap: show ? () => _tap(game.endClimb) : null),
+            ),
+          ),
+        ),
       // ---------------- back to the climber after looking around
       Positioned(
         left: 0,

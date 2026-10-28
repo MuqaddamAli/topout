@@ -232,6 +232,80 @@ test('a player who drops out and comes back keeps their lane', async () => {
   assert.deepEqual(back.room.players.map((p) => [p.name, p.lane, p.side]), [['Host', 0, 0], ['B', 0, 1], ['C', 1, 0]]);
 });
 
+test('topping out: each time counts once, and when everyone is up the climb ends', async () => {
+  const { all, room } = await startedRoom(3);
+  assert.equal(room.ended, false);
+  assert.equal(room.round, 1);
+  let update = roomWhen(all[0], (r) => r.players[1].finish != null);
+  all[1].emit('topped', 64.23);
+  assert.equal((await update).players[1].finish, 64.2);
+  // a second top-out, junk and a negative time change nothing
+  all[1].emit('topped', 10);
+  all[2].emit('topped', 'soon');
+  all[2].emit('topped', -5);
+  update = roomWhen(all[0], (r) => r.players[0].finish != null);
+  all[0].emit('topped', 70);
+  const two = await update;
+  assert.deepEqual(two.players.map((p) => p.finish), [70, 64.2, null]);
+  assert.equal(two.ended, false);
+  update = roomWhen(all[0], (r) => r.ended);
+  all[2].emit('topped', 99.9);
+  assert.deepEqual((await update).players.map((p) => p.finish), [70, 64.2, 99.9]);
+  for (const s of all) s.emit('leave');
+});
+
+test('End climb: only the creator, and then the climb is over (no more states)', async () => {
+  const { all } = await startedRoom(2);
+  assert.equal((await ask(all[1], 'end')).error, 'Only the creator can start');
+  const update = roomWhen(all[1], (r) => r.ended);
+  assert.deepEqual(await ask(all[0], 'end'), {});
+  assert.equal((await update).ended, true);
+  assert.equal((await ask(all[0], 'end')).error, 'Something went wrong. Try again.');
+  // after the end nothing is relayed
+  let got = false;
+  all[0].on('state', () => (got = true));
+  all[1].emit('state', [1, 'ada', 180, 100]);
+  await wait(80);
+  assert.equal(got, false);
+  for (const s of all) s.emit('leave');
+});
+
+test('Play again: only after the results and only the creator; a new round with fresh times', async () => {
+  const { all } = await startedRoom(3);
+  assert.equal((await ask(all[0], 'again')).error, 'The climb is still on');
+  all[1].emit('topped', 30);
+  await roomWhen(all[0], (r) => r.players[1].finish != null);
+  const over = roomWhen(all[0], (r) => r.ended);
+  await ask(all[0], 'end');
+  await over;
+  assert.equal((await ask(all[1], 'again')).error, 'Only the creator can start');
+  const started = next(all[2], 'started');
+  const fresh = roomWhen(all[2], (r) => r.round === 2);
+  assert.deepEqual(await ask(all[0], 'again'), {});
+  const st = await started;
+  assert.equal(st.round, 2);
+  assert.equal(st.lanes, 2);
+  const room = await fresh;
+  assert.equal(room.ended, false);
+  assert.equal(room.started, true);
+  assert.deepEqual(room.players.map((p) => [p.name, p.lane, p.side, p.finish]), [['P1', 0, 0, null], ['P2', 0, 1, null], ['P3', 1, 0, null]]);
+  // still no joining while the room climbs
+  assert.equal((await ask(await connect(), 'join', { code: room.code, name: 'Late' })).error, 'This climb has already started');
+  for (const s of all) s.emit('leave');
+});
+
+test('the last one still climbing leaves: everyone who stayed is up, so the climb ends', async () => {
+  const { all } = await startedRoom(3);
+  all[0].emit('topped', 50);
+  all[2].emit('topped', 60);
+  await roomWhen(all[0], (r) => r.players[2].finish != null);
+  const update = roomWhen(all[0], (r) => r.players.length === 2);
+  all[1].emit('leave');
+  const room = await update;
+  assert.equal(room.ended, true);
+  for (const s of all) s.emit('leave');
+});
+
 test('origins: Vercel, localhost and the local network only', () => {
   assert.ok(originAllowed('https://topout.vercel.app'));
   assert.ok(originAllowed('http://localhost:5000'));

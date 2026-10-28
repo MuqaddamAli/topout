@@ -24,7 +24,7 @@ export 'body.dart';
 enum Phase { menu, climb, paused, falling, fallCard, top }
 
 /// Which overlay is on screen.
-enum Screen { menu, online, hud, fallCard, topCard, pause }
+enum Screen { menu, online, hud, fallCard, topCard, pause, results }
 
 enum HoldStatus { good, weak, no, dyno, far }
 
@@ -316,6 +316,14 @@ class Game {
   /// Walk keys held down: -1 left, 1 right.
   final Set<int> _walkKeys = {};
 
+  /// With others the climb goes on after the top: you reached it (your time
+  /// stopped), and the top hold you will stand on once the cheer is over.
+  bool toppedOut = false;
+  int? _celeStand;
+
+  /// The room's climb you are in (Play again starts the next one).
+  int _roundPlayed = 0;
+
   /// Standing and walking are for climbs with others: online, or on a wall
   /// with lanes. A climb alone stays as it always was.
   bool get social => onlineClimb || (route?.lanes.length ?? 1) > 1;
@@ -597,6 +605,8 @@ class Game {
     _walkV = walkAmt = walkPhase = 0;
     _walkKeys.clear();
     walkTo = null;
+    toppedOut = false;
+    _celeStand = null;
     if (at != null) {
       // with others: standing on the ground at your spawn, free to walk
       _standOn(0, at.x);
@@ -722,7 +732,7 @@ class Game {
   void _maybeStand() {
     final a = limbs[2].h, b = limbs[3].h;
     if (!social || a == null || a != b) return;
-    if (holds[a].t != HoldType.ground && holds[a].t != HoldType.ledge) return;
+    if (holds[a].t == HoldType.top && !toppedOut) _reachedTop();
     _standOn(a, (limbs[2].x + limbs[3].x) / 2);
     resetPoseState([HandStyle.open, HandStyle.open]);
   }
@@ -828,8 +838,11 @@ class Game {
     }
     if (online.starts != _startsSeen) {
       _startsSeen = online.starts;
-      if (r != null && phase == Phase.menu && screen == Screen.online) countdown = (online.startsInMs ?? 0) / 1000;
+      final next = r != null && onlineClimb && online.startedRound > _roundPlayed;
+      if (r != null && ((phase == Phase.menu && screen == Screen.online) || next)) countdown = (online.startsInMs ?? 0) / 1000;
     }
+    // the room's climb is over: everyone sees the results
+    if (r != null && r.ended && onlineClimb && screen != Screen.results && countdown == null) _showResults();
   }
 
   /// Messages for who joined, left, dropped out or came back. Several at
@@ -892,7 +905,7 @@ class Game {
           list.add(Standing(p.id, p.name, metres: climberHeight(), finish: myFinish, you: true));
         } else {
           final o = remotes.byId[p.id];
-          list.add(Standing(p.id, p.name, metres: o?.shown?.metres ?? 0, finish: o?.finish, connected: p.connected));
+          list.add(Standing(p.id, p.name, metres: o?.shown?.metres ?? 0, finish: p.finish ?? o?.finish, connected: p.connected));
         }
       }
       list.sort((a, b) {
@@ -927,11 +940,32 @@ class Game {
     return wall.lanes[math.min(at.lane, wall.lanes.length - 1)].spawns[at.side];
   }
 
+  /// The finishing order and times for everyone, when the room's climb ends.
+  void _showResults() {
+    if (drag != null) endDrag(true);
+    _ptr = null;
+    _pan = null;
+    _walkHold = null;
+    walkTo = null;
+    _walkKeys.clear();
+    look = false;
+    tipText = null;
+    _updateStandings();
+    screen = Screen.results;
+    _ui();
+  }
+
+  /// The creator ends the climb for everyone, or after the results starts
+  /// the next one (Play again).
+  void endClimb() => online.endClimb();
+  void playAgain() => online.again();
+
   /// Everyone in the room starts the same route in the same mode, each at
-  /// their own spawn on the same wall.
+  /// their own spawn on the same wall. Also the next climb after Play again.
   void _startOnline() {
     final r = online.room;
-    if (r == null || phase != Phase.menu) return;
+    if (r == null || (phase != Phase.menu && !onlineClimb)) return;
+    _roundPlayed = online.startedRound;
     _modeBefore ??= mode;
     mode = Mode.fromName(r.mode);
     onlineClimb = true;
@@ -956,7 +990,7 @@ class Game {
         kinds: hKind,
         footFree: fFree,
         falling: phase == Phase.falling,
-        topped: phase == Phase.top,
+        topped: phase == Phase.top || toppedOut,
         standing: standOn != null && drag == null,
         facingLeft: facing < 0,
         metres: climberHeight(),
@@ -997,6 +1031,8 @@ class Game {
     countdown = null;
     onlineClimb = false;
     spawn = null;
+    toppedOut = false;
+    _roundPlayed = 0;
     myFinish = null;
     _updateStandings();
     if (_modeBefore case final m?) {
@@ -1151,7 +1187,7 @@ class Game {
       _tapCatch(pos);
       return;
     }
-    if (phase != Phase.climb || _ptr != null || dyno != null) return;
+    if (phase != Phase.climb || _ptr != null || dyno != null || cele != null) return;
     if (look) {
       setLook(false);
       return;
@@ -1501,7 +1537,7 @@ class Game {
     final dt = math.min(0.1, rawDt);
     // Once a card fully covers the scene, nothing behind it needs to move or
     // be drawn again (it sits under an 86% dark backdrop).
-    final covered = screen == Screen.pause || screen == Screen.fallCard || screen == Screen.topCard;
+    final covered = screen == Screen.pause || screen == Screen.fallCard || screen == Screen.topCard || screen == Screen.results;
     _coveredFor = covered ? _coveredFor + dt : 0;
     if (_coveredFor > 0.5) return;
     _acc += dt;
@@ -1524,7 +1560,8 @@ class Game {
 
   void _step(double dt) {
     if (phase != Phase.climb) return;
-    time += dt;
+    if (!toppedOut) time += dt;
+    if (cele != null) return;
     if (dyno != null) {
       _stepDyno(dt);
       return;
@@ -1946,7 +1983,35 @@ class Game {
     _ui();
   }
 
+  /// With others: your time stops and goes to the room for the results.
+  void _reachedTop() {
+    toppedOut = true;
+    myFinish ??= onlineClimb ? onlineSecs : time;
+    if (onlineClimb) {
+      online.topped(myFinish!);
+      _updateStandings();
+    }
+    _play(Sfx.top);
+    toast('You topped out! ${fmtTime(myFinish!)}', ToastKind.ok);
+    _ui();
+  }
+
+  /// With others the climb goes on at the top: the cheer, then you stand on
+  /// the top and can walk all along it. No top card; the results come when
+  /// the room's climb ends.
+  void _topOutTogether() {
+    final top = limbs[0].h!, h = holds[top], r = route!;
+    if (!toppedOut) _reachedTop();
+    cele = Cele(c.copy(), Pt(clampD(c.x, h.x + 30, h.x2! - 30), r.topY + standHeight(climber)));
+    _celeStand = top;
+    drag = null;
+    for (final l in limbs) {
+      l.h = null;
+    }
+  }
+
   void _topOut() {
+    if (social) return _topOutTogether();
     phase = Phase.top;
     if (onlineClimb) {
       myFinish ??= onlineSecs;
@@ -2074,6 +2139,14 @@ class Game {
         for (var n = 0; n < 4; n++) {
           later(n * 0.14, () => effects.burst(cd.x + (_rand.nextDouble() - 0.5) * 60, cd.y + 60 + _rand.nextDouble() * 30, PartKind.spark, 12));
         }
+      }
+      final top = _celeStand;
+      if (ce.t > 1.1 && top != null) {
+        // with others: the cheer is over, now stand on the top
+        cele = null;
+        _celeStand = null;
+        _standOn(top, c.x);
+        resetPoseState([HandStyle.open, HandStyle.open]);
       }
     } else if (_swing case final sw?) {
       // swinging under the hand that caught the fall, then settling
@@ -2334,6 +2407,7 @@ class Game {
 
   String get pillText {
     if (phase == Phase.climb && hangT > 0) return 'Grab a hold!';
+    if (phase == Phase.climb && toppedOut && myFinish != null) return 'Topped out · ${fmtTime(myFinish!)}';
     if (phase == Phase.climb && route != null && supportInfo(limbs, holds).standing && c.y > 120) return 'Resting';
     return '';
   }

@@ -166,6 +166,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       Screen.fallCard when fall != null => FallCard(game: game, data: fall),
       Screen.topCard when top != null => TopCard(game: game, data: top),
       Screen.pause => PauseCard(game: game),
+      Screen.results => ResultsCard(game: game),
       _ => null,
     };
     final Widget base = switch (screen) {

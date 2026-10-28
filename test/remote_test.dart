@@ -2,6 +2,7 @@
 // climbers back smoothly a little in the past, the list of other players, and
 // a whole online climb with a fake server (start, sending, drawing, leaving).
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:topout/game/audio.dart';
 import 'package:topout/game/core.dart';
@@ -9,8 +10,10 @@ import 'package:topout/game/game.dart';
 import 'package:topout/game/online.dart';
 import 'package:topout/game/remote.dart';
 import 'package:topout/game/store.dart';
+import 'package:topout/game/walk.dart';
 import 'package:topout/ui/app.dart';
 import 'package:topout/ui/cards.dart';
+import 'package:topout/ui/hud.dart';
 
 import 'fake_link.dart';
 import 'fonts.dart';
@@ -449,9 +452,9 @@ void main() {
       game.limbs[0].h = top;
       game.limbs[1].h = top;
       await frames(tester, 0.3);
-      expect(game.phase, Phase.top);
+      expect(game.toppedOut, isTrue);
       await frames(tester, 2.2);
-      expect(game.topCard!.note, 'Online climbs are not saved in your records.');
+      expect(game.screen, Screen.hud, reason: 'online the climb goes on at the top');
       game.goBack();
       await frames(tester, 0.4);
       final rec = game.records;
@@ -461,6 +464,131 @@ void main() {
       // a climb alone afterwards counts again
       game.startRoute(game.routes.first);
       expect(game.keepsRecords, isTrue);
+      await done(tester);
+    });
+
+    /// Puts both hands on the top: a top-out.
+    Future<int> reachTop(WidgetTester tester) async {
+      final r = game.route!, top = r.holds.indexWhere((h) => h.t == HoldType.top);
+      game.standOn = null;
+      game.limbs[0]
+        ..h = top
+        ..x = game.c.x - 20
+        ..y = r.topY;
+      game.limbs[1]
+        ..h = top
+        ..x = game.c.x + 20
+        ..y = r.topY;
+      game.c = Pt(game.c.x, r.topY - 60);
+      game.cd = game.c.copy();
+      await frames(tester, 0.2);
+      return top;
+    }
+
+    /// The room after its climb: everyone's times (null: did not finish).
+    Map<String, Object?> endedRoom(int n, int at, List<double?> finish) {
+      final room = laneRoom(n, at);
+      return {
+        ...room,
+        'ended': true,
+        'round': 1,
+        'players': [
+          for (final (k, p) in (room['players'] as List).indexed) {...(p as Map), 'finish': finish[k]}
+        ],
+      };
+    }
+
+    testWidgets('the top: your time stops, the room hears it, and you stand and walk on the top', (tester) async {
+      await startIn(tester, laneRoom(4, 0));
+      final r = game.route!;
+      final top = await reachTop(tester);
+      expect(game.toppedOut, isTrue);
+      expect(game.myFinish, isNotNull);
+      expect(link.last('topped'), closeTo(game.myFinish!, 0.01));
+      expect(link.sent.where((e) => e.$1 == 'topped').length, 1);
+      final t0 = game.time;
+      await frames(tester, 1.6);
+      expect(game.time, t0, reason: 'your time stopped');
+      expect(game.screen, Screen.hud, reason: 'no top card: the climb goes on');
+      expect(game.standOn, top);
+      expect(game.pillText, startsWith('Topped out'));
+      final mine = ClimberState.decode(link.sent.lastWhere((e) => e.$1 == 'state').$2)!;
+      expect((mine.topped, mine.standing), (true, true));
+      // the top runs across both lanes
+      expect(game.key(LogicalKeyboardKey.keyD), isTrue);
+      await frames(tester, 12);
+      game.keyUp(LogicalKeyboardKey.keyD);
+      expect(r.laneAt(game.c.x).index, 1);
+      expect(game.c.x, closeTo(r.holds[top].x2! - standMargin, 0.5));
+      expect(link.sent.where((e) => e.$1 == 'topped').length, 1, reason: 'the time goes out once');
+      await done(tester);
+    });
+
+    testWidgets('when the room ends everyone sees the results; the creator plays again', (tester) async {
+      await startIn(tester, laneRoom(3, 0));
+      await reachTop(tester);
+      await frames(tester, 1.4);
+      // the creator, waiting at the top, can end it from the HUD
+      await tester.tap(find.descendant(of: find.byType(Hud), matching: find.text('End climb')));
+      await frames(tester, 0.2);
+      expect(link.did('end'), isTrue);
+      link.push('room', endedRoom(3, 0, [game.myFinish, null, 80.5]));
+      await frames(tester, 0.5);
+      expect(game.screen, Screen.results);
+      expect(find.text('RESULTS'), findsOneWidget);
+      expect(find.text(fmtTime(game.myFinish!)), findsWidgets);
+      expect(find.text(fmtTime(80.5)), findsWidgets);
+      expect(find.textContaining('did not finish'), findsOneWidget);
+      expect(find.text('Play again'), findsOneWidget);
+      expect(find.text('Leave'), findsOneWidget);
+      await tester.tap(find.text('Play again'));
+      await frames(tester, 0.2);
+      expect(link.did('again'), isTrue);
+      // the server starts the next climb: a countdown, then everyone from the spawns
+      link.push('started', {'startsIn': 1000, 'lanes': 2, 'round': 2});
+      link.push('room', {...laneRoom(3, 0), 'round': 2});
+      await frames(tester, 0.3);
+      expect(find.text('Starting in 1'), findsOneWidget);
+      await frames(tester, 1.2);
+      expect(game.screen, Screen.hud);
+      expect(game.toppedOut, isFalse);
+      expect(game.myFinish, isNull);
+      expect(game.standOn, 0);
+      expect(game.c.x, closeTo(game.spawn!.x, 0.5));
+      expect(game.time, lessThan(1), reason: 'a fresh clock');
+      await done(tester);
+    });
+
+    testWidgets('the results for someone else: waiting for the creator, and Leave', (tester) async {
+      await startIn(tester, laneRoom(2, 1));
+      link.push('room', endedRoom(2, 1, [50, null]));
+      await frames(tester, 0.5);
+      expect(game.screen, Screen.results);
+      expect(find.text('Play again'), findsNothing);
+      expect(find.text('Waiting for P0 to play again…'), findsOneWidget);
+      await tester.tap(find.text('Leave'));
+      await frames(tester, 0.5);
+      expect(game.onlineClimb, isFalse);
+      expect(game.screen, Screen.menu);
+      await done(tester);
+    });
+
+    testWidgets('End climb: on the pause card for the creator', (tester) async {
+      await startIn(tester, laneRoom(2, 0));
+      game.pause();
+      await frames(tester, 0.4);
+      // before the top the HUD has no End climb (it cannot be tapped)
+      await tester.tap(find.descendant(of: find.byType(PauseCard), matching: find.text('End climb')));
+      await frames(tester, 0.2);
+      expect(link.did('end'), isTrue);
+      await done(tester);
+    });
+
+    testWidgets('End climb: not on the pause card for the others', (tester) async {
+      await startIn(tester, laneRoom(2, 1));
+      game.pause();
+      await frames(tester, 0.4);
+      expect(find.descendant(of: find.byType(PauseCard), matching: find.text('End climb')), findsNothing);
       await done(tester);
     });
 
