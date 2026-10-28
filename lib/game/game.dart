@@ -12,6 +12,7 @@ import 'audio.dart';
 import 'body.dart';
 import 'core.dart';
 import 'effects.dart';
+import 'online.dart';
 import 'palette.dart';
 import 'records.dart';
 import 'store.dart';
@@ -21,7 +22,7 @@ export 'body.dart';
 enum Phase { menu, climb, paused, falling, fallCard, top }
 
 /// Which overlay is on screen.
-enum Screen { menu, hud, fallCard, topCard, pause }
+enum Screen { menu, online, hud, fallCard, topCard, pause }
 
 enum HoldStatus { good, weak, no, dyno, far }
 
@@ -243,7 +244,9 @@ String fmtTime(double t) {
 }
 
 class Game {
-  Game({required this.store, required this.audio, DateTime? today}) : _fixedDay = today {
+  Game({required this.store, required this.audio, DateTime? today, NetLink Function()? netLink})
+      : _fixedDay = today,
+        online = Online(netLink ?? () => SocketLink(mpServer)) {
     final day = today ?? DateTime.now();
     todayKey = dateKey(day);
     routes = [...buildRoutes(), dailyWallFor(day)];
@@ -257,6 +260,9 @@ class Game {
   final GameAudio audio;
   late final Records records = Records(store);
   final Effects effects = Effects();
+
+  /// Rooms for climbing with others. Connects only when Play online opens.
+  final Online online;
 
   /// Set by tests to pin the Daily Wall to one day.
   final DateTime? _fixedDay;
@@ -596,6 +602,7 @@ class Game {
     climber = k;
     outfit = Look.of(k.id);
     store.set('climber', k.id);
+    online.pick(k.id);
     setMenuPose(); // the hair and the height are different
     _menuHop = 0;
     _menuLanded = false;
@@ -621,6 +628,30 @@ class Game {
     audio.muffle(false);
     _ui();
   }
+
+  /// The Play online screen (over the title scene): connects to the server.
+  void showOnline() {
+    if (phase != Phase.menu) return;
+    _refreshDaily();
+    screen = Screen.online;
+    online.connect();
+    _ui();
+  }
+
+  /// Leaves the room, closes the connection and goes back to the title screen.
+  void leaveOnline() {
+    online.close();
+    if (phase == Phase.menu) {
+      screen = Screen.menu;
+      _ui();
+    } else {
+      showMenu();
+    }
+  }
+
+  /// The name you play under online.
+  String get playerName => store.getString('mpName') ?? '';
+  set playerName(String v) => store.set('mpName', v);
 
   /// A new day brings a new Daily Wall, even if the app stayed open.
   void _refreshDaily() {
@@ -1023,6 +1054,9 @@ class Game {
       return true;
     } else if (phase == Phase.paused && k == LogicalKeyboardKey.escape) {
       resume();
+      return true;
+    } else if (screen == Screen.online && k == LogicalKeyboardKey.escape) {
+      leaveOnline();
       return true;
     }
     return false;

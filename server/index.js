@@ -12,7 +12,7 @@
 // Server to client:
 //   room    the room and its players, on every change
 //   started {startsIn}  ms until everyone starts climbing
-//   state   (playerId, [...])
+//   state   [playerId, [...]]
 const http = require('http');
 const { Server } = require('socket.io');
 const { Rooms } = require('./rooms');
@@ -91,7 +91,9 @@ function createServer({ graceMs, countdownMs } = {}) {
 
     socket.on('pick', (climber) => send(rooms.pick(socket.data.player, climber)));
 
-    socket.on('start', (ack) => {
+    socket.on('start', (...args) => {
+      // the answer callback comes first or after a payload, depending on the client
+      const ack = args.find((a) => typeof a === 'function');
       const r = rooms.start(socket.data.player);
       if (r.error) return reply(ack, { error: r.error });
       reply(ack, {});
@@ -103,7 +105,7 @@ function createServer({ graceMs, countdownMs } = {}) {
       const p = socket.data.player, room = rooms.roomOf(p);
       if (!room || !room.started || !Array.isArray(s)) return;
       // volatile: a state that cannot go out now is dropped, the next one is newer anyway
-      socket.to(room.code).volatile.emit('state', p.id, s);
+      socket.to(room.code).volatile.emit('state', [p.id, s]);
     });
 
     socket.on('leave', () => {
@@ -135,7 +137,8 @@ module.exports = { createServer, originAllowed };
 
 if (require.main === module) {
   const port = Number(process.env.PORT) || 3000;
+  // no host: every network interface, IPv4 and IPv6 (so "localhost" is quick on Windows too)
   createServer()
-    .listen(port, '0.0.0.0')
-    .then((p) => console.log(`Topout server on http://0.0.0.0:${p} (health: /health)`));
+    .listen(port)
+    .then((p) => console.log(`Topout server on port ${p}. Check http://localhost:${p}/health`));
 }

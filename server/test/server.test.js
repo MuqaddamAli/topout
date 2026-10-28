@@ -24,7 +24,7 @@ function connect() {
   return new Promise((done) => s.on('connect', () => done(s)));
 }
 const ask = (s, ev, data) => new Promise((done) => (data === undefined ? s.emit(ev, done) : s.emit(ev, data, done)));
-const next = (s, ev) => new Promise((done) => s.once(ev, (...a) => done(a.length > 1 ? a : a[0])));
+const next = (s, ev) => new Promise((done) => s.once(ev, done));
 const wait = (ms) => new Promise((done) => setTimeout(done, ms));
 /// The first room update that [ok] accepts (earlier updates may still be on their way).
 const roomWhen = (s, ok) =>

@@ -199,6 +199,76 @@ class GameButton extends StatelessWidget {
   }
 }
 
+/// A dark rounded panel with a title in capitals.
+class GamePanel extends StatelessWidget {
+  const GamePanel({super.key, required this.title, required this.children});
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Pal.ink2,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Pal.line, width: 1.5),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title.toUpperCase(), style: Txt.display(20, spacing: 0.06)),
+        for (final c in children) ...[const SizedBox(height: 12), c],
+      ]),
+    );
+  }
+}
+
+/// One choice of a few side by side (Relaxed, Normal, No saves): orange when on.
+class GameChoice extends StatelessWidget {
+  const GameChoice({super.key, required this.label, required this.on, required this.onTap});
+  final String label;
+  final bool on;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      inMutuallyExclusiveGroup: true,
+      checked: on,
+      label: label,
+      button: true,
+      excludeSemantics: true,
+      child: PressScale(
+        child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        decoration: BoxDecoration(
+          color: on ? Pal.signal : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Material(
+        color: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: on ? BorderSide.none : BorderSide(color: Pal.line, width: 1.5),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 46),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(label,
+                textAlign: TextAlign.center,
+                style: Txt.body(14, weight: FontWeight.w700, color: on ? Pal.signalInk : Pal.chalk, height: 1.1)),
+          ),
+        ),
+      ),
+      ),
+      ),
+    );
+  }
+}
+
 /// On/off switch with a label (Music, Sounds).
 class GameToggle extends StatelessWidget {
   const GameToggle({super.key, required this.label, required this.value, required this.onChanged});
