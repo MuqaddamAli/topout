@@ -265,7 +265,7 @@ class Online extends ChangeNotifier {
       final e = r is Map ? r['error'] : null;
       if (lost) {
         room = null;
-        error = 'You were away too long and lost your place in the room.';
+        error = 'You lost your place in the room (it may have closed).';
       } else {
         error = e is String ? e : 'Something went wrong. Try again.';
       }

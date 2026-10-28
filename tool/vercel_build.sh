@@ -7,6 +7,11 @@
 #
 # It also works on any Linux machine: set FLUTTER_ROOT to use a Flutter you
 # already have.
+#
+# Online play needs the address of the room server (server/), set as the
+# environment variable MP_SERVER, e.g. https://topout-server.onrender.com.
+# In Vercel: Settings > Environment Variables. Without it the game looks for
+# a server on http://localhost:3000.
 set -euo pipefail
 
 FLUTTER_VERSION="3.47.8"
@@ -29,7 +34,14 @@ install() {
 }
 
 build() {
-  flutter build web --release --wasm
+  local defines=()
+  if [ -n "${MP_SERVER:-}" ]; then
+    echo "Online play uses the server at $MP_SERVER"
+    defines+=("--dart-define=MP_SERVER=${MP_SERVER%/}")
+  else
+    echo "MP_SERVER is not set: online play will look for http://localhost:3000"
+  fi
+  flutter build web --release --wasm ${defines[@]+"${defines[@]}"}
   # debug symbols for the engine are never loaded by the game
   find build/web/canvaskit -name '*.symbols' -delete
   echo "Built $(du -sh build/web | cut -f1) into build/web"
