@@ -4,7 +4,7 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { io } = require('socket.io-client');
 const { createServer, originAllowed } = require('../index');
-const { CODE_LETTERS } = require('../rooms');
+const { CODE_LETTERS, Rooms, GATE_MS } = require('../rooms');
 
 let server, url;
 const sockets = [];
@@ -303,6 +303,36 @@ test('the last one still climbing leaves: everyone who stayed is up, so the clim
   all[1].emit('leave');
   const room = await update;
   assert.equal(room.ended, true);
+  for (const s of all) s.emit('leave');
+});
+
+/// A climber state like the game's (18 numbers), with an emote: [id] and when it started.
+const withEmote = (id, start) => [1, 'ada', 180, 100, 0, 0, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 3.2, id, start];
+
+test('emotes: one may start every ~2 s; the same one keeps playing; spam is taken out', () => {
+  const rooms = new Rooms();
+  const p = {};
+  assert.equal(rooms.gate(p, withEmote(1, 1000), 0)[18], 1, 'the first one goes through');
+  assert.equal(rooms.gate(p, withEmote(1, 1000), 900)[18], 1, 'the same one, still playing');
+  assert.equal(rooms.gate(p, withEmote(2, 1500), 1000)[18], 0, 'a new one too soon is taken out');
+  assert.equal(rooms.gate(p, withEmote(2, 1500), 1100)[18], 0, 'and stays out');
+  assert.equal(rooms.gate(p, withEmote(3, 2100), GATE_MS + 50)[18], 3, 'after the wait a new one goes through');
+  // states without an emote, and older 18-number states, pass as they are
+  assert.deepEqual(rooms.gate(p, withEmote(0, 0), GATE_MS + 60), withEmote(0, 0));
+  assert.deepEqual(rooms.gate(p, [1, 'ada', 180, 100], GATE_MS + 70), [1, 'ada', 180, 100]);
+});
+
+test('emotes go out with the states, and a burst of them is cut down', async () => {
+  const { all } = await startedRoom(2);
+  const got = [];
+  all[0].on('state', ([, st]) => got.push(st[18]));
+  // spaced out a little: states go out volatile, and a burst in one moment is dropped anyway
+  for (let k = 0; k < 6; k++) {
+    all[1].emit('state', withEmote((k % 3) + 1, 1000 + k * 100));
+    await wait(20);
+  }
+  await wait(100);
+  assert.deepEqual(got, [1, 0, 0, 0, 0, 0]);
   for (const s of all) s.emit('leave');
 });
 

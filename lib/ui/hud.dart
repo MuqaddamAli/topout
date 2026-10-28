@@ -202,6 +202,39 @@ class Hud extends StatelessWidget {
             ),
           ),
         ),
+      // ---------------- emotes, while you stand with others
+      if (game.social)
+        Positioned(
+          right: pad.right + 12,
+          bottom: pad.bottom + 132,
+          child: FrameSelect(
+            game: game,
+            select: (g) => (g.canEmote, g.clock >= g.nextEmoteAt, g.emote),
+            builder: (context, v) => _Appear(
+              visible: v.$1,
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                for (final (e, icon) in const [
+                  (Emote.cheer, Icons.celebration_rounded),
+                  (Emote.taunt, Icons.waving_hand_rounded),
+                  (Emote.aura, Icons.self_improvement_rounded),
+                ]) ...[
+                  GameButton(
+                    label: e.label,
+                    icon: icon,
+                    compact: true,
+                    width: 64,
+                    minHeight: 50,
+                    radius: 16,
+                    on: v.$3 == e,
+                    semanticLabel: '${e.label} (key ${e.index + 1})',
+                    onTap: v.$1 && v.$2 ? () => _tap(() => game.doEmote(e)) : null,
+                  ),
+                  const SizedBox(height: 6),
+                ],
+              ]),
+            ),
+          ),
+        ),
       // ---------------- back to the climber after looking around
       Positioned(
         left: 0,

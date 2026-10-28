@@ -20,6 +20,7 @@ import 'walk.dart';
 import 'store.dart';
 
 export 'body.dart';
+export 'walk.dart';
 
 enum Phase { menu, climb, paused, falling, fallCard, top }
 
@@ -315,6 +316,19 @@ class Game {
 
   /// Walk keys held down: -1 left, 1 right.
   final Set<int> _walkKeys = {};
+
+  /// The emote you show now (only while standing), and when it started on
+  /// the game clock and on the clock the state is sent with.
+  Emote? emote;
+  double emoteAt = 0;
+  int _emoteStartMs = 0;
+
+  /// When the next emote may start (a short cooldown), and when the last ended.
+  double nextEmoteAt = 0;
+  double _emoteEnd = -9;
+
+  /// The standing pose drawn this frame (null while climbing).
+  StandPose? _sp;
 
   /// With others the climb goes on after the top: you reached it (your time
   /// stopped), and the top hold you will stand on once the cheer is over.
@@ -678,6 +692,7 @@ class Game {
     final p = standAt(climber, clampD(x, w.lo, w.hi), h.y, facing: facing);
     standOn = hold;
     _walkV = walkAmt = 0;
+    _endEmote();
     c = p.c.copy();
     limbs = [
       Limb(null, p.ends[0].x, p.ends[0].y),
@@ -699,7 +714,12 @@ class Game {
     } else {
       dir = (_walkKeys.contains(1) ? 1.0 : 0.0) - (_walkKeys.contains(-1) ? 1.0 : 0.0);
     }
-    if (dir != 0) facing = dir;
+    if (dir != 0) {
+      facing = dir;
+      _endEmote();
+    }
+    final em = emote;
+    if (em != null && clock - emoteAt > em.length) _endEmote();
     _walkV += (dir * walkSpeed - _walkV) * math.min(1.0, dt * 8);
     var x = c.x + _walkV * dt;
     if (x <= w.lo || x >= w.hi) {
@@ -708,7 +728,7 @@ class Game {
     }
     walkPhase = (walkPhase + _walkV.abs() * dt / strideLength * 2 * math.pi) % (math.pi * 200);
     walkAmt = clampD(_walkV.abs() / walkSpeed, 0, 1);
-    final p = standAt(climber, x, h.y, facing: facing, phase: walkPhase, walk: walkAmt);
+    final p = standAt(climber, x, h.y, facing: facing, phase: walkPhase, walk: walkAmt, emote: emote, emoteT: clock - emoteAt);
     c
       ..x = p.c.x
       ..y = p.c.y;
@@ -720,11 +740,39 @@ class Game {
         ..x = x + sideOf[i + 2] * 12
         ..y = h.y;
     }
+    if (emote != null) return; // the body stays put while it plays
     final g = gripRates(limbs, holds, mode, climber);
     for (var i = 0; i < 2; i++) {
       grip[i] = clampD(grip[i] + g.rates[i] * dt, 0, 100);
     }
     if (g.s.standing) _checkpointAt(g.s);
+  }
+
+  /// Emotes need you standing (on the ground, a ledge or the top), with others.
+  bool get canEmote => social && phase == Phase.climb && standOn != null && drag == null && cele == null;
+
+  /// Shows [e] to everyone, if you stand and the last one was long enough ago.
+  void doEmote(Emote e) {
+    if (!canEmote || clock < nextEmoteAt) return;
+    emote = e;
+    emoteAt = clock;
+    _emoteStartMs = _netMs.round();
+    nextEmoteAt = clock + emoteCooldown;
+    _walkV = walkAmt = 0;
+    walkTo = null;
+    _play(sfxFor(e), pan: panOf(c.x));
+    if (e == Emote.cheer) later(0.2, () => effects.burst(cd.x, cd.y + 90, PartKind.spark, 10));
+    if (e == Emote.aura) later(0.7, () => effects.burst(cd.x, cd.y + 10, PartKind.spark, 8));
+    _ui();
+  }
+
+  static Sfx sfxFor(Emote e) => switch (e) { Emote.cheer => Sfx.emoteCheer, Emote.taunt => Sfx.emoteTaunt, Emote.aura => Sfx.emoteAura };
+
+  void _endEmote() {
+    if (emote == null) return;
+    emote = null;
+    _emoteEnd = clock;
+    _ui();
   }
 
   /// After a foot move: with both feet on the same flat hold (the ground or
@@ -882,6 +930,14 @@ class Game {
   double get onlineSecs => (_netMs - _onlineStart) / 1000;
 
   void _remoteEvent(RemoteClimber who, RemoteEvent e) {
+    if (e == RemoteEvent.emote) {
+      final s = who.shown, em = s?.emote;
+      if (s == null || em == null) return;
+      // quieter than your own, and fading with distance
+      final far = clampD(hypot(s.c.x - cd.x, s.c.y - cd.y) / 900, 0, 1);
+      audio.play(sfxFor(em), pan: panOf(s.c.x), volume: 0.45 * (1 - 0.7 * far));
+      return;
+    }
     if (e == RemoteEvent.fell) {
       toast('${who.name} fell', ToastKind.warn);
       return;
@@ -993,6 +1049,8 @@ class Game {
         topped: phase == Phase.top || toppedOut,
         standing: standOn != null && drag == null,
         facingLeft: facing < 0,
+        emote: emote,
+        emoteStart: _emoteStartMs,
         metres: climberHeight(),
         secs: onlineSecs,
       );
@@ -1263,6 +1321,7 @@ class Game {
     }
     walkTo = null;
     _walkV = 0;
+    _endEmote();
     if (l.h != null) {
       final test = [for (var k = 0; k < 4; k++) k == i ? Limb(null, limbs[k].x, limbs[k].y) : limbs[k]];
       if (!supportInfo(test, holds).supported) {
@@ -1494,6 +1553,16 @@ class Game {
       final dir = _walkKey(k);
       if (dir != 0 && social) {
         _walkKeys.add(dir);
+        return true;
+      }
+      final em = switch (k) {
+        LogicalKeyboardKey.digit1 => Emote.cheer,
+        LogicalKeyboardKey.digit2 => Emote.taunt,
+        LogicalKeyboardKey.digit3 => Emote.aura,
+        _ => null,
+      };
+      if (em != null && social) {
+        doEmote(em);
         return true;
       }
       if (k == LogicalKeyboardKey.keyU || (k == LogicalKeyboardKey.keyZ && ctrl)) {
@@ -2186,8 +2255,9 @@ class Game {
     _limbTargets(dt);
     // body lean: hands over feet
     final e = endDraw;
-    final tl = standOn != null && drag == null
-        ? facing * 0.03 * walkAmt
+    final sp = _sp;
+    final tl = standOn != null && drag == null && sp != null
+        ? sp.tilt
         : clampD(((e[2].x + e[3].x) - (e[0].x + e[1].x)) * 0.5 * 0.0035, -0.16, 0.16) +
         (phase == Phase.falling && !reducedMotion ? math.sin((fall?.t ?? 0) * 7 + 1) * 0.25 : 0);
     tilt += (tl - tilt) * math.min(1.0, dt * 8);
@@ -2207,8 +2277,9 @@ class Game {
         ? clampD((tgt.x - hx) * 0.045, -3, 3)
         : (standOn != null && walkAmt > 0.05 ? facing * 2.2 : math.sin(clock * 0.35) * 1.2);
     final lkUp = tgt != null ? clampD((tgt.y - hy) * 0.008, -0.6, 1) : 0.5;
-    lookX += (lkX - lookX) * math.min(1.0, dt * 6);
-    lookUp += (lkUp - lookUp) * math.min(1.0, dt * 6);
+    final emoting = emote != null && sp != null;
+    lookX += ((emoting ? sp.lookX : lkX) - lookX) * math.min(1.0, dt * 6);
+    lookUp += ((emoting ? sp.lookUp : lkUp) - lookUp) * math.min(1.0, dt * 6);
     pose = buildPose();
     _gearUpdate(dt);
   }
@@ -2217,9 +2288,11 @@ class Game {
     if (limbs.length != 4) return;
     final ph = phase, bag = gear?.bag, r = route!;
     final at = standOn;
-    final sp = at != null && ph == Phase.climb
-        ? standAt(climber, cd.x, holds[at].y, facing: facing, phase: walkPhase, walk: walkAmt)
+    final sp = _sp = at != null && ph == Phase.climb
+        ? standAt(climber, cd.x, holds[at].y, facing: facing, phase: walkPhase, walk: walkAmt, emote: emote, emoteT: clock - emoteAt)
         : null;
+    // into and out of an emote the hands and feet ease; walking, the feet step exactly
+    final exact = emote == null && clock - _emoteEnd > 0.4;
     for (var i = 0; i < 4; i++) {
       final l = limbs[i], j = jointAt(i, cd), hand = isHand[i];
       double tx, ty;
@@ -2247,11 +2320,12 @@ class Game {
       } else if (d != null && d.i == i) {
         (tx, ty) = _toward(i, j, d.candOk ? d.candPt! : Pt(d.px, d.py));
       } else if (sp != null) {
-        // standing: feet step along the hold, hands hang loose
+        // standing: feet step along the hold, hands hang loose (or emote)
         tx = sp.ends[i].x;
         ty = sp.ends[i].y;
-        snap = true;
+        snap = exact;
         free = !hand && ty > holds[standOn!].y + 0.5;
+        if (emote == Emote.aura || (emote == Emote.taunt && i == (facing > 0 ? 0 : 1))) style = HandStyle.fist;
       } else if (l.h != null) {
         tx = l.x;
         ty = l.y;

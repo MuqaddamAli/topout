@@ -16,7 +16,6 @@ import 'package:topout/game/core.dart';
 import 'package:topout/game/game.dart';
 import 'package:topout/game/remote.dart';
 import 'package:topout/game/store.dart';
-import 'package:topout/game/walk.dart';
 import 'package:topout/ui/app.dart';
 
 import 'fonts.dart';

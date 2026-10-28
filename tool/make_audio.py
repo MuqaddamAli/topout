@@ -366,6 +366,49 @@ def no():
     return finish(x, -27)
 
 
+def emote_cheer():
+    """Cheer (online): a quick, bright little leap up the D major chord, D5 to D6,
+    over a soft chord."""
+    total = 1.9
+    n = samples(total)
+    x = np.zeros(n)
+    for k, m in enumerate([74, 78, 81, 86]):
+        place(x, kalimba(m, 0.85 - k * 0.05, 1.3), samples(k * 0.07))
+    place(x, bell(90, 0.35, 1.2, 0.5), samples(0.3))
+    chord = np.zeros(n)
+    for m in [62, 69, 74]:
+        chord += partials(hz(m), total, [(1, 1, 1.4), (2, 0.15, 0.6)], attack=0.05, length=0.9, release=0.4)
+    x += 0.12 * chord
+    return finish(room(x, 0.25, 1.0, seed=21, bright=6500), -25)
+
+
+def emote_taunt():
+    """Taunt (online): a playful "ha-ha-ha", three short bouncing notes (A5,
+    F#5, A5) and a little rising flick: friendly, never rude."""
+    total = 1.4
+    x = np.zeros(samples(total))
+    for k, (m, v) in enumerate([(81, 0.8), (78, 0.7), (81, 0.75)]):
+        place(x, mallet(m, v, 0.4, 0.07) + 0.5 * kalimba(m + 12, v * 0.5, 0.4), samples(k * 0.13))
+    flick = osc(glide(hz(83), hz(86), samples(0.18), 2.0), samples(0.18)) * env(0.18, 0.004, 0.06)
+    place(x, 0.35 * flick, samples(0.44))
+    return finish(room(x, 0.2, 0.8, seed=22, bright=6000), -26)
+
+
+def emote_aura():
+    """Aura (online): lying back, showing off. A slow, soft swell of a D major
+    seventh with a high sparkle drifting down."""
+    total = 3.0
+    n = samples(total)
+    x = np.zeros(n)
+    for m in [62, 66, 69, 73]:
+        x += partials(hz(m), total, [(1, 1, 2.0), (2, 0.18, 0.9), (3, 0.05, 0.4)], attack=0.6, length=1.6,
+                      release=0.7)
+    x *= 0.22
+    for k, m in enumerate([93, 90, 85]):
+        place(x, bell(m, 0.32 - k * 0.06, 1.4, 0.6), samples(0.35 + k * 0.22))
+    return finish(room(x, 0.35, 1.6, seed=23, bright=5500), -27)
+
+
 def tap(v):
     """A button: a tiny, quiet wooden tick."""
     total = 0.12
@@ -600,6 +643,9 @@ def jobs():
     yield 'top_1', top
     yield 'best_1', best
     yield 'no_1', no
+    yield 'emote_cheer_1', emote_cheer
+    yield 'emote_taunt_1', emote_taunt
+    yield 'emote_aura_1', emote_aura
     yield 'wind', wind
     yield 'music', music
 

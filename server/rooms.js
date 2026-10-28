@@ -13,6 +13,13 @@ const ROUTES = ['first', 'steps', 'crimps', 'daily'];
 const MODES = ['casual', 'normal', 'solo'];
 const CLIMBERS = ['ada', 'rio', 'mei', 'kai'];
 
+// Emotes ride in the climber state the server passes on: [id] is where the
+// emote is in the array (0 or missing: none), [at] when it started on the
+// sender's clock. A new one may start at most this often (the game waits 2 s;
+// a little less here, for the network's jitter).
+const GATED = [{ key: 'emote', id: 18, at: 19 }];
+const GATE_MS = 1800;
+
 const Err = {
   notFound: 'Room not found',
   full: `Room is full (${MAX_PLAYERS}/${MAX_PLAYERS})`,
@@ -222,6 +229,23 @@ class Rooms {
     return room;
   }
 
+  /// Takes out of climber state [s] an emote that [player] started too soon
+  /// after the last one, so nobody can spam. [now] is the server's clock in ms.
+  gate(player, s, now = Date.now()) {
+    for (const g of GATED) {
+      if (s.length <= g.at || !s[g.id]) continue;
+      const start = s[g.at], last = (player.gate ??= {})[g.key];
+      if (last && start === last.start) continue; // the same one, still playing
+      if (last && (start === last.refused || now - last.when < GATE_MS)) {
+        last.refused = start;
+        s[g.id] = 0;
+        continue;
+      }
+      player.gate[g.key] = { start, when: now };
+    }
+    return s;
+  }
+
   /// What every player in the room is sent.
   view(room) {
     return {
@@ -248,4 +272,4 @@ class Rooms {
   }
 }
 
-module.exports = { Rooms, Err, MAX_PLAYERS, MAX_LANES, lanesFor, CODE_LETTERS, ROUTES, MODES, CLIMBERS, cleanCode, cleanName };
+module.exports = { Rooms, Err, MAX_PLAYERS, MAX_LANES, lanesFor, GATE_MS, CODE_LETTERS, ROUTES, MODES, CLIMBERS, cleanCode, cleanName };

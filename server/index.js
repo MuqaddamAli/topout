@@ -10,7 +10,7 @@
 //   topped secs       you reached the top, secs after the start
 //   end                                           -> {} or {error} (host only: the results show)
 //   again                                         -> {} or {error} (host only, after the results: a new climb)
-//   state  [...]      relayed as-is to the others in the room
+//   state  [...]      relayed to the others in the room (an emote sent too soon is taken out)
 //   leave
 // Server to client:
 //   room    the room and its players, on every change; from the start it
@@ -122,7 +122,7 @@ function createServer({ graceMs, countdownMs } = {}) {
       const p = socket.data.player, room = rooms.roomOf(p);
       if (!room || !room.started || room.ended || !Array.isArray(s)) return;
       // volatile: a state that cannot go out now is dropped, the next one is newer anyway
-      socket.to(room.code).volatile.emit('state', [p.id, s]);
+      socket.to(room.code).volatile.emit('state', [p.id, rooms.gate(p, s)]);
     });
 
     socket.on('leave', () => {

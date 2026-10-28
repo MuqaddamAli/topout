@@ -18,6 +18,8 @@ import 'walk.dart';
 /// secs (seconds since the room's start) may be missing in older states.
 /// bits: see [encode]; 14 standing on a flat hold (walking there is played
 /// back from how the body moves), 15 facing left.
+/// After secs, while an emote plays: the emote (1 Cheer, 2 Taunt, 3 Aura)
+/// and when it started (ms, on the sender's clock, like t).
 class ClimberState {
   ClimberState({
     required this.t,
@@ -36,6 +38,8 @@ class ClimberState {
     this.facingLeft = false,
     this.metres = 0,
     this.secs,
+    this.emote,
+    this.emoteStart = 0,
   });
 
   /// The sender's clock in ms (any start; only differences matter).
@@ -58,6 +62,10 @@ class ClimberState {
   /// Seconds since this player's climb started (everyone started together).
   final double? secs;
 
+  /// The emote playing, and when it started (ms on the sender's clock).
+  final Emote? emote;
+  final int emoteStart;
+
   static double _r(double v, [double k = 10]) => (v * k).roundToDouble() / k;
 
   List<Object> encode() {
@@ -79,7 +87,8 @@ class ClimberState {
       for (final e in ends) ...[_r(e.x), _r(e.y)],
       bits,
       _r(metres),
-      if (secs != null) _r(secs!),
+      if (secs != null || emote != null) _r(secs ?? 0),
+      if (emote != null) ...[emote!.wire, emoteStart],
     ];
   }
 
@@ -113,6 +122,8 @@ class ClimberState {
       facingLeft: bits & (1 << 15) != 0,
       metres: n[15],
       secs: secs != null && secs.isFinite ? secs : null,
+      emote: raw.length > 19 && raw[19] is num ? Emote.fromWire(raw[18] is num ? raw[18] as num : null) : null,
+      emoteStart: raw.length > 19 && raw[19] is num ? (raw[19] as num).toInt() : 0,
     );
   }
 
@@ -140,11 +151,13 @@ class ClimberState {
       facingLeft: n.facingLeft,
       metres: lerpD(a.metres, b.metres, u),
       secs: n.secs,
+      emote: n.emote,
+      emoteStart: n.emoteStart,
     );
   }
 }
 
-enum RemoteEvent { fell, topped }
+enum RemoteEvent { fell, topped, emote }
 
 /// Another player's climber: the states that came in, and what is drawn now.
 class RemoteClimber {
@@ -179,6 +192,12 @@ class RemoteClimber {
   /// how much they walk (0 to 1) and where the body was last frame.
   double _phase = 0, _walk = 0;
   double? _lastX;
+
+  /// The height of the hold they stand on (the feet leave it in a hop).
+  double? _footY;
+
+  /// The start of the last emote seen, so its sound plays once.
+  int _emoteSeen = 0;
 
   void add(ClimberState s, int nowMs) {
     if (states.isNotEmpty && s.t <= states.last.t) return; // late or doubled
@@ -220,6 +239,10 @@ class RemoteClimber {
     }
     _wasFalling = s.falling;
     _wasTopped = s.topped;
+    if (s.emote != null && s.emoteStart != _emoteSeen) {
+      _emoteSeen = s.emoteStart;
+      ev ??= RemoteEvent.emote;
+    }
     final k = Climber.byId(s.climber), lk = look = Look.of(k.id);
     final br = still ? 0.0 : math.sin((clock + _breathAt) * 2.1);
     final Pose p;
@@ -230,9 +253,15 @@ class RemoteClimber {
       _walk += (clampD(speed / walkSpeed, 0, 1) - _walk) * math.min(1.0, dt * 8);
       _phase = (_phase + dx / strideLength * 2 * math.pi) % (math.pi * 200);
       final facing = s.facingLeft ? -1.0 : 1.0;
-      final sp = standAt(k, s.c.x, math.min(s.ends[2].y, s.ends[3].y), facing: facing, phase: _phase, walk: _walk);
-      p = pose = climberPose(k, sp.c, sp.tilt, br, _walk > 0.05 ? facing * 2.2 : s.lookX, s.lookUp, [sp.ends[0], sp.ends[1]],
-          const [HandStyle.open, HandStyle.open], s.kinds, [sp.ends[2], sp.ends[3]], [sp.ends[2].y > sp.ends[3].y + 0.5, sp.ends[3].y > sp.ends[2].y + 0.5]);
+      // the hold's height: from the feet, but not while an emote lifts them (a hop, lying down)
+      final e = s.emote, feet = math.min(s.ends[2].y, s.ends[3].y);
+      if (e == null) _footY = feet;
+      final sp = standAt(k, s.c.x, _footY ?? feet,
+          facing: facing, phase: _phase, walk: e != null ? 0 : _walk, emote: e, emoteT: (s.t - s.emoteStart) / 1000);
+      p = pose = climberPose(k, sp.c, sp.tilt, br, e != null ? sp.lookX : (_walk > 0.05 ? facing * 2.2 : s.lookX),
+          e != null ? sp.lookUp : s.lookUp, [sp.ends[0], sp.ends[1]], [
+        for (var i = 0; i < 2; i++) e == Emote.aura || (e == Emote.taunt && i == (facing > 0 ? 0 : 1)) ? HandStyle.fist : HandStyle.open
+      ], s.kinds, [sp.ends[2], sp.ends[3]], [sp.ends[2].y > sp.ends[3].y + 0.5, sp.ends[3].y > sp.ends[2].y + 0.5]);
     } else {
       _walk = 0;
       p = pose = climberPose(k, s.c, s.tilt, br, s.lookX, s.lookUp, [s.ends[0], s.ends[1]], s.styles, s.kinds,
