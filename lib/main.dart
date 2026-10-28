@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'game/audio.dart';
 import 'game/game.dart';
+import 'game/online.dart';
 import 'game/store.dart';
 import 'ui/app.dart';
 
@@ -17,7 +18,8 @@ Future<void> main() async {
   final game = Game(store: store, audio: audio);
   runApp(TopoutApp(game: game));
   // On the web, ?perf logs frame times to the console, and ?perf=<route id>
-  // also opens that route (used to measure performance).
+  // also opens that route (used to measure performance). ?perf=online makes
+  // a room and prints its code: fill it with bots and it starts by itself.
   final perf = kIsWeb ? Uri.base.queryParameters['perf'] : null;
   if (perf != null) _measure(game, perf);
 }
@@ -25,6 +27,7 @@ Future<void> main() async {
 void _measure(Game game, String routeId) {
   final route = game.routes.where((r) => r.id == routeId).firstOrNull;
   if (route != null) SchedulerBinding.instance.addPostFrameCallback((_) => game.startRoute(route));
+  if (routeId == 'online') _measureRoom(game);
   var frames = 0, build = 0, raster = 0, worst = 0;
   var since = DateTime.now();
   SchedulerBinding.instance.addTimingsCallback((timings) {
@@ -41,4 +44,33 @@ void _measure(Game game, String routeId) {
     frames = build = raster = worst = 0;
     since = now;
   });
+}
+
+/// Makes a room on First Wall, starts it when 8 climbers are in (or after
+/// 60 s), and after 15 s of climbing turns Look on so everyone is in view.
+void _measureRoom(Game game) {
+  final o = game.online;
+  var made = false, started = false;
+  final t0 = DateTime.now();
+  void check() {
+    if (!made && o.status == NetStatus.online) {
+      made = true;
+      o.create(name: 'Perf', route: 'first', mode: 'normal', dateKey: game.todayKey, climber: game.climber.id).then((_) {
+        debugPrint('perf room ${o.room?.code}: npm run bots -- ${o.room?.code} 7');
+      });
+    }
+    final r = o.room;
+    if (!started && r != null && o.isHost && (r.players.length >= 8 || DateTime.now().difference(t0).inSeconds > 60)) {
+      started = true;
+      debugPrint('perf start with ${r.players.length} climbers');
+      o.start();
+      Future.delayed(const Duration(seconds: 18), () {
+        debugPrint('perf look on');
+        game.setLook(true);
+      });
+    }
+  }
+
+  o.addListener(check);
+  SchedulerBinding.instance.addPostFrameCallback((_) => game.showOnline());
 }

@@ -142,7 +142,7 @@ class ScenePainter extends CustomPainter {
       // far outside the view: skip it (a climber is about 1.6 m tall)
       if (p.c.x < v.x0 - 100 || p.c.x > v.x1 + 100 || p.c.y < v.y0 - 120 || p.c.y > v.y1 + 120) continue;
       canvas.saveLayer(_bounds(p, gear), _ghost);
-      climber.draw(canvas, p, gear, look);
+      climber.draw(canvas, p, gear, look, lite: true);
       canvas.restore();
       drawn.add(o);
     }

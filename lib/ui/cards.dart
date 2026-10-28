@@ -227,6 +227,7 @@ class TopCard extends StatelessWidget {
             ),
           ]),
         ),
+        if (game.onlineClimb) ...[_gap(), Stagger(index: i++, child: _FinishOrder(game: game))],
         _gap(),
         Stagger(
           index: i++,
@@ -239,6 +240,53 @@ class TopCard extends StatelessWidget {
           ]),
         ),
       ]),
+    );
+  }
+}
+
+/// Online: who reached the top in what order and time, then who is still
+/// climbing and how high. It keeps up while the card is open.
+class _FinishOrder extends StatelessWidget {
+  const _FinishOrder({required this.game});
+  final Game game;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: game.standingsChanged,
+      builder: (context, _) {
+        final list = game.standings;
+        var place = 0;
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text('FINISHING ORDER', style: Txt.eyebrow()),
+          const SizedBox(height: 8),
+          for (final s in list)
+            Container(
+              margin: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: s.you ? Pal.signal.withAlpha(34) : Pal.ink3,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(children: [
+                SizedBox(
+                  width: 40,
+                  child: Text(s.finish != null ? ordinal(++place) : '–', style: Txt.mono(14, color: Pal.chalkDim)),
+                ),
+                Expanded(
+                  child: Text(s.you ? '${s.name} (you)' : s.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Txt.body(15, weight: FontWeight.w700, color: s.you ? Pal.signal : Pal.chalk)),
+                ),
+                if (s.finish case final f?)
+                  Text(fmtTime(f), style: Txt.mono(15, color: Pal.good))
+                else
+                  Text('climbing · ${s.metres.toStringAsFixed(1)} m', style: Txt.body(13, color: Pal.chalkDim)),
+              ]),
+            ),
+        ]);
+      },
     );
   }
 }

@@ -177,10 +177,17 @@ class Hud extends StatelessWidget {
           child: FrameSelect(
             game: game,
             select: (g) => g.toastVisible ? (g.toastText ?? '', g.toastKind, g.toastUntil) : null,
-            builder: (context, t) => Center(child: _Toast(toast: t)),
+            builder: (context, t) => Center(child: GameToast(toast: t)),
           ),
         ),
       ),
+      // ---------------- everyone's height, in an online climb
+      if (game.onlineClimb)
+        Positioned(
+          left: pad.left + 10,
+          top: pad.top + 124,
+          child: IgnorePointer(child: _Heights(game: game)),
+        ),
       // ---------------- back to the climber after looking around
       Positioned(
         left: 0,
@@ -272,6 +279,66 @@ class Hud extends StatelessWidget {
         ),
       ),
     ]);
+  }
+}
+
+/// Everyone in the room, finished first and then highest first, small in a
+/// corner. It rebuilds only when a shown number changes.
+class _Heights extends StatelessWidget {
+  const _Heights({required this.game});
+  final Game game;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: game.standingsChanged,
+      builder: (context, _) {
+        final list = game.standings;
+        if (list.length < 2) return const SizedBox.shrink();
+        return Container(
+          width: 156,
+          padding: const EdgeInsets.fromLTRB(9, 7, 10, 7),
+          decoration: BoxDecoration(color: rgba(13, 15, 21, 0.62), borderRadius: BorderRadius.circular(12)),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            for (var i = 0; i < list.length; i++) _HeightRow(place: i + 1, s: list[i]),
+          ]),
+        );
+      },
+    );
+  }
+}
+
+class _HeightRow extends StatelessWidget {
+  const _HeightRow({required this.place, required this.s});
+  final int place;
+  final Standing s;
+
+  @override
+  Widget build(BuildContext context) {
+    final f = s.finish;
+    final value = f != null ? fmtTime(f) : '${s.metres.toStringAsFixed(1)} m';
+    return Semantics(
+      label: '$place, ${s.you ? 'you' : s.name}, ${f != null ? 'topped out in $value' : value}',
+      excludeSemantics: true,
+      child: Opacity(
+        opacity: s.connected ? 1 : 0.45,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 1.5),
+          child: Row(children: [
+            SizedBox(width: 15, child: Text('$place', style: Txt.mono(11, color: Pal.chalkDim))),
+            Expanded(
+              child: Text(s.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Txt.body(12.5, weight: FontWeight.w700, color: s.you ? Pal.signal : Pal.chalk, height: 1.2)),
+            ),
+            const SizedBox(width: 6),
+            if (f != null) ...[Icon(Icons.flag_rounded, size: 12, color: Pal.good), const SizedBox(width: 3)],
+            Text(value, style: Txt.mono(11.5, color: f != null ? Pal.good : Pal.chalk)),
+          ]),
+        ),
+      ),
+    );
   }
 }
 
@@ -387,8 +454,9 @@ class _Tick extends StatelessWidget {
   }
 }
 
-class _Toast extends StatelessWidget {
-  const _Toast({required this.toast});
+/// A short message that slides in at the top.
+class GameToast extends StatelessWidget {
+  const GameToast({super.key, required this.toast});
   final (String, ToastKind, double)? toast;
 
   @override

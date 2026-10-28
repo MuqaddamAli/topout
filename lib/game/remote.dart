@@ -13,7 +13,8 @@ import 'palette.dart';
 /// one JSON array (see server/bots.js):
 ///   [t, climber, cx, cy, tilt, lookX, lookUp,
 ///    leftHandX, leftHandY, rightHandX, rightHandY, leftFootX, leftFootY, rightFootX, rightFootY,
-///    bits, metres]
+///    bits, metres, secs]
+/// secs (seconds since the room's start) may be missing in older states.
 class ClimberState {
   ClimberState({
     required this.t,
@@ -29,6 +30,7 @@ class ClimberState {
     this.falling = false,
     this.topped = false,
     this.metres = 0,
+    this.secs,
   });
 
   /// The sender's clock in ms (any start; only differences matter).
@@ -44,6 +46,9 @@ class ClimberState {
   final List<bool> footFree;
   final bool falling, topped;
   final double metres;
+
+  /// Seconds since this player's climb started (everyone started together).
+  final double? secs;
 
   static double _r(double v, [double k = 10]) => (v * k).roundToDouble() / k;
 
@@ -64,6 +69,7 @@ class ClimberState {
       for (final e in ends) ...[_r(e.x), _r(e.y)],
       bits,
       _r(metres),
+      if (secs != null) _r(secs!),
     ];
   }
 
@@ -77,6 +83,7 @@ class ClimberState {
       n.add(v.toDouble());
     }
     final bits = n[14].toInt();
+    final secs = raw.length > 17 && raw[17] is num ? (raw[17] as num).toDouble() : null;
     HandStyle style(int v) => HandStyle.values[math.min(v, HandStyle.values.length - 1)];
     HoldType kind(int v) => HoldType.values[math.min(v, HoldType.values.length - 1)];
     return ClimberState(
@@ -93,6 +100,7 @@ class ClimberState {
       falling: bits & (1 << 12) != 0,
       topped: bits & (1 << 13) != 0,
       metres: n[15],
+      secs: secs != null && secs.isFinite ? secs : null,
     );
   }
 
@@ -117,9 +125,12 @@ class ClimberState {
       falling: n.falling,
       topped: n.topped,
       metres: lerpD(a.metres, b.metres, u),
+      secs: n.secs,
     );
   }
 }
+
+enum RemoteEvent { fell, topped }
 
 /// Another player's climber: the states that came in, and what is drawn now.
 class RemoteClimber {
@@ -144,6 +155,10 @@ class RemoteClimber {
   Gear? gear;
   Look? look;
   String? _gearFor;
+
+  /// Seconds from the room's start to this player's first top-out.
+  double? finish;
+  bool _wasFalling = false, _wasTopped = false;
   final double _breathAt = math.Random().nextDouble() * 6;
 
   void add(ClimberState s, int nowMs) {
@@ -173,10 +188,19 @@ class RemoteClimber {
   }
 
   /// Builds the pose to draw and swings the gear. [clock] is in seconds.
-  void update(int nowMs, double dt, double clock, {bool still = false}) {
+  /// Returns a fall or a top-out that happens in what is shown now.
+  RemoteEvent? update(int nowMs, double dt, double clock, {bool still = false}) {
     final s = sample(nowMs);
     shown = s;
-    if (s == null) return;
+    if (s == null) return null;
+    RemoteEvent? ev;
+    if (s.falling && !_wasFalling) ev = RemoteEvent.fell;
+    if (s.topped && !_wasTopped) {
+      ev = RemoteEvent.topped;
+      finish ??= s.secs;
+    }
+    _wasFalling = s.falling;
+    _wasTopped = s.topped;
     final k = Climber.byId(s.climber), lk = look = Look.of(k.id);
     final br = still ? 0.0 : math.sin((clock + _breathAt) * 2.1);
     final p = pose = climberPose(k, s.c, s.tilt, br, s.lookX, s.lookUp, [s.ends[0], s.ends[1]], s.styles, s.kinds,
@@ -188,6 +212,7 @@ class RemoteClimber {
     }
     final wind = 25.0 * (0.6 + 0.4 * math.sin(clock * 0.9 + _breathAt));
     gear!.update(p, dt, s.falling ? wind * 4 : wind);
+    return ev;
   }
 }
 
@@ -215,9 +240,12 @@ class RemoteClimbers {
     if (r != null && s != null) r.add(s, nowMs);
   }
 
-  void update(int nowMs, double dt, double clock, {bool still = false}) {
+  /// Moves everyone and calls [onEvent] for each fall and top-out.
+  void update(int nowMs, double dt, double clock,
+      {bool still = false, void Function(RemoteClimber who, RemoteEvent e)? onEvent}) {
     for (final r in byId.values) {
-      r.update(nowMs, dt, clock, still: still);
+      final e = r.update(nowMs, dt, clock, still: still);
+      if (e != null) onEvent?.call(r, e);
     }
   }
 

@@ -10,7 +10,7 @@ import '../game/game.dart';
 import '../game/online.dart';
 import '../game/palette.dart';
 import 'climbers.dart';
-import 'hud.dart' show FrameSelect;
+import 'hud.dart' show FrameSelect, GameToast;
 import 'widgets.dart';
 
 /// Play online: make a room or join one with its code, then the lobby with
@@ -132,6 +132,19 @@ class _OnlineScreenState extends State<OnlineScreen> {
                 ]),
               ),
             ),
+          ),
+        ),
+      ),
+      // who joined or left the lobby
+      Positioned(
+        left: 14,
+        right: 14,
+        top: pad.top + 70,
+        child: IgnorePointer(
+          child: FrameSelect(
+            game: game,
+            select: (g) => g.toastVisible ? (g.toastText ?? '', g.toastKind, g.toastUntil) : null,
+            builder: (context, t) => Center(child: GameToast(toast: t)),
           ),
         ),
       ),

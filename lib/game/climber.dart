@@ -160,29 +160,79 @@ final Path _bagBody = Path()
 class ClimberPainter {
   const ClimberPainter();
 
-  /// Draws the whole climber in world units.
-  void draw(Canvas c, Pose p, Gear gear, Look look) {
+  /// Draws the whole climber in world units. [lite] is the cheap version
+  /// for other players' see-through climbers: flat colours with no cel
+  /// bands (no clips), plain hands, and no quickdraws, straps or helmet
+  /// details. The shape, the colours and the hair stay.
+  void draw(Canvas c, Pose p, Gear gear, Look look, {bool lite = false}) {
     final sp = _Sprites.of(look);
-    _leg(c, p.legs[0], 2, look, sp);
-    _leg(c, p.legs[1], 3, look, sp);
+    if (lite) {
+      _liteLeg(c, p.legs[0], 2, look, sp);
+      _liteLeg(c, p.legs[1], 3, look, sp);
+    } else {
+      _leg(c, p.legs[0], 2, look, sp);
+      _leg(c, p.legs[1], 3, look, sp);
+    }
     c.save();
     c.translate(p.c.x, p.c.y);
     c.rotate(p.tilt);
     c.scale(1 + 0.012 * p.br, 1 + 0.006 * p.br); // breathing
     sp.torso.stamp(c);
     c.restore();
-    _risers(c, p);
-    _quickdraws(c, p, gear);
+    if (!lite) {
+      _risers(c, p);
+      _quickdraws(c, p, gear);
+    }
     final a = bagAnchor(p), b = gear.bag;
     c.save();
     c.translate(a.x, a.y);
     c.rotate(math.atan2(b.x - a.x, a.y - b.y) + p.tilt * 0.3);
     sp.bag.stamp(c);
     c.restore();
+    if (lite) {
+      _liteArm(c, p.arms[0], look);
+      _liteArm(c, p.arms[1], look);
+      if (look.hairStyle == HairStyle.ponytail || look.hairStyle == HairStyle.braid) _tail(c, gear, look, lite: true);
+      _liteHead(c, p, look);
+      return;
+    }
     _arm(c, p.arms[0], 0, p, look);
     _arm(c, p.arms[1], 1, p, look);
     if (look.hairStyle == HairStyle.ponytail || look.hairStyle == HairStyle.braid) _tail(c, gear, look);
     _head(c, p, look);
+  }
+
+  void _liteLeg(Canvas c, LegGeo l, int i, Look look, _Sprites sp) {
+    flat(c, limbPath(l.h, l.k, 7.6, 5.8, 0.9), look.pants[0], ow: 2.6);
+    flat(c, limbPath(l.k, l.a, 5.8, 3.9, 1.3), look.pants[0], ow: 2.6);
+    final side = sideOf[i];
+    final calf = math.atan2(l.a.y - l.k.y, l.a.x - l.k.x);
+    final tilt = l.free ? -0.6 : clampD((calf + math.pi / 2) * side * 0.25, -0.3, 0.3);
+    c.save();
+    c.translate(l.e.x, l.e.y);
+    c.scale(side, 1);
+    c.rotate(tilt);
+    sp.shoes[side < 0 ? 0 : 1].stamp(c);
+    c.restore();
+  }
+
+  void _liteArm(Canvas c, ArmGeo a, Look look) {
+    flat(c, limbPath(a.s, a.m, 5.4, 4.4, 0.5), look.skin[0], ow: 2.6);
+    final sl = Pt(lerpD(a.s.x, a.m.x, 0.42), lerpD(a.s.y, a.m.y, 0.42));
+    flat(c, limbPath(a.s, sl, 5.9, 5.5, 0.3), look.shirt[0], ow: 2.6);
+    flat(c, limbPath(a.m, a.w, 4.6, 3.3, 0.9), look.skin[0], ow: 2.6);
+    flat(c, limbPath(a.w, a.e, 3.6, 4.2, 0.2), look.skin[0], ow: 2.2); // the hand, as one shape
+  }
+
+  void _liteHead(Canvas c, Pose p, Look look) {
+    final h = p.head;
+    c.save();
+    c.translate(h.x, h.y);
+    c.rotate(p.tilt * 0.5);
+    flat(c, look.hairStyle == HairStyle.short ? _hairShort : _hairBase, look.hair[0], ow: 2.2);
+    if (look.hairStyle == HairStyle.bun) flat(c, ellipsePath(-p.lookX * 0.8, -10.4, 4.9, 4.1), look.hair[0], ow: 2);
+    flat(c, _helmet, look.helmet[0], ow: 2.6);
+    c.restore();
   }
 
   void _leg(Canvas c, LegGeo l, int i, Look look, _Sprites sp) {
@@ -310,7 +360,7 @@ class ClimberPainter {
   }
 
   /// A ponytail or a braid that swings: a strip around the gear's hair chain.
-  void _tail(Canvas c, Gear gear, Look look) {
+  void _tail(Canvas c, Gear gear, Look look, {bool lite = false}) {
     final pts = gear.tail, n = pts.length;
     if (n < 2) return;
     final braid = look.hairStyle == HairStyle.braid;
@@ -337,6 +387,10 @@ class ClimberPainter {
     p
       ..lineTo(right[0].x, right[0].y)
       ..close();
+    if (lite) {
+      flat(c, p, look.hair[0], ow: 2);
+      return;
+    }
     cel(c, p, look.hair, ow: 2, kl: 0.6, kd: 1);
     if (braid) {
       // the crossings of the braid

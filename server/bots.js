@@ -5,11 +5,15 @@
 //   npm run bots -- ABCD 7                          # 7 bots into room ABCD
 //   npm run bots -- ABCD 7 http://192.168.1.5:3000  # another server
 //
+// On a route with a top they stop there and stand, so the top-out messages
+// and the finishing order can be tried; on the Daily Wall they keep going.
+//
 // A climber state is one array (the server passes it on without reading it):
 //   [t, climber, cx, cy, tilt, lookX, lookUp,
 //    leftHandX, leftHandY, rightHandX, rightHandY, leftFootX, leftFootY, rightFootX, rightFootY,
-//    bits, metres]
-// t is the sender's clock in ms, positions are world units (cm, y up), and
+//    bits, metres, secs]
+// t is the sender's clock in ms, secs the seconds since the climb started,
+// positions are world units (cm, y up), and
 // bits packs: 0-1 left hand style (0 grip, 1 fist, 2 open), 2-3 right hand
 // style, 4-6 left hand hold kind (0 jug, 1 crimp, 2 sloper, 3 chip, 4 ledge,
 // 5 ground, 6 top), 7-9 right hand hold kind, 10 left foot free, 11 right
@@ -28,6 +32,8 @@ const CLIMBERS = ['ada', 'rio', 'mei', 'kai'];
 const round = (v, k = 10) => Math.round(v * k) / k;
 const ORDER = [0, 3, 1, 2]; // left hand, right foot, right hand, left foot
 const SIDE = [-1, 1, -1, 1];
+// the height of the top of each route (lib/game/core.dart)
+const TOPS = { first: 610, steps: 912, crimps: 1192 };
 
 /// One climber going up the wall at its own pace, now and then falling off.
 class Climb {
@@ -35,6 +41,8 @@ class Climb {
     this.x0 = 80 + n * 32;
     this.speed = 12 + Math.random() * 10; // cm per second
     this.climber = CLIMBERS[n % CLIMBERS.length];
+    this.top = null; // set from the room's route
+    this.topped = false;
     this.reset();
   }
 
@@ -57,6 +65,7 @@ class Climb {
   }
 
   update(dt, t) {
+    if (this.topped) return;
     if (this.fallV != null) {
       this.fallV -= 980 * dt;
       this.y = Math.max(100, this.y + this.fallV * dt);
@@ -66,6 +75,16 @@ class Climb {
       return;
     }
     this.y += this.speed * dt;
+    if (this.top != null && this.y + 62 >= this.top) {
+      // stand on the top, fists on the hips
+      this.topped = true;
+      this.y = this.top + 105;
+      this.limbs = [0, 1, 2, 3].map((i) => {
+        const x = this.x0 + SIDE[i] * (i < 2 ? 21 : 13);
+        return { x, y: i < 2 ? this.y - 23 : this.top, from: null, t: 1 };
+      });
+      return;
+    }
     // every limb moves in turn, a little ahead of the body
     if ((this.moveT += dt) > 0.7) {
       this.moveT = 0;
@@ -73,7 +92,7 @@ class Climb {
       Object.assign(l, this.ideal(i, 30, t), { from: { x: l.x, y: l.y }, t: 0 });
     }
     for (const l of this.limbs) l.t = Math.min(1, l.t + dt / 0.35);
-    if (this.y > 2200 || Math.random() < dt / 45) {
+    if ((this.top == null && this.y > 2200) || Math.random() < dt / 45) {
       this.fallV = 0;
       this.fallT = 0;
     }
@@ -87,6 +106,11 @@ class Climb {
   }
 
   state(t) {
+    if (this.topped) {
+      const s = [Date.now(), this.climber, this.x0, round(this.y), 0, -1.2, 0.6];
+      for (const l of this.limbs) s.push(round(l.x), round(l.y));
+      return [...s, 1 | (1 << 2) | (1 << 13), round((this.y - 100) / 100), round(t)];
+    }
     const falling = this.fallV != null;
     const moving = (i) => falling || (this.limbs[i].t < 1 && this.limbs[i].from);
     const style = (i) => (moving(i) ? 2 : 0);
@@ -100,7 +124,7 @@ class Climb {
       const p = this.limbAt(i);
       s.push(round(p.x), round(p.y));
     }
-    s.push(bits, round((this.y - 100) / 100));
+    s.push(bits, round((this.y - 100) / 100), round(t));
     return s;
   }
 }
@@ -130,6 +154,7 @@ function bot(n) {
         socket.close();
         return;
       }
+      climb.top = TOPS[r.room.route] ?? null;
       console.log(`${name} joined ${r.room.code} (${r.room.players.length}/${r.room.max})`);
     });
   });

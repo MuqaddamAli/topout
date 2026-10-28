@@ -10,11 +10,13 @@ import 'package:topout/game/online.dart';
 import 'package:topout/game/remote.dart';
 import 'package:topout/game/store.dart';
 import 'package:topout/ui/app.dart';
+import 'package:topout/ui/cards.dart';
 
 import 'fake_link.dart';
 import 'fonts.dart';
 
-ClimberState state(int t, {double x = 180, double y = 100, bool falling = false}) => ClimberState(
+ClimberState state(int t, {double x = 180, double y = 100, bool falling = false, bool topped = false, double metres = 3.4, double? secs}) =>
+    ClimberState(
       t: t,
       climber: 'mei',
       c: Pt(x, y),
@@ -26,7 +28,9 @@ ClimberState state(int t, {double x = 180, double y = 100, bool falling = false}
       kinds: [HoldType.crimp, HoldType.jug],
       footFree: [false, true],
       falling: falling,
-      metres: 3.4,
+      topped: topped,
+      metres: metres,
+      secs: secs,
     );
 
 RoomPlayer player(String id, String name) => RoomPlayer(id: id, name: name, climber: 'ada', connected: true);
@@ -78,6 +82,19 @@ void main() {
       expect(SocketLink.payload(wire), [wire]);
       expect(SocketLink.payload({'code': 'KXMP'}), {'code': 'KXMP'});
       expect(SocketLink.payload(null), isNull);
+    });
+
+    test('the seconds since the start ride along, and older states without them still read', () {
+      final wire = state(1, secs: 75.04).encode();
+      expect(wire.length, 18);
+      expect(ClimberState.decode(wire)!.secs, closeTo(75.0, 1e-9));
+      final old = state(1).encode();
+      expect(old.length, 17);
+      expect(ClimberState.decode(old)!.secs, isNull);
+    });
+
+    test('1st, 2nd, 3rd, 4th, 11th, 21st', () {
+      expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 101].map(ordinal), ['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '22nd', '101st']);
     });
 
     test('junk is not a state', () {
@@ -317,6 +334,105 @@ void main() {
       await frames(tester, 0.2);
       expect(game.phase, Phase.paused);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await done(tester);
+    });
+
+    String? toastNow() => game.toastVisible ? game.toastText : null;
+
+    /// Sends a state for player [id] and lets it play.
+    Future<void> send(WidgetTester tester, String id, int t,
+        {double metres = 1, bool falling = false, bool topped = false, double? secs}) async {
+      link.push('state', [id, state(t, metres: metres, falling: falling, topped: topped, secs: secs).encode()]);
+      await frames(tester, 0.3);
+    }
+
+    testWidgets('the heights list: everyone, highest first, the finished at the top in order', (tester) async {
+      await inLobby(tester);
+      await started(tester);
+      await send(tester, 'p1', 0, metres: 4.2);
+      await send(tester, 'p2', 0, metres: 7.5);
+      await frames(tester, 0.3);
+      expect(game.standings.map((x) => x.name), ['Cy', 'Bo', 'Me']);
+      expect(game.standings.last.you, isTrue);
+      expect(find.text('7.5 m'), findsOneWidget);
+      expect(find.text('4.2 m'), findsOneWidget);
+      expect(find.text('0.0 m'), findsOneWidget);
+
+      // Bo tops out first, then Cy: they go to the top of the list in that order
+      await send(tester, 'p1', 3000, metres: 5.1, topped: true, secs: 95);
+      expect(toastNow(), 'Bo topped out! 1st · 1:35');
+      await send(tester, 'p2', 6000, metres: 5.1, topped: true, secs: 131);
+      expect(toastNow(), 'Cy topped out! 2nd · 2:11');
+      await frames(tester, 0.3);
+      expect(game.standings.map((x) => x.name), ['Bo', 'Cy', 'Me']);
+      expect(find.text('1:35'), findsOneWidget);
+      await done(tester);
+    });
+
+    testWidgets('messages: someone falls, drops out, comes back and leaves', (tester) async {
+      await inLobby(tester);
+      await started(tester);
+      await send(tester, 'p1', 0, metres: 2);
+      await send(tester, 'p1', 1000, metres: 2, falling: true);
+      expect(toastNow(), 'Bo fell');
+      // one message per fall, not one per state
+      game.toastText = null;
+      await send(tester, 'p1', 1100, falling: true);
+      expect(toastNow(), isNull);
+
+      final players = (room['players'] as List).cast<Map<String, Object?>>();
+      link.push('room', {...room, 'started': true, 'players': [players[0], {...players[1], 'connected': false}, players[2]]});
+      await frames(tester, 0.1);
+      expect(toastNow(), 'Bo lost the connection');
+      link.push('room', {...room, 'started': true});
+      await frames(tester, 0.1);
+      expect(toastNow(), 'Bo is back');
+      link.push('room', {...room, 'started': true, 'players': [players[0], players[2]]});
+      await frames(tester, 0.1);
+      expect(toastNow(), 'Bo left');
+      await done(tester);
+    });
+
+    testWidgets('the lobby says who joined and who left', (tester) async {
+      await inLobby(tester);
+      final players = (room['players'] as List).cast<Map<String, Object?>>();
+      link.push('room', {
+        ...room,
+        'players': [...players, {'id': 'p3', 'name': 'Dee', 'climber': 'kai', 'connected': true}],
+      });
+      await frames(tester, 0.2);
+      expect(toastNow(), 'Dee joined');
+      expect(find.text('Dee joined'), findsOneWidget);
+      link.push('room', {...room, 'players': [players[0], players[1]]});
+      await frames(tester, 0.2);
+      expect(toastNow(), 'Cy and Dee left');
+      await done(tester);
+    });
+
+    testWidgets('at the top: the finishing order and times', (tester) async {
+      await inLobby(tester);
+      await started(tester);
+      await send(tester, 'p1', 0, metres: 5.1, topped: true, secs: 70);
+      await send(tester, 'p2', 0, metres: 2.3);
+      game.myFinish = 92;
+      await frames(tester, 0.3);
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: TopCard(game: game, data: TopCardData('First Wall', 92, 30, 0, 'Your first time at the top!', false, 'Next route', 'Ada')),
+        ),
+      ));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('FINISHING ORDER'), findsOneWidget);
+      expect(find.text('1st'), findsOneWidget);
+      expect(find.text('Bo'), findsOneWidget);
+      expect(find.text('1:10'), findsOneWidget);
+      expect(find.text('2nd'), findsOneWidget);
+      expect(find.text('Me (you)'), findsOneWidget);
+      expect(find.text('1:32'), findsWidgets);
+      expect(find.text('climbing · 2.3 m'), findsOneWidget);
+      // online there is no next route
+      expect(find.text('Next route'), findsNothing);
+      expect(find.text('Leave'), findsOneWidget);
       await done(tester);
     });
 

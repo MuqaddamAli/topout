@@ -239,6 +239,23 @@ const Map<HoldType, String> holdWord = {
   HoldType.top: 'the top',
 };
 
+/// One climber in the online standings (the heights list and the finishing order).
+class Standing {
+  Standing(this.id, this.name, {required this.metres, this.finish, this.you = false, this.connected = true});
+  final String id, name;
+  final double metres;
+
+  /// Seconds from the start to the first top-out, or null while climbing.
+  final double? finish;
+  final bool you, connected;
+}
+
+/// 1st, 2nd, 3rd, 4th...
+String ordinal(int n) {
+  final teen = n % 100 >= 11 && n % 100 <= 13;
+  return '$n${teen ? 'th' : switch (n % 10) { 1 => 'st', 2 => 'nd', 3 => 'rd', _ => 'th' }}';
+}
+
 String fmtTime(double t) {
   final m = (t / 60).floor(), s = (t % 60).floor();
   return '$m:${s.toString().padLeft(2, '0')}';
@@ -282,6 +299,22 @@ class Game {
 
   /// The mode picked on the title screen, while a room's mode is in use.
   Mode? _modeBefore;
+
+  /// When the room's climb started (on [_netMs]), and your first top-out
+  /// in seconds from then.
+  double _onlineStart = 0;
+  double? myFinish;
+
+  /// Everyone in the room, finished first (in order) and then highest
+  /// first. Updated a few times a second; [standingsChanged] fires on a change.
+  List<Standing> standings = const [];
+  final Pulse standingsChanged = Pulse();
+  double _standAcc = 0;
+  String _standKey = '';
+
+  /// Who was in the room at the last update, to tell who joined or left.
+  Map<String, RoomPlayer> _known = {};
+  String? _knownRoom;
 
   /// Set by tests to pin the Daily Wall to one day.
   final DateTime? _fixedDay;
@@ -662,13 +695,93 @@ class Game {
     if (r == null) {
       remotes.clear();
       countdown = null;
+      _known = {};
+      _knownRoom = null;
     } else {
       remotes.sync(r.players, online.you);
+      _roomNews(r);
+      _updateStandings();
     }
     if (online.starts != _startsSeen) {
       _startsSeen = online.starts;
       if (r != null && phase == Phase.menu && screen == Screen.online) countdown = (online.startsInMs ?? 0) / 1000;
     }
+  }
+
+  /// Messages for who joined, left, dropped out or came back. Several at
+  /// once make one message ("Cy and Dee left").
+  void _roomNews(RoomView r) {
+    final now = {for (final p in r.players) p.id: p};
+    if (_knownRoom == r.code) {
+      final joined = <String>[], left = <String>[], lost = <String>[], back = <String>[];
+      for (final p in r.players) {
+        if (p.id == online.you) continue;
+        final was = _known[p.id];
+        if (was == null) {
+          joined.add(p.name);
+        } else if (was.connected && !p.connected) {
+          lost.add(p.name);
+        } else if (!was.connected && p.connected) {
+          back.add(p.name);
+        }
+      }
+      for (final p in _known.values) {
+        if (!now.containsKey(p.id) && p.id != online.you) left.add(p.name);
+      }
+      String names(List<String> n) => n.length == 1 ? n[0] : '${n.sublist(0, n.length - 1).join(', ')} and ${n.last}';
+      final news = [
+        if (joined.isNotEmpty) '${names(joined)} joined',
+        if (back.isNotEmpty) '${names(back)} ${back.length == 1 ? 'is' : 'are'} back',
+        if (left.isNotEmpty) '${names(left)} left',
+        if (lost.isNotEmpty) '${names(lost)} lost the connection',
+      ];
+      if (news.isNotEmpty) toast(news.join(' · '), lost.isNotEmpty ? ToastKind.warn : ToastKind.plain);
+    }
+    _known = now;
+    _knownRoom = r.code;
+  }
+
+  /// Seconds since the room's climb started.
+  double get onlineSecs => (_netMs - _onlineStart) / 1000;
+
+  void _remoteEvent(RemoteClimber who, RemoteEvent e) {
+    if (e == RemoteEvent.fell) {
+      toast('${who.name} fell', ToastKind.warn);
+      return;
+    }
+    final f = who.finish;
+    if (f == null) {
+      toast('${who.name} topped out!', ToastKind.ok);
+      return;
+    }
+    final place = [myFinish, for (final o in remotes.all) o.finish].where((x) => x != null && x <= f).length;
+    toast('${who.name} topped out! ${ordinal(place)} · ${fmtTime(f)}', ToastKind.ok);
+    _updateStandings();
+  }
+
+  void _updateStandings() {
+    final r = online.room;
+    final list = <Standing>[];
+    if (onlineClimb && r != null) {
+      for (final p in r.players) {
+        if (p.id == online.you) {
+          list.add(Standing(p.id, p.name, metres: climberHeight(), finish: myFinish, you: true));
+        } else {
+          final o = remotes.byId[p.id];
+          list.add(Standing(p.id, p.name, metres: o?.shown?.metres ?? 0, finish: o?.finish, connected: p.connected));
+        }
+      }
+      list.sort((a, b) {
+        final fa = a.finish, fb = b.finish;
+        if (fa != null || fb != null) return fa == null ? 1 : (fb == null ? -1 : fa.compareTo(fb));
+        return b.metres.compareTo(a.metres);
+      });
+    }
+    final key = list.map((x) => '${x.id}:${x.name}:${x.metres.toStringAsFixed(1)}:${x.finish}:${x.connected}').join('|');
+    if (key == _standKey) return;
+    _standKey = key;
+    standings = list;
+    standingsChanged.fire();
   }
 
   /// The route of room [r]. The Daily Wall is the one of the creator's day.
@@ -688,6 +801,8 @@ class Game {
     mode = Mode.fromName(r.mode);
     onlineClimb = true;
     _sendAcc = 0;
+    _onlineStart = _netMs;
+    myFinish = null;
     startRoute(roomRoute(r));
   }
 
@@ -706,6 +821,7 @@ class Game {
         falling: phase == Phase.falling,
         topped: phase == Phase.top,
         metres: climberHeight(),
+        secs: onlineSecs,
       );
 
   /// The countdown, sending your state and moving the others. Your own
@@ -724,7 +840,11 @@ class Game {
       _sendAcc = math.min(_sendAcc - 0.1, 0.1);
       online.sendState(myState().encode());
     }
-    remotes.update(_netMs.round(), math.min(0.1, rawDt), clock, still: reducedMotion);
+    remotes.update(_netMs.round(), math.min(0.1, rawDt), clock, still: reducedMotion, onEvent: _remoteEvent);
+    if ((_standAcc += rawDt) >= 0.25) {
+      _standAcc = 0;
+      _updateStandings();
+    }
   }
 
   /// Back from a card: to the title screen, or out of the room when online.
@@ -737,6 +857,8 @@ class Game {
     remotes.clear();
     countdown = null;
     onlineClimb = false;
+    myFinish = null;
+    _updateStandings();
     if (_modeBefore case final m?) {
       mode = m;
       _modeBefore = null;
@@ -1607,6 +1729,10 @@ class Game {
 
   void _topOut() {
     phase = Phase.top;
+    if (onlineClimb) {
+      myFinish ??= onlineSecs;
+      _updateStandings();
+    }
     commitSegment();
     records.tops++;
     records.saveLog();
