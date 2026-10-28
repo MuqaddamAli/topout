@@ -44,3 +44,6 @@ ios/Runner/GeneratedPluginRegistrant.*
 
 # Python (tool/)
 __pycache__/
+
+# Node.js (server/)
+node_modules/
