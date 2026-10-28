@@ -24,7 +24,9 @@ enum Sfx {
   no('no', 1),
   tap('tap', 2),
   bird('bird', 4),
-  breath('breath', 2);
+  breath('breath', 2),
+  snatch('snatch', 2),
+  heart('heart', 1);
 
   const Sfx(this.file, this.variants, [this.level = 1]);
   final String file;
@@ -147,6 +149,7 @@ class GameAudio {
       case Sfx.catchHold:
         HapticFeedback.mediumImpact();
       case Sfx.land:
+      case Sfx.snatch:
         HapticFeedback.heavyImpact();
       case Sfx.no:
         HapticFeedback.lightImpact();

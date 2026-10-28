@@ -404,6 +404,36 @@ def breath(v):
     return finish(x, -34)
 
 
+def snatch(v):
+    """A falling hand slams onto a hold: a heavy woody slap, a puff of chalk,
+    then a short breath out after the jolt."""
+    rng = np.random.default_rng(1200 + v)
+    total = 0.8
+    n = samples(total)
+    p = 1 + (v - 1.5) * 0.05
+    x = pat(150 * p, 92 * p, 0.07, total)
+    x += 0.38 * partials(520 * p, total, [(1, 1, 0.03), (2.47, 0.35, 0.012)])
+    x += 0.10 * noise(n, rng, 300, 1800) * env(total, 0.001, 0.015)
+    x += 0.12 * noise(n, rng, 350, 1300) * env(total, 0.02, 0.07)
+    breath_out = noise(samples(0.4), rng, 250, 900) * env(0.4, 0.05, 0.0, 0.16, 0.1)
+    place(x, 0.18 * breath_out, samples(0.09))
+    return finish(room(x, 0.15, 0.45, seed=30 + v), -21)
+
+
+def heart():
+    """Time slows down in a fall: two soft, low heartbeats."""
+    total = 1.1
+    x = np.zeros(samples(total))
+    for at, g in ((0.0, 1.0), (0.24, 0.7)):
+        n = samples(0.35)
+        # low enough to feel, with overtones so small speakers play it too
+        beat = osc(glide(78, 58, n, 2.0), n) * env(0.35, 0.012, 0.09)
+        beat += 0.55 * osc(glide(156, 116, n, 2.0), n) * env(0.35, 0.008, 0.05)
+        beat += 0.3 * osc(glide(234, 174, n, 2.0), n) * env(0.35, 0.006, 0.035)
+        place(x, g * beat, samples(at))
+    return finish(x, -26)
+
+
 def wind():
     """A 16 s loop of soft, low wind with slow gusts. Everything wraps, so it
     loops without a seam; the gusts are lowest at the loop point."""
@@ -562,6 +592,9 @@ def jobs():
         yield f'breath_{v}', lambda v=v: breath(v)
     for v in (1, 2, 3, 4):
         yield f'bird_{v}', lambda v=v: bird(v)
+    for v in (1, 2):
+        yield f'snatch_{v}', lambda v=v: snatch(v)
+    yield 'heart_1', heart
     yield 'fall_1', fall
     yield 'save_1', save
     yield 'top_1', top

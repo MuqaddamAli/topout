@@ -86,6 +86,7 @@ class ScenePainter extends CustomPainter {
     if (!menu) {
       bestY = _bestLine(canvas, r);
       if (g.drag != null) _dragAids(canvas);
+      _catchAids(canvas);
     }
     final pose = g.pose, gear = g.gear;
     if (pose != null && gear != null) {
@@ -105,8 +106,10 @@ class ScenePainter extends CustomPainter {
         _rings(canvas, pose);
         _hang(canvas);
         _hint(canvas, pose);
+        _catchReach(canvas, pose);
       }
     }
+    _catchFlash(canvas);
     _parts(canvas);
     canvas.restore();
     _motes(canvas, r);
@@ -115,6 +118,7 @@ class ScenePainter extends CustomPainter {
     if (!menu) {
       if (bestY != null) _bestLabel(canvas, r, bestY);
       _finger(canvas);
+      _catchLabel(canvas);
     }
     if (g.curtain > 0) _fill(canvas, Offset.zero & size, Pal.ink.withAlpha((g.curtain * g.curtain * 235).round()));
   }
@@ -697,9 +701,97 @@ class ScenePainter extends CustomPainter {
 
   void _hang(Canvas c) {
     if (!(g.hangT > 0)) return;
-    final at = Offset(g.cd.x, g.cd.y), f = clampD(g.hangT / g.climber.hangTime, 0, 1);
+    final at = Offset(g.cd.x, g.cd.y), f = clampD(g.hangT / g.hangMax, 0, 1);
     c.drawCircle(at, 44, _line(rgba(12, 14, 20, 0.4), 3));
     c.drawArc(Rect.fromCircle(center: at, radius: 44), math.pi / 2, -math.pi * 2 * f, false, _line(Pal.bad, 2));
+  }
+
+  // ---------------------------------------------------------------- catching a fall
+
+  /// How deep the fall is in slow motion, 0 to 1 (the veil and glow fade with it).
+  double get _slowness {
+    final f = g.fall;
+    if (f == null) return 0;
+    return clampD((1 - f.slow) / (1 - g.mode.slowMo), 0, 1);
+  }
+
+  /// While a falling climber can catch a hold, the wall dims and the holds in
+  /// reach glow: green is fine, yellow leaves little grip, red cannot be held
+  /// (dashed). The easiest one is the brightest. Wide holds glow along the lip.
+  void _catchAids(Canvas c) {
+    final f = g.fall, w = _slowness;
+    if (f == null || w <= 0) return;
+    final v = g.viewRange();
+    _fill(c, Rect.fromLTRB(v.x0, v.y0, v.x1, v.y1), Pal.ink.withAlpha((72 * w).round()));
+    if (!f.window) return;
+    final best = f.best, pulse = g.reducedMotion ? 0.0 : math.sin(g.clock * 10) * 2;
+    for (final o in f.options) {
+      final h = g.holds[o.hold], top = identical(o, best);
+      final col = o.left <= 0 ? Pal.bad : (o.left < 30 ? Pal.weak : Pal.good);
+      final alpha = (top ? 0.95 : 0.6) * w, width = (h.t.wide ? 3.0 : 1.5) + (top ? 1.0 : 0.0);
+      // a soft halo (a wide faint stroke, no blur), then the line itself
+      for (final (a, wd) in [(alpha * 0.22, width + 6), (alpha, width)]) {
+        final paint = _line(col.withAlpha((a * 255).round()), wd, cap: StrokeCap.round);
+        if (h.t.wide) {
+          final x0 = math.max(h.x, o.pt.x - Game.catchLip), x1 = math.min(h.x2!, o.pt.x + Game.catchLip);
+          if (o.left <= 0 && wd == width) {
+            c.drawPath(dashLine(x0, h.y + 2, x1, h.y + 2, 6, 5), paint);
+          } else {
+            c.drawLine(Offset(x0, h.y + 2), Offset(x1, h.y + 2), paint);
+          }
+        } else {
+          final rad = (h.t == HoldType.sloper ? 17.0 : 15.0) + pulse;
+          if (o.left <= 0 && wd == width) {
+            c.drawPath(dashCircle(o.pt.x, o.pt.y, rad, 3, 3), paint);
+          } else {
+            c.drawCircle(Offset(o.pt.x, o.pt.y), rad, paint);
+          }
+        }
+      }
+    }
+  }
+
+  /// Over the climber: a faint line from the reaching hand to the easiest
+  /// hold, and an arc that empties as the fall gets too fast to catch.
+  void _catchReach(Canvas c, Pose pose) {
+    final f = g.fall, w = _slowness;
+    if (f == null || !f.window) return;
+    final best = f.best;
+    if (best != null) {
+      final e = pose.arms[best.i].e;
+      c.drawPath(dashLine(e.x, e.y, best.pt.x, best.pt.y, 3, 4), _line(rgba(242, 237, 228, 0.5 * w), 1.2));
+    }
+    final at = Offset(g.cd.x, g.cd.y), left = clampD(1 + f.v / snatchMaxSpeed, 0, 1);
+    c.drawArc(Rect.fromCircle(center: at, radius: 52), math.pi / 2, -math.pi * 2 * left, false,
+        _line(rgba(242, 237, 228, 0.7 * w), 2, cap: StrokeCap.round));
+  }
+
+  /// A white ring where a falling hand caught a hold.
+  void _catchFlash(Canvas c) {
+    final cf = g.catchFlash;
+    if (cf == null) return;
+    final u = clampD(cf.t / 0.4, 0, 1);
+    c.drawCircle(Offset(cf.at.x, cf.at.y), 6 + 26 * (1 - (1 - u) * (1 - u)), _line(rgba(255, 255, 255, 0.9 * (1 - u)), 2.4));
+  }
+
+  TextPainter? _catchText;
+
+  /// Until the player has caught a fall once, say what to do.
+  void _catchLabel(Canvas c) {
+    final f = g.fall, best = f?.best;
+    if (f == null || !f.window || best == null || g.store.getBool('tip.catch', false)) return;
+    final tp = _catchText ??= TextPainter(
+      text: TextSpan(
+          text: 'Tap a glowing hold!',
+          style: TextStyle(fontFamily: 'Atkinson', fontWeight: FontWeight.w700, fontSize: 15, color: Pal.chalk)),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final p = g.w2s(best.pt.x, best.pt.y);
+    final x = clampD(p.dx - tp.width / 2, 16, g.cw - tp.width - 16), y = clampD(p.dy - 64, 120, g.ch - 220);
+    c.drawRRect(roundRect(x - 10, y - 6, tp.width + 20, tp.height + 12, 10), _p
+      ..shader = null
+      ..color = rgba(12, 14, 20, 0.82 * _slowness));
+    tp.paint(c, Offset(x, y));
   }
 
   /// First move of the lesson: a finger shows the drag.

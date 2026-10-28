@@ -51,14 +51,17 @@ enum HoldType {
 }
 
 enum Mode {
-  casual('Relaxed', 0.6, true, 'Your hands get tired more slowly.'),
-  normal('Normal', 1, true, 'Rest on a ledge to save your place.'),
-  solo('No saves', 1, false, 'If you fall, you start again from the ground.');
+  casual('Relaxed', 0.6, true, 0.22, 'Your hands get tired more slowly.'),
+  normal('Normal', 1, true, 0.3, 'Rest on a ledge to save your place.'),
+  solo('No saves', 1, false, 0.38, 'If you fall, you start again from the ground.');
 
-  const Mode(this.label, this.drain, this.ledges, this.note);
+  const Mode(this.label, this.drain, this.ledges, this.slowMo, this.note);
   final String label;
   final double drain;
   final bool ledges;
+
+  /// How slow time runs while you can catch a hold in a fall.
+  final double slowMo;
   final String note;
 
   static Mode fromName(String? name) {
@@ -294,6 +297,46 @@ DynoResult dynoCheck(List<Limb> limbs, int i, Pt pt, Pt c, [Climber? k]) {
   if (feet == 0 && kk.perk != Perk.freeJump) return const DynoResult.no('Put a foot on a hold first.');
   final end = solve(c, [Anchor(i, pt.x, pt.y)], 60, rch);
   return DynoResult.yes(Pt(end.x, end.y));
+}
+
+// ---------------------------------------------------------------- catching a fall
+
+/// A falling body speeds up by this much each second (cm/s²).
+const double fallGravity = 1100;
+
+/// The fastest fall in which a hand can still catch a hold (cm/s): about half
+/// a second, or 1.4 m, of falling.
+const double snatchMaxSpeed = 560;
+
+/// How far a body falls before it is too fast to catch anything.
+const double snatchDrop = snatchMaxSpeed * snatchMaxSpeed / (2 * fallGravity);
+
+/// Grip that catching each kind of hold costs, when you have only just let go.
+const Map<HoldType, double> snatchBase = {
+  HoldType.ledge: 10,
+  HoldType.top: 10,
+  HoldType.jug: 16,
+  HoldType.crimp: 30,
+  HoldType.sloper: 38,
+};
+
+/// Where hand [i] of a body at [c] (falling, so arms up) would catch [h], or
+/// null if it cannot: the hold must be a hand hold, within reach of the
+/// shoulder, and not below it (a falling hand grabs up, not down).
+Pt? snatchPoint(Hold h, int i, Pt c, [Climber? k]) {
+  if (!isHand[i] || quality(h, i) == Quality.no) return null;
+  final sx = c.x + jointOffset[i][0], sy = c.y + jointOffset[i][1];
+  final pt = attachPoint(h, i, sx);
+  if (pt.y < sy - 10) return null;
+  return hypot(pt.x - sx, pt.y - sy) <= (k ?? Climber.base).reach[i] + 4 ? pt : null;
+}
+
+/// Grip a catch on a hold of type [t] costs at fall speed [speed] (cm/s).
+/// The faster the fall, the harder the jolt.
+double snatchCost(HoldType t, double speed, [Climber? k]) {
+  final kk = k ?? Climber.base;
+  final fingers = kk.perk == Perk.strongFingers && t == HoldType.crimp ? 0.75 : 1.0;
+  return snatchBase[t]! * (1 + 1.6 * math.min(1.0, speed.abs() / snatchMaxSpeed)) * kk.catchMul * fingers;
 }
 
 // ---------------------------------------------------------------- climbers

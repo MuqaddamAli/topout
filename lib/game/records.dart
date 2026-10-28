@@ -11,16 +11,18 @@ class Records {
       metres = (l['metres'] as num?)?.toDouble() ?? 0;
       falls = (l['falls'] as num?)?.toInt() ?? 0;
       secs = (l['secs'] as num?)?.toDouble() ?? 0;
+      catches = (l['catches'] as num?)?.toInt() ?? 0;
     }
   }
 
   final Store _store;
 
-  // ---- the climbing log
-  int tops = 0, falls = 0;
+  // ---- the climbing log (catches: falls stopped by grabbing a hold on the way down)
+  int tops = 0, falls = 0, catches = 0;
   double metres = 0, secs = 0;
 
-  void saveLog() => _store.set('log', {'tops': tops, 'metres': metres, 'falls': falls, 'secs': secs});
+  void saveLog() =>
+      _store.set('log', {'tops': tops, 'metres': metres, 'falls': falls, 'secs': secs, 'catches': catches});
 
   // ---- best heights (the Daily Wall keeps one per day: [day] is its key)
   final Map<String, double> _heights = {};

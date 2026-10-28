@@ -202,6 +202,106 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('catch a hold while falling', (tester) async {
+    await _loadFonts();
+    tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    final game = Game(store: Store.memory(), audio: GameAudio(musicOn: true, sfxOn: true, enabled: false), today: DateTime(2026, 10, 27));
+    await tester.pumpWidget(RepaintBoundary(key: shotKey, child: TopoutApp(game: game)));
+    await frames(tester, 1.0);
+    final steps = game.routes.firstWhere((r) => r.id == 'steps');
+    game.startRoute(steps);
+    await frames(tester, 0.6);
+
+    // two big holds side by side, high on the wall
+    final h = game.holds;
+    late int a, b;
+    search:
+    for (var k = 0; k < h.length; k++) {
+      if (h[k].t != HoldType.jug || h[k].y < 300) continue;
+      for (var m = 0; m < h.length; m++) {
+        final dx = h[m].x - h[k].x;
+        if (h[m].t == HoldType.jug && (h[m].y - h[k].y).abs() < 25 && dx > 30 && dx < 70) {
+          a = k;
+          b = m;
+          break search;
+        }
+      }
+    }
+
+    /// Hang from the two holds, feet off, the left hand about to slip.
+    Future<void> slip({double right = 100}) async {
+      game.limbs[0] = Limb(a, h[a].x - 3, h[a].y);
+      game.limbs[1] = Limb(b, h[b].x + 3, h[b].y);
+      game.limbs[2].h = null;
+      game.limbs[3].h = null;
+      game.c = Pt((h[a].x + h[b].x) / 2, (h[a].y + h[b].y) / 2 - 62);
+      game.cd = game.c.copy();
+      game.camY = game.c.y + 40;
+      game.grip[0] = 1;
+      game.grip[1] = right;
+      await frames(tester, 0.4);
+      expect(game.phase, Phase.falling);
+      expect(game.fall!.window, isTrue, reason: 'the holds just let go of are in reach');
+      expect(game.fall!.options, isNotEmpty);
+    }
+
+    // 1. tap the glowing hold: the right hand catches it and the body hangs there
+    await slip();
+    expect(game.fall!.slow, lessThan(1), reason: 'time runs slow');
+    await shot(tester, '11_catch_window');
+    final best = game.fall!.best!;
+    expect(best.left, greaterThan(0));
+    await tester.tapAt(game.w2s(best.pt.x, best.pt.y));
+    await frames(tester, 0.3);
+    expect(game.phase, Phase.climb);
+    expect(game.limbs[best.i].h, best.hold);
+    expect(game.hangT, greaterThan(0));
+    expect(game.records.catches, 1);
+    expect(game.records.falls, 0, reason: 'a caught fall is not a fall');
+    expect(game.grip[best.i], lessThan(100 - 15));
+    await shot(tester, '12_caught');
+
+    // 2. no second hold in time: this fall cannot be caught again
+    await frames(tester, 2.4);
+    expect(game.fall?.offered ?? false, isFalse);
+    await frames(tester, 2.0);
+    expect(game.phase, Phase.fallCard);
+    expect(game.records.falls, 1);
+    expect(find.textContaining('caught a hold as you fell'), findsOneWidget);
+
+    // 3. the same with the keyboard: Space catches the easiest hold
+    game.retry();
+    await frames(tester, 0.3);
+    await slip();
+    expect(game.key(LogicalKeyboardKey.space), isTrue);
+    await frames(tester, 0.2);
+    expect(game.phase, Phase.climb);
+    expect(game.records.catches, 2);
+
+    // 4. too tired: with little grip to spare, the catch gets too costly as the
+    // fall speeds up; the fingers brush the hold and slip, and the fall goes on
+    game.limbs[2].h = null;
+    await frames(tester, 3.0);
+    if (game.phase == Phase.fallCard) game.retry();
+    await frames(tester, 0.3);
+    await slip(right: 24);
+    for (var k = 0; k < 120 && game.fall!.window && game.fall!.best!.left > 0; k++) {
+      await frames(tester, 1 / 60);
+    }
+    final tired = game.fall!.best!;
+    expect(tired.left, lessThanOrEqualTo(0), reason: 'the faster the fall, the dearer the catch');
+    await tester.tapAt(game.w2s(tired.pt.x, tired.pt.y));
+    await frames(tester, 0.1);
+    expect(game.phase, Phase.falling);
+    expect(game.fall!.window, isFalse);
+    await frames(tester, 3.0);
+    expect(game.phase, Phase.fallCard);
+    expect(game.records.catches, 2);
+  });
+
   testWidgets('pick each climber and climb with them', (tester) async {
     await _loadFonts();
     tester.view.physicalSize = const Size(390 * 3, 844 * 3);

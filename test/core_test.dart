@@ -125,4 +125,55 @@ void main() {
       expect(r.startHands.length, 2);
     }
   });
+
+  group('catching a fall', () {
+    test('a catch costs more the faster you fall, and more on worse holds', () {
+      for (final t in snatchBase.keys) {
+        expect(snatchCost(t, 0), snatchBase[t]);
+        expect(snatchCost(t, snatchMaxSpeed / 2), greaterThan(snatchCost(t, 0)));
+        expect(snatchCost(t, snatchMaxSpeed), closeTo(snatchBase[t]! * 2.6, 1e-9));
+        // past the limit it gets no worse (and the window is closed by then)
+        expect(snatchCost(t, snatchMaxSpeed * 2), snatchCost(t, snatchMaxSpeed));
+      }
+      const v = 300.0;
+      expect(snatchCost(HoldType.ledge, v), lessThan(snatchCost(HoldType.jug, v)));
+      expect(snatchCost(HoldType.jug, v), lessThan(snatchCost(HoldType.crimp, v)));
+      expect(snatchCost(HoldType.crimp, v), lessThan(snatchCost(HoldType.sloper, v)));
+    });
+
+    test('climbers catch differently', () {
+      const v = 300.0;
+      // Kai, the jumper, catches best; Mei's strong fingers help on small edges
+      expect(snatchCost(HoldType.jug, v, Climber.kai), lessThan(snatchCost(HoldType.jug, v, Climber.ada)));
+      expect(snatchCost(HoldType.crimp, v, Climber.mei), lessThan(snatchCost(HoldType.crimp, v, Climber.ada)));
+      expect(snatchCost(HoldType.jug, v, Climber.mei), greaterThan(snatchCost(HoldType.jug, v, Climber.ada)));
+    });
+
+    test('a falling hand grabs holds in reach, not below the shoulder', () {
+      final c = Pt(180, 400);
+      // right shoulder at (193, 425)
+      final over = Hold(HoldType.jug, 200, 470);
+      final far = Hold(HoldType.jug, 200, 425 + reach[1] + 20);
+      final low = Hold(HoldType.jug, 200, 400);
+      final chip = Hold(HoldType.chip, 200, 470);
+      expect(snatchPoint(over, 1, c), isNotNull);
+      expect(snatchPoint(far, 1, c), isNull);
+      expect(snatchPoint(low, 1, c), isNull);
+      expect(snatchPoint(chip, 1, c), isNull);
+      expect(snatchPoint(over, 2, c), isNull, reason: 'feet do not catch');
+      // more reach catches from further away
+      final edge = Hold(HoldType.jug, 193, 425 + reach[1] + 6);
+      expect(snatchPoint(edge, 1, c, Climber.ada), isNull);
+      expect(snatchPoint(edge, 1, c, Climber.rio), isNotNull);
+      // a ledge is caught right above the hand, anywhere along it
+      final ledge = Hold(HoldType.ledge, 40, 470, 320);
+      expect(snatchPoint(ledge, 0, c)!.x, closeTo(167, 1e-9));
+    });
+
+    test('every mode slows a fall, Relaxed the most', () {
+      expect(Mode.casual.slowMo, lessThan(Mode.normal.slowMo));
+      expect(Mode.normal.slowMo, lessThan(Mode.solo.slowMo));
+      expect(snatchDrop, closeTo(142.5, 0.1));
+    });
+  });
 }

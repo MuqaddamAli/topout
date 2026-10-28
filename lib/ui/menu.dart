@@ -363,11 +363,13 @@ class _LogPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final m = (game.records.secs / 60).floor();
     final time = m >= 60 ? '${m ~/ 60} h ${m % 60} min' : '$m min';
+    final caught = game.records.catches;
     final tiles = [
-      ('Tops', '${game.records.tops}'),
-      ('Metres', game.records.metres.toStringAsFixed(0)),
-      ('Falls', '${game.records.falls}'),
-      ('Time', time),
+      ('Tops', '${game.records.tops}', null),
+      ('Metres', game.records.metres.toStringAsFixed(0), null),
+      // falls you stopped by catching a hold on the way down
+      ('Falls', '${game.records.falls}', caught > 0 ? '$caught caught' : null),
+      ('Time', time, null),
     ];
     return _Panel(title: 'Your climbs', children: [
       for (var row = 0; row < 2; row++)
@@ -381,7 +383,13 @@ class _LogPanel extends StatelessWidget {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(tiles[row * 2 + k].$1.toUpperCase(), style: Txt.eyebrow(spacing: 0.1)),
                   const SizedBox(height: 4),
-                  Text(tiles[row * 2 + k].$2, style: Txt.mono(22)),
+                  Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+                    Text(tiles[row * 2 + k].$2, style: Txt.mono(22)),
+                    if (tiles[row * 2 + k].$3 case final extra?) ...[
+                      const SizedBox(width: 8),
+                      Flexible(child: Text(extra, style: Txt.body(13, color: Pal.good), overflow: TextOverflow.ellipsis)),
+                    ],
+                  ]),
                 ]),
               ),
             ),

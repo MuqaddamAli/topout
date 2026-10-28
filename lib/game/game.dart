@@ -88,14 +88,60 @@ class FallInfo {
   final double height;
   double reached = 0;
   double prevBest = 0;
+
+  /// The hand that let go had caught this fall's hold while falling.
+  bool afterCatch = false;
+}
+
+/// A hold a falling hand could catch right now.
+class SnatchOption {
+  SnatchOption(this.hold, this.i, this.pt, this.cost, this.left);
+  final int hold, i;
+  final Pt pt;
+  final double cost;
+
+  /// Grip the hand would have left after the catch. At 0 or less it cannot hold on.
+  final double left;
 }
 
 class FallState {
-  FallState(this.info, this.trace);
+  FallState(this.info, this.trace, {required this.chance});
   final FallInfo info;
   final List<List<double>> trace;
   double v = 0, t = 0;
   bool landed = false;
+
+  /// One try to catch a hold: true until it is used or the moment passes.
+  bool chance;
+
+  /// Time runs slow and the holds in reach glow.
+  bool window = false;
+
+  /// The window opened during this fall (and so the fall card can teach it).
+  bool offered = false;
+
+  /// How fast the fall runs: 1 normally, the mode's slow motion in the window.
+  double slow = 1;
+
+  /// The holds in reach right now. Counted as a fall yet?
+  List<SnatchOption> options = const [];
+  bool counted = false;
+
+  /// The easiest catch in reach, or null.
+  SnatchOption? get best {
+    SnatchOption? b;
+    for (final o in options) {
+      if (b == null || o.left > b.left) b = o;
+    }
+    return b;
+  }
+}
+
+/// The white ring where a falling hand caught a hold.
+class CatchFlash {
+  CatchFlash(this.at);
+  final Pt at;
+  double t = 0;
 }
 
 class DynoState {
@@ -266,6 +312,16 @@ class Game {
   double camShake = 0;
   DynoState? dyno;
   double hangT = 0;
+
+  /// What [hangT] started from (the hang ring shows the share left).
+  double hangMax = 1;
+
+  /// Hanging from a hold caught in a fall: a fall now cannot be caught again.
+  bool _snatchHang = false;
+
+  /// After a catch the body swings under the hand: the offset it started from.
+  ({double dx, double dy, double dip, double t})? _swing;
+  CatchFlash? catchFlash;
   bool segOpen = false;
   double maxY = 0, segStartY = 0, segTime = 0;
   double bestAtStart = 0;
@@ -466,6 +522,7 @@ class Game {
     chalked = {...r.startHands};
     dyno = null;
     hangT = 0;
+    _clearCatch();
     restLedge = 0;
     bestAtStart = bestHeight(r);
     newBestShown = false;
@@ -690,6 +747,10 @@ class Game {
   }
 
   void pointerDown(int id, Offset pos, bool touch) {
+    if (phase == Phase.falling && (fall?.window ?? false)) {
+      _tapCatch(pos);
+      return;
+    }
     if (phase != Phase.climb || _ptr != null || dyno != null) return;
     if (look) {
       setLook(false);
@@ -926,8 +987,15 @@ class Game {
     _ui();
   }
 
-  /// Keyboard: U undo, L look, Esc pause or back, Space or Enter to try again or go on.
+  /// Keyboard: U undo, L look, Esc pause or back, Space or Enter to try again or go on,
+  /// Space while falling to catch the easiest hold in reach.
   bool key(LogicalKeyboardKey k, {bool ctrl = false}) {
+    final f = fall;
+    if (phase == Phase.falling && f != null && f.window && k == LogicalKeyboardKey.space) {
+      final b = f.best;
+      if (b != null) _snatch(b);
+      return true;
+    }
     if (phase == Phase.climb) {
       if (k == LogicalKeyboardKey.keyU || (k == LogicalKeyboardKey.keyZ && ctrl)) {
         undo();
@@ -1022,19 +1090,22 @@ class Game {
     if (hangT > 0) {
       if (supportInfo(limbs, holds).supported) {
         hangT = 0;
+        _snatchHang = false;
       } else {
         hangT -= dt * (drag != null ? slowWhileAiming : 1);
         if (hangT <= 0) {
           hangT = 0;
           final hi = limbs[0].h != null ? 0 : 1, hh = limbs[hi].h;
-          _startFall(FallInfo(
-            hang: true,
-            i: hi,
-            t: hh != null ? holds[hh].t : HoldType.jug,
-            feetW: 0,
-            hands: 1,
-            height: climberHeight(),
-          ));
+          _startFall(
+              FallInfo(
+                hang: true,
+                i: hi,
+                t: hh != null ? holds[hh].t : HoldType.jug,
+                feetW: 0,
+                hands: 1,
+                height: climberHeight(),
+              )..afterCatch = _snatchHang,
+              chance: !_snatchHang);
           return;
         }
       }
@@ -1069,7 +1140,7 @@ class Game {
     grip[dy.i] = math.max(1.0, grip[dy.i] - climber.catchCostFor(dy.q));
     holdTime[dy.i] = 0;
     dyno = null;
-    hangT = climber.hangTime;
+    hangT = hangMax = climber.hangTime;
     effects.burst(l.x, l.y + 3, PartKind.chalk, 14);
     camShake = math.max(camShake, 3.0);
     _play(Sfx.catchHold, pan: panOf(l.x));
@@ -1088,7 +1159,7 @@ class Game {
     holdTime[i] = 0;
     if (drag != null && !supportInfo(limbs, holds).supported) endDrag(true);
     if (!supportInfo(limbs, holds).supported) {
-      _startFall(info);
+      _startFall(info..afterCatch = _snatchHang, chance: !_snatchHang);
     } else {
       toast('Your ${limbNames[i]} slipped!', ToastKind.warn);
     }
@@ -1123,24 +1194,181 @@ class Game {
     }
   }
 
-  void _startFall(FallInfo info) {
+  /// The body has lost its hold. If a hold is in reach on the way down (and
+  /// this fall still has its one chance), time slows and the player can tap
+  /// one to catch it; the fall only counts once that moment has passed.
+  void _startFall(FallInfo info, {bool chance = true}) {
     if (drag != null) endDrag(true);
     dyno = null;
     hangT = 0;
+    _snatchHang = false;
+    _swing = null;
     info.reached = math.max(0, maxY - 100) / unitsPerMetre;
     info.prevBest = bestHeight(route!);
-    commitSegment();
-    records.falls++;
-    records.saveLog();
     _play(Sfx.fall, pan: panOf(c.x));
-    fall = FallState(info, trace.map((e) => [...e]).toList());
+    final f = fall = FallState(info, trace.map((e) => [...e]).toList(), chance: chance && _catchAhead());
     for (final l in limbs) {
       l.h = null;
     }
-    falls++;
     phase = Phase.falling;
     look = false;
     tipText = null;
+    if (f.chance) {
+      f.window = f.offered = true;
+      _findCatches(f);
+      audio.muffle(true);
+      _play(Sfx.heart);
+    } else {
+      _fallFinal(f);
+    }
+    _ui();
+  }
+
+  /// The fall is for real: count it.
+  void _fallFinal(FallState f) {
+    if (f.counted) return;
+    f.counted = true;
+    commitSegment();
+    records.falls++;
+    records.saveLog();
+    falls++;
+  }
+
+  /// The catch moment passed (too fast, or the ground): the fall counts.
+  void _closeCatch(FallState f) {
+    if (!f.window) return;
+    _endSlowMo(f);
+    _fallFinal(f);
+    _ui();
+  }
+
+  /// Time speeds up again and the holds stop glowing; the chance is used.
+  void _endSlowMo(FallState f) {
+    f.window = false;
+    f.chance = false;
+    f.options = const [];
+    audio.muffle(false);
+  }
+
+  void _clearCatch() {
+    _snatchHang = false;
+    _swing = null;
+    catchFlash = null;
+  }
+
+  /// Hand [i]'s grip after catching [h] at [speed], and where it would hold.
+  SnatchOption? _option(int k, Hold h, int i, Pt body, double speed) {
+    final pt = snatchPoint(h, i, body, climber);
+    if (pt == null) return null;
+    final cost = snatchCost(h.t, speed, climber);
+    return SnatchOption(k, i, pt, cost, grip[i] - cost);
+  }
+
+  /// Holds near height [y0] to [y1], by height.
+  Iterable<int> _holdsBetween(double y0, double y1) sync* {
+    final r = route!;
+    for (var n = r.firstAtOrAbove(y0); n < r.byY.length; n++) {
+      final k = r.byY[n];
+      if (r.holds[k].y > y1) break;
+      yield k;
+    }
+  }
+
+  /// Will any hold come within reach, with grip to spare, before the fall is too fast?
+  bool _catchAhead() {
+    for (var d = 0.0; d <= snatchDrop; d += 12) {
+      final body = Pt(c.x, c.y - d);
+      for (final k in _holdsBetween(body.y + 10, body.y + 130)) {
+        for (var i = 0; i < 2; i++) {
+          final o = _option(k, holds[k], i, body, 0);
+          if (o != null && o.left > 0) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /// The holds in reach right now; each with the hand that would keep more grip.
+  void _findCatches(FallState f) {
+    final out = <SnatchOption>[];
+    for (final k in _holdsBetween(c.y + 10, c.y + 130)) {
+      SnatchOption? pick;
+      for (var i = 0; i < 2; i++) {
+        final o = _option(k, holds[k], i, c, -f.v);
+        if (o != null && (pick == null || o.left > pick.left)) pick = o;
+      }
+      if (pick != null) out.add(pick);
+    }
+    f.options = out;
+  }
+
+  /// A tap while falling: catch the glowing hold under the finger, if any.
+  void _tapCatch(Offset pos) {
+    final f = fall!;
+    final at = s2w(pos.dx, pos.dy);
+    SnatchOption? pick;
+    var bd = math.max(34.0, 26 * scale);
+    for (final o in f.options) {
+      final h = holds[o.hold];
+      // a ledge glows along its lip around the hand, and counts anywhere there
+      final x = h.t.wide ? clampD(at.x, math.max(h.x, o.pt.x - catchLip), math.min(h.x2!, o.pt.x + catchLip)) : o.pt.x;
+      final d = (w2s(x, o.pt.y) - pos).distance;
+      if (d < bd) {
+        bd = d;
+        pick = o;
+      }
+    }
+    if (pick != null) _snatch(pick);
+  }
+
+  /// Half the length of a ledge's lip that glows around the catching hand.
+  static const double catchLip = 40;
+
+  /// A falling hand grabs [o]. With grip to spare it holds: the body swings
+  /// under it and has a moment to find a second hold. Without, the fingers
+  /// brush it and slip, and the fall goes on.
+  void _snatch(SnatchOption o) {
+    final f = fall!, speed = -f.v;
+    _endSlowMo(f);
+    if (o.left <= 0) {
+      effects.burst(o.pt.x, o.pt.y, PartKind.pebble, 5);
+      _play(Sfx.slip, pan: panOf(o.pt.x));
+      toast('Too tired to hold it', ToastKind.warn);
+      _fallFinal(f);
+      _ui();
+      return;
+    }
+    final i = o.i, l = limbs[i];
+    l.h = o.hold;
+    l.x = o.pt.x;
+    l.y = o.pt.y;
+    grip[i] = math.max(1.0, grip[i] - o.cost);
+    holdTime[i] = 0;
+    chalked.add(o.hold);
+    _grabbed(o.hold);
+    // the body ends up hanging under the hand, and swings there from where it was
+    final from = cd.copy(), hang = solve(c, [Anchor(i, o.pt.x, o.pt.y)], 60, climber.reach);
+    c.x = hang.x;
+    c.y = hang.y;
+    final k = clampD(speed / snatchMaxSpeed, 0, 1);
+    _swing = reducedMotion ? null : (dx: from.x - c.x, dy: from.y - c.y, dip: 3 + 4 * k, t: 0);
+    if (reducedMotion) cd = c.copy();
+    fall = null;
+    phase = Phase.climb;
+    hangT = hangMax = climber.hangTime + 0.6;
+    _snatchHang = true;
+    history.clear(); // no undo back into the fall
+    camManual = null;
+    showRecenter = false;
+    records.catches++;
+    records.saveLog();
+    store.set('tip.catch', true);
+    effects.burst(o.pt.x, o.pt.y + 3, PartKind.chalk, 18);
+    catchFlash = CatchFlash(o.pt.copy());
+    if (!reducedMotion) camShake = math.max(camShake, 3 + 5 * k);
+    slipFlash = 0;
+    _play(Sfx.snatch, pan: panOf(o.pt.x));
+    toast(k < 0.35 ? 'Caught it!' : (k < 0.75 ? 'Great catch!' : 'What a catch!'), ToastKind.ok);
     _ui();
   }
 
@@ -1166,6 +1394,7 @@ class Game {
     camManual = null;
     dyno = null;
     hangT = 0;
+    _clearCatch();
     resetPoseState(limbs.sublist(0, 2).map((l) => l.h != null ? HandStyle.grip : HandStyle.open).toList());
     phase = Phase.climb;
     screen = Screen.hud;
@@ -1184,7 +1413,10 @@ class Game {
     final onSave = !endless && checkpoint!.ledge != 0;
     phase = Phase.fallCard;
     String why, fix;
-    if (f.hang) {
+    if (f.hang && f.afterCatch) {
+      why = 'You caught a hold as you fell, but you did not get a second hold in time.';
+      fix = 'After a catch, put a foot on a hold right away.';
+    } else if (f.hang) {
       why = 'You caught the jump, but you did not get another hold in time.';
       fix = 'Before you jump, find the next hold.';
     } else {
@@ -1216,6 +1448,10 @@ class Game {
         note = 'Best today: ${f.prevBest.toStringAsFixed(1)} m';
         noteDim = true;
       }
+    }
+    // until the first catch, teach it on a fall that could have been caught
+    if (note == null && fall!.offered && !store.getBool('tip.catch', false)) {
+      note = 'While you fall, tap a glowing hold to catch it.';
     }
     fallCard = FallCardData(
       endless: endless,
@@ -1278,8 +1514,10 @@ class Game {
 
   // ================================================================ animation
 
-  void _animate(double dt) {
-    clock += dt;
+  void _animate(double rawDt) {
+    clock += rawDt;
+    // while a falling climber can catch a hold, the world runs slow (UI time does not)
+    final dt = rawDt * (fall?.slow ?? 1);
     effects.update(dt, clock);
     curtain = math.max(0.0, curtain - dt / 0.45);
     slipFlash = math.max(0.0, slipFlash - dt * 1.4);
@@ -1313,8 +1551,11 @@ class Game {
     final f = fall;
     final ce = cele;
     if (phase == Phase.falling && f != null) {
+      // ease into slow motion while a hold can be caught, and back out after
+      final want = f.window ? mode.slowMo : 1.0;
+      f.slow += (want - f.slow) * math.min(1.0, rawDt / (f.window ? 0.12 : 0.25));
       f.t += dt;
-      f.v -= 1100 * dt;
+      f.v -= fallGravity * dt;
       c.y += f.v * dt;
       if (c.y < 64) {
         c.y = 64;
@@ -1328,6 +1569,10 @@ class Game {
       }
       cd.x = c.x;
       cd.y = c.y;
+      if (f.window) {
+        _findCatches(f);
+        if (-f.v > snatchMaxSpeed || f.landed) _closeCatch(f);
+      }
       if (f.t > 1) _showFallCard();
     } else if (ce != null) {
       ce.t += dt;
@@ -1343,11 +1588,19 @@ class Game {
           later(n * 0.14, () => effects.burst(cd.x + (_rand.nextDouble() - 0.5) * 60, cd.y + 60 + _rand.nextDouble() * 30, PartKind.spark, 12));
         }
       }
+    } else if (_swing case final sw?) {
+      // swinging under the hand that caught the fall, then settling
+      final t = sw.t + dt;
+      _swing = t > 2.2 ? null : (dx: sw.dx, dy: sw.dy, dip: sw.dip, t: t);
+      cd.x = c.x + sw.dx * math.exp(-t / 0.45) * math.cos(t * 9);
+      cd.y = c.y + sw.dy * math.exp(-t / 0.08) - sw.dip * math.exp(-t / 0.22) * math.sin(t * 14);
     } else {
       final k = math.min(1.0, dt * 18);
       cd.x += (c.x - cd.x) * k;
       cd.y += (c.y - cd.y) * k;
     }
+    final cf = catchFlash;
+    if (cf != null && (cf.t += dt) > 0.4) catchFlash = null;
     scale = lerpD(baseScale(), lookScale(), lookK);
     if (drag == null) {
       final normY = camManual ?? cd.y + 40, normX = camXFor(cd.x);
@@ -1373,7 +1626,7 @@ class Game {
     // body lean: hands over feet
     final e = endDraw;
     final tl = clampD(((e[2].x + e[3].x) - (e[0].x + e[1].x)) * 0.5 * 0.0035, -0.16, 0.16) +
-        (phase == Phase.falling ? math.sin(clock * 7) * 0.25 : 0);
+        (phase == Phase.falling && !reducedMotion ? math.sin((fall?.t ?? 0) * 7 + 1) * 0.25 : 0);
     tilt += (tl - tilt) * math.min(1.0, dt * 8);
     // where the head looks
     Pt? tgt;
@@ -1381,6 +1634,8 @@ class Game {
       tgt = Pt(drag!.px, drag!.py);
     } else if (dyno != null) {
       tgt = dyno!.pt;
+    } else if (fall?.best case final b?) {
+      tgt = b.pt;
     } else if (cele != null) {
       tgt = Pt(cd.x - 120, cd.y + 160);
     }
@@ -1419,20 +1674,9 @@ class Game {
           free = u <= 0.5;
         }
       } else if (dy != null && dy.i == i) {
-        final dx = dy.pt.x - j.x, ddy = dy.pt.y - j.y;
-        var len = hypot(dx, ddy);
-        if (len == 0) len = 1;
-        final m = math.min(1.0, (climber.reach[i] + 2) / len);
-        tx = j.x + dx * m;
-        ty = j.y + ddy * m;
+        (tx, ty) = _toward(i, j, dy.pt);
       } else if (d != null && d.i == i) {
-        final target = d.candOk ? d.candPt! : Pt(d.px, d.py);
-        final dx = target.x - j.x, ddy = target.y - j.y;
-        var len = hypot(dx, ddy);
-        if (len == 0) len = 1;
-        final m = math.min(1.0, (climber.reach[i] + 2) / len);
-        tx = j.x + dx * m;
-        ty = j.y + ddy * m;
+        (tx, ty) = _toward(i, j, d.candOk ? d.candPt! : Pt(d.px, d.py));
       } else if (l.h != null) {
         tx = l.x;
         ty = l.y;
@@ -1442,8 +1686,13 @@ class Game {
           hKind[i] = holds[l.h!].t;
         }
       } else if (ph == Phase.falling) {
-        tx = j.x + sideOf[i] * (hand ? 26 : 16);
-        ty = j.y + (hand ? 38 : -52);
+        final o = hand ? _reachFor(i) : null;
+        if (o != null) {
+          (tx, ty) = _toward(i, j, o.pt); // reaching for a hold, fingers open
+        } else {
+          tx = j.x + sideOf[i] * (hand ? 26 : 16);
+          ty = j.y + (hand ? 38 : -52);
+        }
         free = true;
       } else if (dy != null) {
         tx = j.x + sideOf[i] * (hand ? 18 : 8);
@@ -1482,6 +1731,24 @@ class Game {
       e.x += (tx - e.x) * k;
       e.y += (ty - e.y) * k;
     }
+  }
+
+  /// Where limb [i] from joint [j] gets toward [target], as far as it reaches.
+  (double, double) _toward(int i, Pt j, Pt target) {
+    final dx = target.x - j.x, dy = target.y - j.y;
+    var len = hypot(dx, dy);
+    if (len == 0) len = 1;
+    final m = math.min(1.0, (climber.reach[i] + 2) / len);
+    return (j.x + dx * m, j.y + dy * m);
+  }
+
+  /// The hold falling hand [i] reaches for: its easiest catch, if any.
+  SnatchOption? _reachFor(int i) {
+    SnatchOption? b;
+    for (final o in fall?.options ?? const <SnatchOption>[]) {
+      if (o.i == i && (b == null || o.left > b.left)) b = o;
+    }
+    return b;
   }
 
   // ================================================================ pose
