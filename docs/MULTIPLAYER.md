@@ -46,7 +46,7 @@ It prints `Topout server on port 3000`. Open http://localhost:3000/health in a b
 flutter run -d chrome --web-port 8080
 ```
 
-The game connects to `http://localhost:3000` by default.
+The game picks its server from where it runs: on `localhost` or a local network address it uses port 3000 of that same machine, and on the live site it uses `https://topout.onrender.com`. A build can set another one with `--dart-define=MP_SERVER=...`.
 
 **3. Open more players.** Open http://localhost:8080 in more Chrome windows; each window is one player. Put two side by side, make a room in one (**Play online**, **Create**) and join it from the other with the code.
 
@@ -102,11 +102,13 @@ Under **Wireless LAN adapter Wi-Fi**, read the **IPv4 Address**, for example `19
 
 **3. Start the server** as in a) (`cd server`, `npm start`). On a phone, open `http://192.168.18.23:3000/health`: it should say `ok`. If it does not load, it is the firewall or the network (see step 2).
 
-**4. Run the game for the network**, pointed at your PC's address (in the project folder):
+**4. Run the game for the network** (in the project folder):
 
 ```powershell
-flutter run -d web-server --release --web-hostname 0.0.0.0 --web-port 8080 --dart-define=MP_SERVER=http://192.168.18.23:3000
+flutter run -d web-server --release --web-hostname 0.0.0.0 --web-port 8080
 ```
+
+Opened at your PC's address, the game uses the server on port 3000 of the same address by itself.
 
 **5. Open the game on the phones** at `http://192.168.18.23:8080`, and on the PC at the same address (not `localhost`). Make a room on one device and join from the others.
 
@@ -147,13 +149,13 @@ Render sets `PORT` itself, and the server listens on it.
 - The free server goes to sleep after about 15 minutes with nobody connected. The first player after that waits up to a minute while it wakes: the game shows "Connecting to server…" and that the server may be waking up. After a minute it shows **Retry**.
 - Rooms live in the server's memory. A redeploy or a restart ends all rooms: players are told they lost their place in the room, and someone makes a new one.
 
-**4. Point the Vercel site at it.**
+**4. The Vercel site finds it by itself.** The game on the live site connects to `https://topout.onrender.com` (set as `onlineServer` in `lib/game/online.dart`), so nothing has to be set in Vercel.
+
+If the server ever gets another address, either change `onlineServer` and push, or set it in Vercel without a code change:
 
 1. In Vercel, open the project and go to **Settings** > **Environment Variables**.
-2. Add **Key** `MP_SERVER` with **Value** `https://topout-server.onrender.com` (your Render address, with no `/` at the end). Tick **Production**, and **Preview** to test branch builds before merging.
-3. **Save**.
-
-The address is built into the game, so it only takes effect in a new build. Go to **Deployments**, open the menu (**…**) of the latest deployment and click **Redeploy**. The build log says `Online play uses the server at https://…`; without the variable it says `MP_SERVER is not set`.
+2. Add **Key** `MP_SERVER` with the server's address (no `/` at the end) for **Production** and **Preview**, and **Save**.
+3. The address is built into the game, so it only takes effect in a new build: in **Deployments**, open the menu (**…**) of the latest Production deployment and click **Redeploy**. The build log says `Online play uses the server at https://…`.
 
 **5. Try it.** Open the Vercel site on two devices, make a room on one and join from the other.
 
@@ -161,21 +163,16 @@ The server lets in pages from any `https://….vercel.app` address, `localhost` 
 
 ## Going live: the order
 
-Vercel builds the live site from `main`, so merging this work into `main` puts Play online on the live site. Do it in this order, so it works from the first build:
+Vercel builds the live site from `main`, and Render builds the server from `main` too. A push to `main` updates both: the game in a few minutes, the server in about a minute (which ends the rooms open at that moment).
 
-1. Make the Render service (c, steps 1 and 2). Until the merge, it uses the branch `feature/online-multiplayer`.
-2. Set `MP_SERVER` in Vercel (c, step 4).
-3. Merge into `main`. Vercel builds the live site with the server address.
-4. In Render, switch the service's branch to `main` (Settings > Build & Deploy > Branch).
-
-Single-player works the same either way. If `MP_SERVER` is missing, only Play online fails ("Can't reach the server").
+Single-player works the same whether the server is up or not; only Play online needs it.
 
 ## When something does not work
 
 - **"Can't reach the server."**
   - Is the server running? Does `/health` load in the same browser?
   - The game shows the server address it tries under the message.
-  - On the Vercel site, check that `MP_SERVER` is set and that you redeployed.
+  - On the live site it should show `https://topout.onrender.com`. Open https://topout.onrender.com/health: it says `ok` once the server is awake.
 - **The other phones cannot connect, but the PC can.**
   - It is the firewall or the Wi-Fi profile (see b, step 2).
   - Use the PC's IP address everywhere, never `localhost`: on a phone, `localhost` is the phone itself.

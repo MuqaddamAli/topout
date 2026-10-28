@@ -12,6 +12,22 @@ import 'package:topout/ui/app.dart';
 import 'fake_link.dart';
 
 void main() {
+  test('the server: the live site finds the online one, local pages the one on their own machine', () {
+    Uri page(String s) => Uri.parse(s);
+    expect(serverFor('', page('https://topout-mu.vercel.app/')), onlineServer);
+    expect(serverFor('', page('https://topout-git-feature-x.vercel.app/?perf')), onlineServer);
+    expect(serverFor('', page('http://localhost:8080/')), 'http://localhost:3000');
+    expect(serverFor('', page('http://127.0.0.1:8080/')), 'http://127.0.0.1:3000');
+    expect(serverFor('', page('http://192.168.18.23:8080/')), 'http://192.168.18.23:3000');
+    expect(serverFor('', page('http://10.0.0.7:8080/')), 'http://10.0.0.7:3000');
+    expect(serverFor('', page('http://172.20.1.2:8080/')), 'http://172.20.1.2:3000');
+    // set at build time, it always wins (a trailing / is dropped)
+    expect(serverFor('https://other.example.com/', page('https://topout-mu.vercel.app/')), 'https://other.example.com');
+    // apps on phones and desktops
+    expect(serverFor('', null), onlineServer);
+    expect(serverFor('', null, debug: true), 'http://localhost:3000');
+  });
+
   late Game game;
   late List<FakeLink> links;
   FakeLink link() => links.last;

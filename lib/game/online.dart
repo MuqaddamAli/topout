@@ -1,13 +1,31 @@
 // Online play: the connection to the room server (server/ in this repo), the
-// room you are in and who else is there. The server is set at build time
-// with --dart-define=MP_SERVER=https://...; nothing connects until you open
+// room you are in and who else is there. Nothing connects until you open
 // Play online.
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as sio;
 
-const String mpServer = String.fromEnvironment('MP_SERVER', defaultValue: 'http://localhost:3000');
+/// The online room server (on Render).
+const String onlineServer = 'https://topout.onrender.com';
+
+/// The room server: --dart-define=MP_SERVER=... when the build sets it.
+/// Otherwise, in a browser on this PC or the local network, port 3000 of the
+/// same machine (for testing), and everywhere else [onlineServer].
+final String mpServer =
+    serverFor(const String.fromEnvironment('MP_SERVER'), kIsWeb ? Uri.base : null, debug: kDebugMode);
+
+String serverFor(String define, Uri? page, {bool debug = false}) {
+  if (define.isNotEmpty) return define.endsWith('/') ? define.substring(0, define.length - 1) : define;
+  final h = page?.host;
+  // an app on a phone or a desktop: the online server, or this PC while developing
+  if (h == null) return debug ? 'http://localhost:3000' : onlineServer;
+  final local = h == 'localhost' ||
+      RegExp(r'^(10|127)\.\d+\.\d+\.\d+$').hasMatch(h) ||
+      RegExp(r'^192\.168\.\d+\.\d+$').hasMatch(h) ||
+      RegExp(r'^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$').hasMatch(h);
+  return local ? 'http://$h:3000' : onlineServer;
+}
 
 enum NetStatus { off, connecting, online, failed }
 

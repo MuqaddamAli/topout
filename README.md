@@ -53,7 +53,7 @@ The game is made for phones held upright (portrait). It also runs on the web and
 
 ## Online play
 
-Tap **Play online**, make a room and send its 4-letter code to friends; up to 8 players climb the same route together, each on their own device. The game talks to a small Node.js server in `server/`. The game reads the server's address at build time from `--dart-define=MP_SERVER=...` (default `http://localhost:3000`); on Vercel it comes from the `MP_SERVER` environment variable.
+Tap **Play online**, make a room and send its 4-letter code to friends; up to 8 players climb the same route together, each on their own device. The game talks to a small Node.js server in `server/`. The live site uses the server at `https://topout.onrender.com`; a page opened on `localhost` or the local network uses port 3000 of the same machine, and a build can set another address with `--dart-define=MP_SERVER=...`.
 
 [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md) has the exact steps: trying it on one PC with bots, with phones on the same Wi-Fi, and putting the server on Render's free plan.
 
