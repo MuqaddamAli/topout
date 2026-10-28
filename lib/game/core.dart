@@ -513,6 +513,20 @@ class ClimbRoute {
   List<int> startHands = [];
   double topY = 0;
 
+  /// The lanes side by side (see [laneWall]). A route on its own has one.
+  List<Lane> get lanes => _lanes ??= [Lane(0, Wall.left, false, startHands, _spawns(0, startHands, holds))];
+  List<Lane>? _lanes;
+
+  /// Rows of holds that join neighbouring lanes. None with one lane.
+  final List<Bridge> bridges = [];
+
+  /// The x range of the whole wall, all lanes together.
+  double get wallLeft => Wall.left;
+  double get wallRight => Wall.left + lanes.length * Wall.right;
+
+  /// The lane that x is in (the nearest one at the edges).
+  Lane laneAt(double x) => lanes[clampD(((x - Wall.left) / Wall.right).floorToDouble(), 0, lanes.length - 1.0).toInt()];
+
   int get ledgeCount => holds.where((h) => h.t == HoldType.ledge).length;
 
   /// Indices of all holds sorted by height (made on first use, after the route
@@ -788,4 +802,203 @@ String dateKey(DateTime d) =>
 ClimbRoute dailyWallFor(DateTime day, {int chunks = 40}) {
   final key = dateKey(day);
   return buildEndless(dailySeed('topout-$key'), chunks, key);
+}
+
+// ---------------------------------------------------------------- lanes
+
+/// An online room has one lane per two players, and at most this many.
+const int maxLanes = 4;
+
+int lanesFor(int players) => math.max(1, math.min(maxLanes, (players + 1) ~/ 2));
+
+/// "Lane 2, left": a lane (0 is the first) and a side (0 left, 1 right), for people.
+String laneLabel(int lane, int side) => 'Lane ${lane + 1}, ${side == 0 ? 'left' : 'right'}';
+
+/// How far a spawn's body stands to the side of the start hold its hand is on.
+const double spawnStep = 52;
+
+/// Where one online player starts: standing on the ground beside the start
+/// holds, with the hand on that side on the start jug of that side.
+class Spawn {
+  const Spawn(this.lane, this.side, this.hold, this.x);
+  final int lane;
+
+  /// 0: left of the start holds (left hand on the left jug), 1: right.
+  final int side;
+
+  /// The start jug the hand is on.
+  final int hold;
+
+  /// Where the body stands.
+  final double x;
+
+  int get hand => side;
+}
+
+class Lane {
+  const Lane(this.index, this.x0, this.mirrored, this.startHands, this.spawns);
+  final int index;
+
+  /// The left edge of the lane. It is [Wall.right] wide.
+  final double x0;
+
+  /// Mirrored left to right (every other lane), so the lanes look different.
+  final bool mirrored;
+
+  /// The start jugs for the left and the right hand.
+  final List<int> startHands;
+
+  /// The left and the right spawn.
+  final List<Spawn> spawns;
+
+  double get x1 => x0 + Wall.right;
+  double get mid => x0 + Wall.right / 2;
+}
+
+/// A short flat row of holds across the edge between lane [lane] and the
+/// next one. It gives no height, so it is no shortcut to the top.
+class Bridge {
+  const Bridge(this.lane, this.y, this.holds);
+  final int lane;
+
+  /// Height of the hand holds.
+  final double y;
+  final List<int> holds;
+}
+
+List<Spawn> _spawns(int lane, List<int> hands, List<Hold> holds) => [
+      Spawn(lane, 0, hands[0], attachPoint(holds[hands[0]], 0).x - spawnStep),
+      Spawn(lane, 1, hands[1], attachPoint(holds[hands[1]], 1).x + spawnStep),
+    ];
+
+/// The pose at spawn [s] for climber [k]: feet on the ground either side of
+/// the body, one hand on the start jug and the other at the hip. [err] is
+/// how far the pose is from what the body can reach (under 1.2 is fine).
+({List<Limb> limbs, Pt c, double err}) spawnPose(ClimbRoute r, Spawn s, [Climber? k]) {
+  final p = attachPoint(r.holds[s.hold], s.hand);
+  final limbs = [Limb(null, 0, 0), Limb(null, 0, 0), Limb(0, s.x - 17, 0), Limb(0, s.x + 17, 0)];
+  limbs[s.hand] = Limb(s.hold, p.x, p.y);
+  final sol = solve(Pt(s.x, 100), [
+    for (var i = 0; i < 4; i++)
+      if (limbs[i].h != null) Anchor(i, limbs[i].x, limbs[i].y)
+  ], 80, (k ?? Climber.base).reach);
+  final free = limbs[1 - s.hand];
+  free
+    ..x = sol.x + sideOf[1 - s.hand] * 21
+    ..y = sol.y - 23;
+  return (limbs: limbs, c: Pt(sol.x, sol.y), err: sol.err);
+}
+
+/// One half of a bridge at the right edge of a lane, at height y: two hand
+/// holds about level, and two foot steps below them. (type, x, dy)
+const List<(HoldType, double, double)> _bridgeHalf = [
+  (HoldType.jug, 314, 0),
+  (HoldType.jug, 346, 6),
+  (HoldType.chip, 326, -44),
+  (HoldType.chip, 346, -40),
+];
+
+/// Bridges go from [_bridgeFrom] up to [_bridgeTopGap] under the top: the
+/// first place with room, then the first one at least [_bridgeEvery] higher.
+const double _bridgeFrom = 230, _bridgeEvery = 260, _bridgeTopGap = 150, _bridgeTry = 12;
+
+/// One lane of [base] with the bridge halves on both edges, in the lane's
+/// own x (0 to [Wall.right]). [of] maps the holds of [base] to it; [right]
+/// and [left] are the bridge halves on each edge, as (y, holds).
+class _Template {
+  _Template(this.holds, this.of, this.right, this.left);
+  final List<Hold> holds;
+  final Map<int, int> of;
+  final List<(double, List<int>)> right, left;
+}
+
+_Template _laneTemplate(ClimbRoute base) {
+  final scratch = ClimbRoute(id: base.id, name: base.name, level: base.level, blurb: base.blurb);
+  final b = _Builder(scratch), of = <int, int>{};
+  for (var k = 1; k < base.holds.length; k++) {
+    final h = base.holds[k];
+    if (h.t == HoldType.top) continue;
+    of[k] = scratch.holds.length - 1;
+    if (h.t.wide) {
+      b.pushLedge(h);
+    } else {
+      scratch.holds.add(h);
+      b.gridAdd(scratch.holds.length - 1);
+    }
+  }
+  List<(double, List<int>)> edge(bool right) {
+    final out = <(double, List<int>)>[];
+    for (var y = _bridgeFrom; y + 6 <= base.topY - _bridgeTopGap; y += _bridgeTry) {
+      final spots = [
+        for (final (t, x, d) in _bridgeHalf) (t, right ? x : Wall.right - x, y + d),
+      ];
+      if (spots.any((s) => b.nearHold(s.$2, s.$3, 22) || b.onLedge(s.$2, s.$3, 20, 40, 40))) continue;
+      final ids = <int>[];
+      for (final (t, x, sy) in spots) {
+        scratch.holds.add(Hold(t, x, sy));
+        b.gridAdd(scratch.holds.length - 1);
+        ids.add(scratch.holds.length - 2);
+      }
+      out.add((y, ids));
+      y += _bridgeEvery - _bridgeTry;
+    }
+    return out;
+  }
+
+  final right = edge(true), left = edge(false);
+  return _Template(scratch.holds.sublist(1), of, right, left);
+}
+
+/// [base] with [n] lanes side by side: lane k is a copy of it moved k wall
+/// widths to the right, and every other lane is mirrored left to right. Both
+/// edges of every lane get the same bridge halves, so all lanes have the
+/// same holds; where two lanes meet, the halves make a bridge. The ground
+/// and the top run across all lanes. With n = 1 it is [base] itself.
+///
+/// Everything comes from [base] and [n], so every device builds the same wall.
+ClimbRoute laneWall(ClimbRoute base, int n) {
+  if (n <= 1) return base;
+  final r = ClimbRoute(
+    id: base.id,
+    name: base.name,
+    level: base.level,
+    blurb: base.blurb,
+    tutorial: base.tutorial,
+    endless: base.endless,
+    date: base.date,
+  );
+  final extra = (n - 1) * Wall.right, g = base.holds[0];
+  r.holds[0] = Hold(HoldType.ground, g.x, g.y, g.x2! + extra);
+  final t = _laneTemplate(base), size = t.holds.length;
+  int world(int lane, int i) => 1 + lane * size + i;
+  final lanes = <Lane>[];
+  for (var k = 0; k < n; k++) {
+    final x0 = Wall.left + k * Wall.right, mirrored = k.isOdd;
+    for (final h in t.holds) {
+      if (!mirrored) {
+        r.holds.add(Hold(h.t, x0 + h.x, h.y, h.x2 == null ? null : x0 + h.x2!));
+      } else if (h.x2 == null) {
+        r.holds.add(Hold(h.t, x0 + Wall.right - h.x, h.y));
+      } else {
+        r.holds.add(Hold(h.t, x0 + Wall.right - h.x2!, h.y, x0 + Wall.right - h.x));
+      }
+    }
+    final s = [for (final i in base.startHands) world(k, t.of[i]!)];
+    final hands = mirrored ? s.reversed.toList() : s;
+    lanes.add(Lane(k, x0, mirrored, hands, _spawns(k, hands, r.holds)));
+  }
+  // Where an unmirrored lane meets the next one, both show the template's
+  // right edge; where a mirrored lane meets the next one, both show its left edge.
+  for (var k = 0; k + 1 < n; k++) {
+    for (final (y, ids) in k.isEven ? t.right : t.left) {
+      r.bridges.add(Bridge(k, y, [for (final i in ids) world(k, i), for (final i in ids) world(k + 1, i)]));
+    }
+  }
+  for (final h in base.holds) {
+    if (h.t == HoldType.top) r.holds.add(Hold(HoldType.top, h.x, h.y, h.x2! + extra));
+  }
+  r.startHands = lanes[0].startHands;
+  r.topY = base.topY;
+  r._lanes = lanes;
+  return r;
 }

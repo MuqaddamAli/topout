@@ -2,9 +2,12 @@
 // room you are in and who else is there. Nothing connects until you open
 // Play online.
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as sio;
+
+import 'core.dart';
 
 /// The online room server (on Render).
 const String onlineServer = 'https://topout.onrender.com';
@@ -101,15 +104,20 @@ class SocketLink implements NetLink {
 }
 
 class RoomPlayer {
-  RoomPlayer({required this.id, required this.name, required this.climber, required this.connected});
+  RoomPlayer({required this.id, required this.name, required this.climber, required this.connected, this.lane, this.side});
   final String id, name, climber;
   final bool connected;
+
+  /// From the start: the lane (0 is the first) and the side in it (0 left, 1 right).
+  final int? lane, side;
 
   factory RoomPlayer.fromJson(Map m) => RoomPlayer(
         id: '${m['id']}',
         name: '${m['name']}',
         climber: '${m['climber']}',
         connected: m['connected'] != false,
+        lane: (m['lane'] as num?)?.toInt(),
+        side: (m['side'] as num?)?.toInt(),
       );
 }
 
@@ -124,10 +132,14 @@ class RoomView {
     required this.started,
     required this.max,
     required this.players,
+    this.lanes,
   });
   final String code, route, mode, dateKey, host;
   final bool started;
   final int max;
+
+  /// From the start: how many lanes the wall has. It stays so when someone leaves.
+  final int? lanes;
   final List<RoomPlayer> players;
 
   factory RoomView.fromJson(Map m) => RoomView(
@@ -138,10 +150,23 @@ class RoomView {
         host: '${m['host']}',
         started: m['started'] == true,
         max: (m['max'] as num?)?.toInt() ?? 8,
+        lanes: (m['lanes'] as num?)?.toInt(),
         players: [for (final p in (m['players'] as List? ?? const [])) RoomPlayer.fromJson(p as Map)],
       );
 
   RoomPlayer? player(String? id) => players.where((p) => p.id == id).firstOrNull;
+
+  /// How many lanes the wall has: fixed by the server at the start, and
+  /// before it, how many the players in the room now would get.
+  int get laneCount => lanes ?? lanesFor(players.length);
+
+  /// The lane (0 is the first) and side (0 left, 1 right) of [p]: the
+  /// server's from the start; before it (or from an older server), by the
+  /// order they joined, the way the server gives them.
+  ({int lane, int side}) slot(RoomPlayer p) {
+    final k = math.max(0, players.indexOf(p));
+    return (lane: math.min(p.lane ?? k ~/ 2, laneCount - 1), side: p.side ?? k % 2);
+  }
 }
 
 /// Room codes are four letters, never I, L or O.

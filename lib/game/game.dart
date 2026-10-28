@@ -290,6 +290,10 @@ class Game {
   /// This climb was started from an online room.
   bool onlineClimb = false;
 
+  /// Where you start online: your lane and side, given by the server at the
+  /// start. Null when climbing alone (you start on the route's start holds).
+  Spawn? spawn;
+
   /// Seconds until the room's climb starts (after the creator taps Start).
   double? countdown;
   int _startsSeen = 0;
@@ -384,6 +388,10 @@ class Game {
   double maxY = 0, segStartY = 0, segTime = 0;
   double bestAtStart = 0;
   bool newBestShown = false;
+
+  /// Whether this climb goes into the records (best times, highest point,
+  /// Daily best, the log). Online climbs and walls with lanes do not.
+  bool keepsRecords = true;
   int restLedge = 0;
   final Set<int> lit = {};
   final Map<int, double> litAt = {};
@@ -471,8 +479,9 @@ class Game {
   }
 
   double camXFor(double x) {
-    final half = cw / scale / 2, lo = Wall.left + half - 8, hi = Wall.right - half + 8;
-    return lo > hi ? (Wall.left + Wall.right) / 2 : clampD(x, lo, hi);
+    final r = route, left = r?.wallLeft ?? Wall.left, right = r?.wallRight ?? Wall.right;
+    final half = cw / scale / 2, lo = left + half - 8, hi = right - half + 8;
+    return lo > hi ? (left + right) / 2 : clampD(x, lo, hi);
   }
 
   double panOf(double x) => clampD((x - camX) * scale / (cw * 0.6), -0.8, 0.8);
@@ -525,6 +534,7 @@ class Game {
     final r = route;
     if (r == null || !segOpen) return;
     segOpen = false;
+    if (!keepsRecords) return;
     records.metres += math.max(0, maxY - segStartY) / unitsPerMetre;
     records.secs += math.max(0, time - segTime);
     records.reached(r, mode, todayKey, math.max(0, maxY - 100) / unitsPerMetre);
@@ -540,14 +550,30 @@ class Game {
 
   // ================================================================ screens
 
+  /// Where [r] is in [routes]. A wall with lanes is a copy, so this goes by id.
+  int _routeIndex(ClimbRoute r) => routes.indexWhere((x) => x.id == r.id);
+
+  /// For testing a wide wall alone (`?lanes=N` on the web): climbs alone
+  /// start on a wall with this many lanes. Not saved in the records.
+  int debugLanes = 1;
+
   void startRoute(ClimbRoute r) {
+    if (debugLanes > 1 && !onlineClimb && r.lanes.length == 1) r = laneWall(r, debugLanes);
     commitSegment();
     route = r;
-    final h = r.holds;
-    final p0 = attachPoint(h[r.startHands[0]], 0), p1 = attachPoint(h[r.startHands[1]], 1);
-    limbs = [Limb(r.startHands[0], p0.x, p0.y), Limb(r.startHands[1], p1.x, p1.y), Limb(0, 164, 0), Limb(0, 198, 0)];
-    final s = solve(Pt(180, 100), anchors(), 80);
-    c = Pt(s.x, s.y);
+    keepsRecords = !onlineClimb && r.lanes.length == 1;
+    final h = r.holds, at = onlineClimb ? spawn : null;
+    if (at != null) {
+      // online: standing on the ground at your spawn, one hand on a start jug
+      final p = spawnPose(r, at, climber);
+      limbs = p.limbs;
+      c = p.c;
+    } else {
+      final p0 = attachPoint(h[r.startHands[0]], 0), p1 = attachPoint(h[r.startHands[1]], 1);
+      limbs = [Limb(r.startHands[0], p0.x, p0.y), Limb(r.startHands[1], p1.x, p1.y), Limb(0, 164, 0), Limb(0, 198, 0)];
+      final s = solve(Pt(180, 100), anchors(), 80);
+      c = Pt(s.x, s.y);
+    }
     cd = c.copy();
     grip = [100, 100];
     holdTime = [0, 0];
@@ -577,7 +603,7 @@ class Game {
     lit.clear();
     litAt.clear();
     _grabbedAt.clear();
-    chalked = {...r.startHands};
+    chalked = at != null ? {at.hold} : {...r.startHands};
     dyno = null;
     hangT = 0;
     _clearCatch();
@@ -585,7 +611,7 @@ class Game {
     bestAtStart = bestHeight(r);
     newBestShown = false;
     openSegment();
-    resetPoseState([HandStyle.grip, HandStyle.grip]);
+    resetPoseState([for (final l in limbs.take(2)) l.h != null ? HandStyle.grip : HandStyle.open]);
     scale = baseScale();
     camX = camXFor(cd.x);
     camY = cd.y + 40;
@@ -793,7 +819,18 @@ class Game {
     return routes.firstWhere((x) => x.id == r.route, orElse: () => routes.first);
   }
 
-  /// Everyone in the room starts the same route in the same mode.
+  /// The wall of room [r]: its route with one lane per two players, as
+  /// many as the server fixed at the start.
+  ClimbRoute roomWall(RoomView r) => laneWall(roomRoute(r), r.laneCount);
+
+  /// Your spawn on [wall]: the lane and side the server gave you.
+  Spawn roomSpawn(RoomView r, ClimbRoute wall) {
+    final me = r.player(online.you) ?? r.players.first, at = r.slot(me);
+    return wall.lanes[math.min(at.lane, wall.lanes.length - 1)].spawns[at.side];
+  }
+
+  /// Everyone in the room starts the same route in the same mode, each at
+  /// their own spawn on the same wall.
   void _startOnline() {
     final r = online.room;
     if (r == null || phase != Phase.menu) return;
@@ -803,7 +840,9 @@ class Game {
     _sendAcc = 0;
     _onlineStart = _netMs;
     myFinish = null;
-    startRoute(roomRoute(r));
+    final wall = roomWall(r);
+    spawn = roomSpawn(r, wall);
+    startRoute(wall);
   }
 
   /// What the others need to draw your climber.
@@ -857,6 +896,7 @@ class Game {
     remotes.clear();
     countdown = null;
     onlineClimb = false;
+    spawn = null;
     myFinish = null;
     _updateStandings();
     if (_modeBefore case final m?) {
@@ -905,14 +945,15 @@ class Game {
   void nextRoute() {
     if (phase != Phase.top) return; // a second tap while the card fades out
     if (onlineClimb) return restart(); // the room climbs one route
-    final i = routes.indexOf(route!);
+    final i = _routeIndex(route!);
     startRoute(routes[(i + 1) % routes.length]);
   }
 
   // ================================================================ tips and toasts
 
   static final List<_Tip> _tips = [
-    _Tip('start', 'Drag your right foot up to the small step.', (g) => g.moves == 0),
+    // the lesson's first move is from the start holds; an online spawn starts elsewhere
+    _Tip('start', 'Drag your right foot up to the small step.', (g) => g.moves == 0 && g.spawn == null),
     _Tip('hands', 'Now move a hand up to a higher hold.', (g) => g.moves >= 1),
     _Tip('feet', 'Keep your feet on the wall. It helps your hands.', (g) => g.moves >= 4),
     _Tip('grip', 'The ring shows how tired a hand is. Let go for a moment to rest it.',
@@ -1369,7 +1410,7 @@ class Game {
       }
     }
     maxY = math.max(maxY, c.y);
-    if (!newBestShown && bestAtStart > 1 && (maxY - 100) / unitsPerMetre > bestAtStart + 0.05) {
+    if (keepsRecords && !newBestShown && bestAtStart > 1 && (maxY - 100) / unitsPerMetre > bestAtStart + 0.05) {
       newBestShown = true;
       toast('New best!', ToastKind.ok);
       _play(Sfx.best);
@@ -1487,8 +1528,10 @@ class Game {
     if (f.counted) return;
     f.counted = true;
     commitSegment();
-    records.falls++;
-    records.saveLog();
+    if (keepsRecords) {
+      records.falls++;
+      records.saveLog();
+    }
     falls++;
   }
 
@@ -1618,8 +1661,10 @@ class Game {
     history.clear(); // no undo back into the fall
     camManual = null;
     showRecenter = false;
-    records.catches++;
-    records.saveLog();
+    if (keepsRecords) {
+      records.catches++;
+      records.saveLog();
+    }
     store.set('tip.catch', true);
     effects.burst(o.pt.x, o.pt.y + 3, PartKind.chalk, 18);
     catchFlash = CatchFlash(o.pt.copy());
@@ -1734,13 +1779,18 @@ class Game {
       _updateStandings();
     }
     commitSegment();
-    records.tops++;
-    records.saveLog();
+    if (keepsRecords) {
+      records.tops++;
+      records.saveLog();
+    }
     _play(Sfx.top);
     final r = route!, best = bestTime(r);
     final String note;
     final bool isBest;
-    if (best == null) {
+    if (!keepsRecords) {
+      isBest = false;
+      note = 'Online climbs are not saved in your records.';
+    } else if (best == null) {
       isBest = true;
       note = 'Your first time at the top!';
     } else if (time < best) {
@@ -1751,7 +1801,8 @@ class Game {
       note = 'Best time: ${fmtTime(best)}';
     }
     if (isBest) records.newBestTime(r, mode, time: time, moves: moves, climber: climber);
-    cele = Cele(c.copy(), Pt(clampD(c.x, 70, 290), r.topY + standHeight(climber)));
+    final top = holds[limbs[0].h!];
+    cele = Cele(c.copy(), Pt(clampD(c.x, top.x + 30, top.x2! - 30), r.topY + standHeight(climber)));
     for (final l in limbs) {
       l.h = null;
     }
@@ -1765,7 +1816,7 @@ class Game {
         fl,
         note,
         !isBest,
-        routes.indexOf(r) == routes.length - 1 ? 'First route' : 'Next route',
+        _routeIndex(r) == routes.length - 1 ? 'First route' : 'Next route',
         climber.name,
       );
       screen = Screen.topCard;
@@ -1867,7 +1918,8 @@ class Game {
     if (drag == null) {
       final normY = camManual ?? cd.y + 40, normX = camXFor(cd.x);
       final lookY = r.endless ? cd.y + 320 : (r.topY + 50) / 2;
-      final ty = lerpD(normY, lookY, lookK), tx = lerpD(normX, 180, lookK), e = reducedMotion ? 1.0 : math.min(1.0, dt * 6);
+      // Look shows the lane you are in now
+      final ty = lerpD(normY, lookY, lookK), tx = lerpD(normX, r.laneAt(cd.x).mid, lookK), e = reducedMotion ? 1.0 : math.min(1.0, dt * 6);
       camY += (ty - camY) * e;
       camX += (tx - camX) * e;
     }
@@ -2068,13 +2120,21 @@ class Game {
     _tickSpan = span;
     _tickRoute = r;
     ticks = [];
+    final seen = <double>{};
     for (var k = 0; k < r.holds.length; k++) {
       final h = r.holds[k];
-      if (h.t != HoldType.ledge) continue;
+      // one mark per height: every lane has the same ledges
+      if (h.t != HoldType.ledge || !seen.add(h.y)) continue;
       final m = (h.y - 100) / unitsPerMetre;
       if (m > span) continue;
       ticks.add(Tick(m / span, k));
     }
+  }
+
+  /// A ledge mark is lit when a ledge at its height is lit, in any lane.
+  bool tickLit(Tick t) {
+    final y = holds[t.hold].y;
+    return lit.any((k) => holds[k].y == y);
   }
 
   /// Keeps the ledge marks on the progress bar in step with the Daily Wall.

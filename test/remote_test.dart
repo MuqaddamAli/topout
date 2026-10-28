@@ -294,6 +294,164 @@ void main() {
       await done(tester);
     });
 
+    /// A started room of [n] players where you are player [at] (0 is the
+    /// creator), with the lanes and sides the server gives at the start.
+    Map<String, Object?> laneRoom(int n, int at, {String route = 'first'}) {
+      final ids = [for (var k = 0; k < n; k++) k == at ? 'me' : 'p$k'];
+      return {
+        ...roomJson(host: ids[0], names: [for (var k = 0; k < n; k++) 'P$k'], started: true),
+        'route': route,
+        'lanes': lanesFor(n),
+        'players': [
+          for (var k = 0; k < n; k++)
+            {'id': ids[k], 'name': 'P$k', 'climber': 'ada', 'connected': true, 'lane': k ~/ 2, 'side': k % 2},
+        ],
+      };
+    }
+
+    Future<void> startIn(WidgetTester tester, Map<String, Object?> started) async {
+      await inLobby(tester, route: '${started['route']}');
+      link.push('room', started);
+      link.push('started', {'startsIn': 3000, 'lanes': started['lanes']});
+      await frames(tester, 3.2);
+      expect(game.phase, Phase.climb);
+    }
+
+    for (final (n, at) in [(2, 0), (2, 1), (5, 2), (8, 7)]) {
+      testWidgets('$n players, you are number ${at + 1}: your lane and side, standing at your spawn', (tester) async {
+        await startIn(tester, laneRoom(n, at));
+        final r = game.route!, lane = at ~/ 2, side = at % 2;
+        expect(r.lanes.length, lanesFor(n));
+        expect(game.spawn, same(r.lanes[lane].spawns[side]));
+        final s = game.spawn!;
+        expect(game.limbs[s.hand].h, s.hold, reason: 'one hand on the start jug of your side');
+        expect(game.limbs[1 - s.hand].h, isNull);
+        expect([game.limbs[2].h, game.limbs[3].h], [0, 0], reason: 'both feet on the ground');
+        expect(game.c.x, inInclusiveRange(r.lanes[lane].x0, r.lanes[lane].x1));
+        expect(game.camX, closeTo(game.camXFor(game.cd.x), 30));
+        expect(game.chalked, {s.hold});
+        // the other spawn of the lane is far enough away not to overlap (a body is about 40 wide)
+        final other = spawnPose(r, r.lanes[lane].spawns[1 - side], game.climber).c;
+        expect((other.x - game.c.x).abs(), greaterThan(55));
+        await done(tester);
+      });
+    }
+
+    testWidgets('the same wall for everyone, and it keeps its lanes when someone leaves', (tester) async {
+      await startIn(tester, laneRoom(5, 1));
+      final r = game.route!;
+      // the others build exactly this wall from the same room
+      final again = game.roomWall(RoomView.fromJson(laneRoom(5, 3)));
+      expect([for (final h in again.holds) (h.t, h.x, h.y, h.x2)], [for (final h in r.holds) (h.t, h.x, h.y, h.x2)]);
+      // two players leave: 3 left, but the wall and your place stay
+      link.push('room', {...laneRoom(5, 1), 'players': (laneRoom(5, 1)['players'] as List).sublist(0, 3)});
+      await frames(tester, 0.3);
+      expect(identical(game.route, r), isTrue);
+      expect(r.lanes.length, 3);
+      expect(game.spawn!.lane, 0);
+      expect(game.spawn!.side, 1);
+      await done(tester);
+    });
+
+    testWidgets('undo, a fall and Try again keep you in your own lane', (tester) async {
+      await startIn(tester, laneRoom(4, 3));
+      final r = game.route!, s = game.spawn!, lane = r.lanes[1];
+      expect((s.lane, s.side), (1, 1));
+      final start = game.c.copy();
+      // a move with the free (left) hand to a hold within reach, then undo it
+      final free = 1 - s.hand;
+      final target = [
+        for (var k = 0; k < r.holds.length; k++)
+          if (r.holds[k].t == HoldType.jug && k != s.hold && r.holds[k].x > lane.x0 && r.holds[k].x < lane.x1 &&
+              feasible(game.limbs, free, attachPoint(r.holds[k], free), game.c, game.climber) != null)
+            k
+      ].first;
+      // straight to the game (a room message may cover that part of the screen)
+      final from = game.w2s(game.limbEnd(free).x, game.limbEnd(free).y), to = attachPoint(r.holds[target], free);
+      game.pointerDown(1, from, false);
+      for (var k = 1; k <= 8; k++) {
+        game.pointerMove(1, Offset.lerp(from, game.w2s(to.x, to.y), k / 8)!);
+        await frames(tester, 0.03);
+      }
+      game.pointerUp(1);
+      await frames(tester, 0.4);
+      expect(game.limbs[free].h, target);
+      game.undo();
+      await frames(tester, 0.4);
+      expect(game.limbs[free].h, isNull);
+      expect(game.c.x, closeTo(start.x, 1));
+      // let go and fall: Try again puts you back at your spawn, in lane 2
+      game.limbs[2].h = null;
+      game.limbs[3].h = null;
+      game.grip[s.hand] = 1;
+      await frames(tester, 2.5);
+      expect(game.phase, Phase.fallCard);
+      game.retry();
+      await frames(tester, 0.4);
+      expect(game.phase, Phase.climb);
+      expect(game.limbs[s.hand].h, s.hold);
+      expect(game.c.x, closeTo(start.x, 1));
+      expect(r.laneAt(game.c.x), lane);
+      // starting again from the ground: the same spawn
+      game.restart();
+      await frames(tester, 0.2);
+      expect(game.limbs[s.hand].h, s.hold);
+      expect(game.c.x, closeTo(start.x, 1));
+      await done(tester);
+    });
+
+    testWidgets('on the Daily Wall, starting again after a fall is at your spawn too', (tester) async {
+      await startIn(tester, laneRoom(3, 2, route: 'daily'));
+      final r = game.route!, s = game.spawn!;
+      expect(r.endless, isTrue);
+      expect((r.lanes.length, s.lane, s.side), (2, 1, 0));
+      final start = game.c.copy();
+      game.limbs[2].h = null;
+      game.limbs[3].h = null;
+      game.grip[s.hand] = 1;
+      await frames(tester, 2.5);
+      expect(game.phase, Phase.fallCard);
+      game.retry();
+      await frames(tester, 0.3);
+      expect(game.limbs[s.hand].h, s.hold);
+      expect(game.c.x, closeTo(start.x, 1));
+      await done(tester);
+    });
+
+    testWidgets('leaving the room forgets the spawn: alone you start on the start holds again', (tester) async {
+      await startIn(tester, laneRoom(2, 1));
+      game.goBack();
+      await frames(tester, 0.4);
+      expect(game.spawn, isNull);
+      game.startRoute(game.routes.first);
+      expect(game.limbs.take(2).map((l) => l.h), game.routes.first.startHands);
+      await done(tester);
+    });
+
+    testWidgets('an online climb is not saved in the records', (tester) async {
+      await inLobby(tester);
+      await started(tester);
+      expect(game.keepsRecords, isFalse);
+      final r = game.route!, top = r.holds.indexWhere((h) => h.t == HoldType.top);
+      game.maxY = 500;
+      game.limbs[0].h = top;
+      game.limbs[1].h = top;
+      await frames(tester, 0.3);
+      expect(game.phase, Phase.top);
+      await frames(tester, 2.2);
+      expect(game.topCard!.note, 'Online climbs are not saved in your records.');
+      game.goBack();
+      await frames(tester, 0.4);
+      final rec = game.records;
+      expect((rec.tops, rec.falls, rec.catches, rec.metres, rec.secs), (0, 0, 0, 0.0, 0.0));
+      expect(game.bestTime(r), isNull);
+      expect(game.bestHeight(r), 0);
+      // a climb alone afterwards counts again
+      game.startRoute(game.routes.first);
+      expect(game.keepsRecords, isTrue);
+      await done(tester);
+    });
+
     testWidgets('Leave from the pause card goes back to the title screen with your own mode', (tester) async {
       await inLobby(tester);
       await started(tester);

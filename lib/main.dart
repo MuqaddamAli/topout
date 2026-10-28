@@ -4,6 +4,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import 'game/audio.dart';
+import 'game/core.dart';
 import 'game/game.dart';
 import 'game/online.dart';
 import 'game/store.dart';
@@ -21,6 +22,10 @@ Future<void> main() async {
   // also opens that route (used to measure performance). ?perf=online makes
   // a room and prints its code: fill it with bots and it starts by itself.
   final perf = kIsWeb ? Uri.base.queryParameters['perf'] : null;
+  // For development: ?lanes=N makes climbs alone use a wall with N lanes.
+  // Debug and profile builds only; the live site (a release build) ignores it.
+  final lanes = kIsWeb && !kReleaseMode ? int.tryParse(Uri.base.queryParameters['lanes'] ?? '') : null;
+  if (lanes != null) game.debugLanes = lanes.clamp(1, maxLanes);
   if (perf != null) _measure(game, perf);
 }
 

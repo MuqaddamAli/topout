@@ -418,7 +418,7 @@ class _Progress extends StatelessWidget {
               top: 2,
               width: 2,
               height: 8,
-              child: _Tick(lit: game.lit.contains(t.hold)),
+              child: _Tick(lit: game.tickLit(t)),
             ),
           if (best > 0.5 && best < span)
             Positioned(

@@ -13,7 +13,7 @@ This is the Flutter version of the Topout web prototype (kept in `web_prototype/
 - Jumps: a hand can jump to a hold that is a little too far, if a foot is on a hold. After the catch you must grab a second hold fast.
 - Catch a fall: when you lose your hold, time slows for a moment and every hold within reach on the way down glows. Tap one (or press Space) and your hand snatches it, then the body swings under it and you have a second or two to get a foot or the other hand on. The longer you fell, the more grip the catch costs: green holds leave you plenty, yellow ones little, and red ones are too much for a tired hand (the fingers slip off). Each fall gets one chance, so a fall out of the hang after a catch is final. The moment lasts longest in Relaxed and is shortest in No saves.
 - Three modes: Relaxed, Normal, and No saves.
-- Online play: up to 8 players, each on their own device, climb the same wall at the same time and see each other live (see Online play).
+- Online play: up to 8 players, each on their own device, climb the same wall at the same time and see each other live. The wall gets one lane per two players, with bridges between the lanes (see Online play).
 - After a fall, a card explains why you fell and shows your hand strength before the fall.
 - Records: best time per route, highest point, today's best on the Daily Wall, and a log of tops, metres, falls (and how many you caught) and time.
 - A climber drawn in code (helmet, ponytail, harness, quickdraws and chalk bag that swing), sunset clouds, mountains, birds, lamps and snow.
@@ -53,7 +53,7 @@ The game is made for phones held upright (portrait). It also runs on the web and
 
 ## Online play
 
-Tap **Play online**, make a room and send its 4-letter code to friends; up to 8 players climb the same route together, each on their own device. The game talks to a small Node.js server in `server/`. The live site uses the server at `https://topout.onrender.com`; a page opened on `localhost` or the local network uses port 3000 of the same machine, and a build can set another address with `--dart-define=MP_SERVER=...`.
+Tap **Play online**, make a room and send its 4-letter code to friends; up to 8 players climb the same route together, each on their own device. The wall has one lane per two players (up to 4 lanes side by side, each a copy of the route, every other one mirrored, with bridges to cross between them); each player starts at their own spot in their lane. Online climbs are not saved in the records. The game talks to a small Node.js server in `server/`. The live site uses the server at `https://topout.onrender.com`; a page opened on `localhost` or the local network uses port 3000 of the same machine, and a build can set another address with `--dart-define=MP_SERVER=...`.
 
 [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md) has the exact steps: trying it on one PC with bots, with phones on the same Wi-Fi, and putting the server on Render's free plan.
 
@@ -67,8 +67,10 @@ flutter test
 - `test/balance_test.dart` climbs every route with every climber (see Climbers).
 - `test/game_flow_test.dart` plays a full climb with real touch drags (moves, undo, look, a fall, the top, the Daily Wall, pause), catches falls (a tap, the Space key, a hang that runs out, a hand too tired to hold on), picks each climber and climbs with them, and saves screenshots to `build/screens/`.
 - `test/widget_test.dart` is a quick start-up check.
+- `test/lanes_test.dart` checks the wall with lanes: one lane is the route itself, every lane has the same holds, the spawns and bridges, the same wall every time, and the balance bot climbs every lane (from both spawns) as well as the route on its own.
+- `test/wide_wall_test.dart` climbs alone on a wall with lanes: the camera across the lanes and over a bridge, Look, and screenshots (`build/screens/4x_*`).
 - `test/online_test.dart` tries the Play online screen and the lobby against a fake server, and `test/remote_test.dart` the climber states sent over the network, playing other climbers back smoothly, the heights list, the messages and a whole online climb.
-- `cd server` and `npm test` checks the room server: making and joining rooms, the errors, the creator leaving and reconnecting.
+- `cd server` and `npm test` checks the room server: making and joining rooms, the errors, the creator leaving and reconnecting, and the lanes given out at the start.
 
 Every push runs `.github/workflows/build.yml` on GitHub Actions. It analyzes the code, runs the tests, builds the web version and an Android APK, and uploads the APK (`topout-apk`), the web build (`topout-web`) and the test screenshots (`screenshots`) as downloads at the bottom of the run page, under **Actions**.
 
@@ -84,7 +86,7 @@ To build the same thing on your own machine: `bash tool/vercel_build.sh` (set `F
 
 | Path | What it does |
 | --- | --- |
-| `lib/game/core.dart` | Rules with no Flutter code: holds, the body solver, grip, jumps, the climbers and their stats, route and Daily Wall builders, random numbers |
+| `lib/game/core.dart` | Rules with no Flutter code: holds, the body solver, grip, jumps, the climbers and their stats, route and Daily Wall builders, the wall with lanes for online rooms, random numbers |
 | `lib/game/game.dart` | Game state, the 60 Hz simulation, touch input, falls and saves |
 | `lib/game/records.dart` | Best heights and times per route and mode, and the climbing log |
 | `lib/game/effects.dart` | Things that move by themselves, only for show: particles, dust in the light, birds |
@@ -117,9 +119,10 @@ On the web every layer is drawn again each frame (there is no raster cache), so 
 - The HUD is not rebuilt every frame. Each number on it (height, time, grip) rebuilds only when the shown value changes (`FrameSelect` in `lib/ui/hud.dart`).
 - On the web, the sound effects are decoded once and played from memory through a single `AudioContext`.
 
+- A wall with lanes costs the same per frame as one lane: ledges and the long top are only drawn near the view, like the holds.
 - Other players' climbers are drawn the cheap way (flat colours, no cel bands, no small gear), and the ones far outside the view are skipped.
 
-To measure, open the web build with `?perf` (frame times in the browser console every 2 s) or `?perf=steps` to also start that route (`first`, `steps`, `crimps`, `daily`). `?perf=online` makes a room and prints the command that fills it with bots; it starts by itself when 8 climbers are in (see docs/MULTIPLAYER.md).
+To measure, open the web build with `?perf` (frame times in the browser console every 2 s) or `?perf=steps` to also start that route (`first`, `steps`, `crimps`, `daily`). `?perf=online` makes a room and prints the command that fills it with bots; it starts by itself when 8 climbers are in (see docs/MULTIPLAYER.md). In a profile build (`flutter run -d chrome --profile`), `?perf=steps&lanes=4` measures a route on a wall with 4 lanes (`?lanes` works in debug and profile builds only).
 
 ### Units
 
