@@ -72,6 +72,14 @@ void main() {
       expect(json.length, lessThan(200));
     });
 
+    test('a state goes out as one argument, not one per number', () {
+      // the Socket.io client spreads a list into separate arguments
+      final wire = state(5).encode();
+      expect(SocketLink.payload(wire), [wire]);
+      expect(SocketLink.payload({'code': 'KXMP'}), {'code': 'KXMP'});
+      expect(SocketLink.payload(null), isNull);
+    });
+
     test('junk is not a state', () {
       for (final junk in <Object?>[
         null,
@@ -284,6 +292,31 @@ void main() {
       expect(game.remotes.isEmpty, isTrue);
       expect(game.mode, Mode.casual);
       expect(link.did('leave'), isTrue);
+      await done(tester);
+    });
+
+    testWidgets('online, the game keeps going when the window loses focus', (tester) async {
+      await inLobby(tester);
+      await started(tester);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await frames(tester, 0.2);
+      expect(game.phase, Phase.climb);
+      final before = link.sent.where((s) => s.$1 == 'state').length;
+      await frames(tester, 0.5);
+      expect(link.sent.where((s) => s.$1 == 'state').length, greaterThan(before));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await done(tester);
+    });
+
+    testWidgets('alone, losing focus still pauses as before', (tester) async {
+      await inLobby(tester);
+      game.leaveOnline();
+      game.startRoute(game.routes.first);
+      await frames(tester, 0.2);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await frames(tester, 0.2);
+      expect(game.phase, Phase.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await done(tester);
     });
 

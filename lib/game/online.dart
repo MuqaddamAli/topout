@@ -58,14 +58,18 @@ class SocketLink implements NetLink {
     _s = null;
   }
 
+  /// The client sends each item of a list as its own argument, so a list
+  /// (a climber state) is wrapped to arrive as one.
+  static Object? payload(Object? data) => data is List ? [data] : data;
+
   @override
-  void emit(String event, [Object? data]) => _s?.emit(event, data);
+  void emit(String event, [Object? data]) => _s?.emit(event, payload(data));
 
   @override
   Future<Object?> ask(String event, [Object? data]) {
     final s = _s, done = Completer<Object?>();
     if (s == null) return Future.value(const {'error': 'Not connected'});
-    s.emitWithAck(event, data, ack: (Object? r) {
+    s.emitWithAck(event, payload(data), ack: (Object? r) {
       if (!done.isCompleted) done.complete(r);
     });
     return done.future.timeout(const Duration(seconds: 10), onTimeout: () => const {'error': 'The server did not answer. Try again.'});

@@ -80,7 +80,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     } else if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
       game.pause();
       game.audio.suspend();
-    } else if (state == AppLifecycleState.inactive) {
+    } else if (state == AppLifecycleState.inactive && !game.onlineClimb) {
+      // the window lost focus; online the others keep climbing, so you do too
       game.pause();
     }
   }
