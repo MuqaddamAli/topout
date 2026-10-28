@@ -290,6 +290,10 @@ class Game {
   /// This climb was started from an online room.
   bool onlineClimb = false;
 
+  /// Where you start online: your lane and side, given by the server at the
+  /// start. Null when climbing alone (you start on the route's start holds).
+  Spawn? spawn;
+
   /// Seconds until the room's climb starts (after the creator taps Start).
   double? countdown;
   int _startsSeen = 0;
@@ -558,11 +562,18 @@ class Game {
     commitSegment();
     route = r;
     keepsRecords = !onlineClimb && r.lanes.length == 1;
-    final h = r.holds;
-    final p0 = attachPoint(h[r.startHands[0]], 0), p1 = attachPoint(h[r.startHands[1]], 1);
-    limbs = [Limb(r.startHands[0], p0.x, p0.y), Limb(r.startHands[1], p1.x, p1.y), Limb(0, 164, 0), Limb(0, 198, 0)];
-    final s = solve(Pt(180, 100), anchors(), 80);
-    c = Pt(s.x, s.y);
+    final h = r.holds, at = onlineClimb ? spawn : null;
+    if (at != null) {
+      // online: standing on the ground at your spawn, one hand on a start jug
+      final p = spawnPose(r, at, climber);
+      limbs = p.limbs;
+      c = p.c;
+    } else {
+      final p0 = attachPoint(h[r.startHands[0]], 0), p1 = attachPoint(h[r.startHands[1]], 1);
+      limbs = [Limb(r.startHands[0], p0.x, p0.y), Limb(r.startHands[1], p1.x, p1.y), Limb(0, 164, 0), Limb(0, 198, 0)];
+      final s = solve(Pt(180, 100), anchors(), 80);
+      c = Pt(s.x, s.y);
+    }
     cd = c.copy();
     grip = [100, 100];
     holdTime = [0, 0];
@@ -592,7 +603,7 @@ class Game {
     lit.clear();
     litAt.clear();
     _grabbedAt.clear();
-    chalked = {...r.startHands};
+    chalked = at != null ? {at.hold} : {...r.startHands};
     dyno = null;
     hangT = 0;
     _clearCatch();
@@ -600,7 +611,7 @@ class Game {
     bestAtStart = bestHeight(r);
     newBestShown = false;
     openSegment();
-    resetPoseState([HandStyle.grip, HandStyle.grip]);
+    resetPoseState([for (final l in limbs.take(2)) l.h != null ? HandStyle.grip : HandStyle.open]);
     scale = baseScale();
     camX = camXFor(cd.x);
     camY = cd.y + 40;
@@ -808,7 +819,20 @@ class Game {
     return routes.firstWhere((x) => x.id == r.route, orElse: () => routes.first);
   }
 
-  /// Everyone in the room starts the same route in the same mode.
+  /// The wall of room [r]: its route with one lane per two players, as
+  /// many as the server fixed at the start.
+  ClimbRoute roomWall(RoomView r) => laneWall(roomRoute(r), r.lanes ?? lanesFor(r.players.length));
+
+  /// Your spawn on [wall]: the lane and side the server gave you (an older
+  /// server gives none, then your place in the room decides, the same way).
+  Spawn roomSpawn(RoomView r, ClimbRoute wall) {
+    final me = r.player(online.you), k = math.max(0, r.players.indexOf(me ?? r.players.first));
+    final lane = math.min(me?.lane ?? k ~/ 2, wall.lanes.length - 1), side = me?.side ?? k % 2;
+    return wall.lanes[lane].spawns[side];
+  }
+
+  /// Everyone in the room starts the same route in the same mode, each at
+  /// their own spawn on the same wall.
   void _startOnline() {
     final r = online.room;
     if (r == null || phase != Phase.menu) return;
@@ -818,7 +842,9 @@ class Game {
     _sendAcc = 0;
     _onlineStart = _netMs;
     myFinish = null;
-    startRoute(roomRoute(r));
+    final wall = roomWall(r);
+    spawn = roomSpawn(r, wall);
+    startRoute(wall);
   }
 
   /// What the others need to draw your climber.
@@ -872,6 +898,7 @@ class Game {
     remotes.clear();
     countdown = null;
     onlineClimb = false;
+    spawn = null;
     myFinish = null;
     _updateStandings();
     if (_modeBefore case final m?) {
@@ -927,7 +954,8 @@ class Game {
   // ================================================================ tips and toasts
 
   static final List<_Tip> _tips = [
-    _Tip('start', 'Drag your right foot up to the small step.', (g) => g.moves == 0),
+    // the lesson's first move is from the start holds; an online spawn starts elsewhere
+    _Tip('start', 'Drag your right foot up to the small step.', (g) => g.moves == 0 && g.spawn == null),
     _Tip('hands', 'Now move a hand up to a higher hold.', (g) => g.moves >= 1),
     _Tip('feet', 'Keep your feet on the wall. It helps your hands.', (g) => g.moves >= 4),
     _Tip('grip', 'The ring shows how tired a hand is. Let go for a moment to rest it.',

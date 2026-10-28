@@ -868,7 +868,7 @@ class ScenePainter extends CustomPainter {
   /// First move of the lesson: a finger shows the drag.
   void _hint(Canvas c, Pose pose) {
     final r = g.route;
-    if (r == null || !r.tutorial || g.moves != 0 || g.drag != null || g.phase != Phase.climb) return;
+    if (r == null || !r.tutorial || g.moves != 0 || g.drag != null || g.phase != Phase.climb || g.spawn != null) return;
     // the step is the start cluster's, in the lane you are in (mirrored there too)
     final l = r.laneAt(g.cd.x), from = pose.legs[l.mirrored ? 0 : 1].e, u = (g.clock % 2.2) / 1.6;
     if (u > 1) return;

@@ -83,15 +83,20 @@ class SocketLink implements NetLink {
 }
 
 class RoomPlayer {
-  RoomPlayer({required this.id, required this.name, required this.climber, required this.connected});
+  RoomPlayer({required this.id, required this.name, required this.climber, required this.connected, this.lane, this.side});
   final String id, name, climber;
   final bool connected;
+
+  /// From the start: the lane (0 is the first) and the side in it (0 left, 1 right).
+  final int? lane, side;
 
   factory RoomPlayer.fromJson(Map m) => RoomPlayer(
         id: '${m['id']}',
         name: '${m['name']}',
         climber: '${m['climber']}',
         connected: m['connected'] != false,
+        lane: (m['lane'] as num?)?.toInt(),
+        side: (m['side'] as num?)?.toInt(),
       );
 }
 
@@ -106,10 +111,14 @@ class RoomView {
     required this.started,
     required this.max,
     required this.players,
+    this.lanes,
   });
   final String code, route, mode, dateKey, host;
   final bool started;
   final int max;
+
+  /// From the start: how many lanes the wall has. It stays so when someone leaves.
+  final int? lanes;
   final List<RoomPlayer> players;
 
   factory RoomView.fromJson(Map m) => RoomView(
@@ -120,6 +129,7 @@ class RoomView {
         host: '${m['host']}',
         started: m['started'] == true,
         max: (m['max'] as num?)?.toInt() ?? 8,
+        lanes: (m['lanes'] as num?)?.toInt(),
         players: [for (final p in (m['players'] as List? ?? const [])) RoomPlayer.fromJson(p as Map)],
       );
 

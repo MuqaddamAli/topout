@@ -4,6 +4,9 @@
 const crypto = require('crypto');
 
 const MAX_PLAYERS = 8;
+// one lane per two players (lib/game/core.dart builds the same wall from this)
+const MAX_LANES = 4;
+const lanesFor = (players) => Math.max(1, Math.min(MAX_LANES, Math.ceil(players / 2)));
 // no I, L or O: they are easy to mix up with 1 and 0
 const CODE_LETTERS = 'ABCDEFGHJKMNPQRSTUVWXYZ';
 const ROUTES = ['first', 'steps', 'crimps', 'daily'];
@@ -56,6 +59,9 @@ class Rooms {
       name,
       climber: CLIMBERS.includes(climber) ? climber : 'ada',
       connected: true,
+      // set at the start: the lane (0 is the first) and the side in it (0 left, 1 right)
+      lane: null,
+      side: null,
       code: room.code,
       timer: null,
     };
@@ -122,6 +128,16 @@ class Rooms {
     if (room.started) return { error: Err.started };
     room.started = true;
     room.startAt = Date.now() + this.countdownMs;
+    // in the order they joined: the first gets lane 1 left, the next lane 1
+    // right, then lane 2 left, and so on. The wall keeps this many lanes
+    // even if someone leaves during the climb.
+    room.lanes = lanesFor(room.players.size);
+    let k = 0;
+    for (const p of room.players.values()) {
+      p.lane = Math.floor(k / 2);
+      p.side = k % 2;
+      k++;
+    }
     return { room };
   }
 
@@ -161,15 +177,18 @@ class Rooms {
       dateKey: room.dateKey,
       host: room.host,
       started: room.started,
+      lanes: room.lanes ?? null,
       max: MAX_PLAYERS,
       players: [...room.players.values()].map((p) => ({
         id: p.id,
         name: p.name,
         climber: p.climber,
         connected: p.connected,
+        lane: p.lane,
+        side: p.side,
       })),
     };
   }
 }
 
-module.exports = { Rooms, Err, MAX_PLAYERS, CODE_LETTERS, ROUTES, MODES, CLIMBERS, cleanCode, cleanName };
+module.exports = { Rooms, Err, MAX_PLAYERS, MAX_LANES, lanesFor, CODE_LETTERS, ROUTES, MODES, CLIMBERS, cleanCode, cleanName };

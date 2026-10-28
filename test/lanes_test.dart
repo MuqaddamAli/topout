@@ -2,6 +2,8 @@
 // a copy of the route (every other one mirrored), bridges between them, and
 // two spawns per lane. The balance bot climbs every lane to show they are
 // all as hard as the route on its own.
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:topout/game/core.dart';
 
@@ -303,6 +305,15 @@ void main() {
     }
     // ignore: avoid_print
     print(table);
+  });
+
+  test('the bots (server/bots.js) climb from the same spawns as the game', () {
+    final js = File('server/bots.js').readAsStringSync();
+    final m = RegExp(r'const SPAWN_X = \[\[(\d+), (\d+)\], \[(\d+), (\d+)\]\];').firstMatch(js)!;
+    final bots = [for (var i = 1; i <= 4; i++) double.parse(m.group(i)!)];
+    expect(RegExp(r'const LANE_WIDTH = (\d+);').firstMatch(js)!.group(1), '${Wall.right.toInt()}');
+    final r = laneWall(buildRoutes().first, 2);
+    expect([for (final l in r.lanes) for (final s in l.spawns) s.x - l.x0], bots);
   });
 
   test('a climber can cross every bridge into the next lane', () {

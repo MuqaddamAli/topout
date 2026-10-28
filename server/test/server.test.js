@@ -147,6 +147,91 @@ test('a dropped player keeps the slot for the grace period and can come back', a
   assert.deepEqual((await gone).players.map((p) => p.name), ['Host']);
 });
 
+/// A room with [n] players (the host first), started. Returns the sockets in
+/// join order and the room everyone is sent after the start.
+async function startedRoom(n) {
+  const host = await makeRoom('P1');
+  const all = [host.s];
+  for (let k = 2; k <= n; k++) {
+    const s = await connect();
+    await ask(s, 'join', { code: host.code, name: `P${k}` });
+    all.push(s);
+  }
+  const after = roomWhen(host.s, (r) => r.started);
+  assert.deepEqual(await ask(host.s, 'start'), {});
+  return { host, all, room: await after };
+}
+
+for (const [n, lanes] of [[1, 1], [2, 1], [3, 2], [5, 3], [8, 4]]) {
+  test(`${n} player(s) get ${lanes} lane(s), in join order: lane 1 left, lane 1 right, lane 2 left...`, async () => {
+    const { all, room } = await startedRoom(n);
+    assert.equal(room.lanes, lanes);
+    assert.deepEqual(
+      room.players.map((p) => [p.name, p.lane, p.side]),
+      Array.from({ length: n }, (_, k) => [`P${k + 1}`, Math.floor(k / 2), k % 2]),
+    );
+    for (const s of all) s.emit('leave');
+  });
+}
+
+test('before the start nobody has a lane, and the started event says how many', async () => {
+  const host = await makeRoom();
+  assert.equal(host.r.room.lanes, null);
+  assert.equal(host.r.room.players[0].lane, null);
+  const b = await connect();
+  await ask(b, 'join', { code: host.code, name: 'B' });
+  const c = await connect();
+  await ask(c, 'join', { code: host.code, name: 'C' });
+  const started = next(c, 'started');
+  await ask(host.s, 'start');
+  assert.equal((await started).lanes, 2);
+});
+
+test('the creator leaves before the start: the next player gets lane 1 left', async () => {
+  const host = await makeRoom('A');
+  const b = await connect();
+  const rb = await ask(b, 'join', { code: host.code, name: 'B' });
+  const c = await connect();
+  await ask(c, 'join', { code: host.code, name: 'C' });
+  const d = await connect();
+  await ask(d, 'join', { code: host.code, name: 'D' });
+  const left = roomWhen(b, (r) => r.players.length === 3);
+  host.s.emit('leave');
+  assert.equal((await left).host, rb.you);
+  const after = roomWhen(b, (r) => r.started);
+  assert.deepEqual(await ask(b, 'start'), {});
+  const room = await after;
+  assert.equal(room.lanes, 2);
+  assert.deepEqual(room.players.map((p) => [p.name, p.lane, p.side]), [['B', 0, 0], ['C', 0, 1], ['D', 1, 0]]);
+});
+
+test('someone leaving during the climb changes no lanes, nor how many there are', async () => {
+  const { all, room } = await startedRoom(5);
+  assert.equal(room.lanes, 3);
+  const update = roomWhen(all[4], (r) => r.players.length === 4);
+  all[1].emit('leave');
+  const now = await update;
+  assert.equal(now.lanes, 3);
+  assert.deepEqual(now.players.map((p) => [p.name, p.lane, p.side]), [['P1', 0, 0], ['P3', 1, 0], ['P4', 1, 1], ['P5', 2, 0]]);
+});
+
+test('a player who drops out and comes back keeps their lane', async () => {
+  const host = await makeRoom();
+  const b = await connect();
+  await ask(b, 'join', { code: host.code, name: 'B' });
+  const c = await connect();
+  const rc = await ask(c, 'join', { code: host.code, name: 'C' });
+  const after = roomWhen(host.s, (r) => r.started);
+  await ask(host.s, 'start');
+  await after;
+  const dropped = roomWhen(host.s, (r) => r.players[2]?.connected === false);
+  c.close();
+  await dropped;
+  const back = await ask(await connect(), 'rejoin', { code: host.code, token: rc.token });
+  assert.equal(back.room.lanes, 2);
+  assert.deepEqual(back.room.players.map((p) => [p.name, p.lane, p.side]), [['Host', 0, 0], ['B', 0, 1], ['C', 1, 0]]);
+});
+
 test('origins: Vercel, localhost and the local network only', () => {
   assert.ok(originAllowed('https://topout.vercel.app'));
   assert.ok(originAllowed('http://localhost:5000'));

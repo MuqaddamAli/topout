@@ -34,11 +34,18 @@ const ORDER = [0, 3, 1, 2]; // left hand, right foot, right hand, left foot
 const SIDE = [-1, 1, -1, 1];
 // the height of the top of each route (lib/game/core.dart)
 const TOPS = { first: 610, steps: 912, crimps: 1192 };
+// where the spawns are (lib/game/core.dart, laneWall): a lane is 360 wide,
+// every other lane is mirrored; [left, right] spawn in a lane and in a mirrored one
+const LANE_WIDTH = 360;
+const SPAWN_X = [[95, 267], [93, 265]];
+
+/// Where a player of [lane] and [side] (0 left, 1 right) starts.
+const spawnX = (lane, side) => lane * LANE_WIDTH + SPAWN_X[lane % 2][side];
 
 /// One climber going up the wall at its own pace, now and then falling off.
 class Climb {
   constructor(n) {
-    this.x0 = 80 + n * 32;
+    this.x0 = spawnX(0, n % 2); // until the start says which lane
     this.speed = 12 + Math.random() * 10; // cm per second
     this.climber = CLIMBERS[n % CLIMBERS.length];
     this.top = null; // set from the room's route
@@ -134,6 +141,7 @@ function bot(n) {
   const climb = new Climb(n);
   let timer = null;
   const name = `Bot ${n + 1}`;
+  let you = null;
 
   const go = (startsIn) =>
     setTimeout(() => {
@@ -154,9 +162,18 @@ function bot(n) {
         socket.close();
         return;
       }
+      you = r.you;
       climb.top = TOPS[r.room.route] ?? null;
       console.log(`${name} joined ${r.room.code} (${r.room.players.length}/${r.room.max})`);
     });
+  });
+  // from the start, the room says each player's lane and side: climb there
+  socket.on('room', (room) => {
+    const me = room.players.find((p) => p.id === you);
+    if (!room.started || me?.lane == null || timer) return;
+    climb.x0 = spawnX(me.lane, me.side);
+    climb.reset();
+    console.log(`${name}: lane ${me.lane + 1} ${me.side === 0 ? 'left' : 'right'} of ${room.lanes}`);
   });
   socket.on('started', ({ startsIn }) => {
     console.log(`${name}: climbing`);

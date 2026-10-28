@@ -10,8 +10,9 @@
 //   state  [...]      relayed as-is to the others in the room
 //   leave
 // Server to client:
-//   room    the room and its players, on every change
-//   started {startsIn}  ms until everyone starts climbing
+//   room    the room and its players, on every change; from the start it
+//           also has the lane count and each player's lane and side
+//   started {startsIn, lanes}  ms until everyone starts climbing
 //   state   [playerId, [...]]
 const http = require('http');
 const { Server } = require('socket.io');
@@ -97,7 +98,7 @@ function createServer({ graceMs, countdownMs } = {}) {
       const r = rooms.start(socket.data.player);
       if (r.error) return reply(ack, { error: r.error });
       reply(ack, {});
-      io.to(r.room.code).emit('started', { startsIn: startsIn(r.room) });
+      io.to(r.room.code).emit('started', { startsIn: startsIn(r.room), lanes: r.room.lanes });
       send(r.room);
     });
 
