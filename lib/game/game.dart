@@ -384,6 +384,10 @@ class Game {
   double maxY = 0, segStartY = 0, segTime = 0;
   double bestAtStart = 0;
   bool newBestShown = false;
+
+  /// Whether this climb goes into the records (best times, highest point,
+  /// Daily best, the log). Online climbs and walls with lanes do not.
+  bool keepsRecords = true;
   int restLedge = 0;
   final Set<int> lit = {};
   final Map<int, double> litAt = {};
@@ -471,8 +475,9 @@ class Game {
   }
 
   double camXFor(double x) {
-    final half = cw / scale / 2, lo = Wall.left + half - 8, hi = Wall.right - half + 8;
-    return lo > hi ? (Wall.left + Wall.right) / 2 : clampD(x, lo, hi);
+    final r = route, left = r?.wallLeft ?? Wall.left, right = r?.wallRight ?? Wall.right;
+    final half = cw / scale / 2, lo = left + half - 8, hi = right - half + 8;
+    return lo > hi ? (left + right) / 2 : clampD(x, lo, hi);
   }
 
   double panOf(double x) => clampD((x - camX) * scale / (cw * 0.6), -0.8, 0.8);
@@ -525,6 +530,7 @@ class Game {
     final r = route;
     if (r == null || !segOpen) return;
     segOpen = false;
+    if (!keepsRecords) return;
     records.metres += math.max(0, maxY - segStartY) / unitsPerMetre;
     records.secs += math.max(0, time - segTime);
     records.reached(r, mode, todayKey, math.max(0, maxY - 100) / unitsPerMetre);
@@ -543,6 +549,7 @@ class Game {
   void startRoute(ClimbRoute r) {
     commitSegment();
     route = r;
+    keepsRecords = !onlineClimb && r.lanes.length == 1;
     final h = r.holds;
     final p0 = attachPoint(h[r.startHands[0]], 0), p1 = attachPoint(h[r.startHands[1]], 1);
     limbs = [Limb(r.startHands[0], p0.x, p0.y), Limb(r.startHands[1], p1.x, p1.y), Limb(0, 164, 0), Limb(0, 198, 0)];
@@ -1369,7 +1376,7 @@ class Game {
       }
     }
     maxY = math.max(maxY, c.y);
-    if (!newBestShown && bestAtStart > 1 && (maxY - 100) / unitsPerMetre > bestAtStart + 0.05) {
+    if (keepsRecords && !newBestShown && bestAtStart > 1 && (maxY - 100) / unitsPerMetre > bestAtStart + 0.05) {
       newBestShown = true;
       toast('New best!', ToastKind.ok);
       _play(Sfx.best);
@@ -1487,8 +1494,10 @@ class Game {
     if (f.counted) return;
     f.counted = true;
     commitSegment();
-    records.falls++;
-    records.saveLog();
+    if (keepsRecords) {
+      records.falls++;
+      records.saveLog();
+    }
     falls++;
   }
 
@@ -1618,8 +1627,10 @@ class Game {
     history.clear(); // no undo back into the fall
     camManual = null;
     showRecenter = false;
-    records.catches++;
-    records.saveLog();
+    if (keepsRecords) {
+      records.catches++;
+      records.saveLog();
+    }
     store.set('tip.catch', true);
     effects.burst(o.pt.x, o.pt.y + 3, PartKind.chalk, 18);
     catchFlash = CatchFlash(o.pt.copy());
@@ -1734,13 +1745,18 @@ class Game {
       _updateStandings();
     }
     commitSegment();
-    records.tops++;
-    records.saveLog();
+    if (keepsRecords) {
+      records.tops++;
+      records.saveLog();
+    }
     _play(Sfx.top);
     final r = route!, best = bestTime(r);
     final String note;
     final bool isBest;
-    if (best == null) {
+    if (!keepsRecords) {
+      isBest = false;
+      note = 'Online climbs are not saved in your records.';
+    } else if (best == null) {
       isBest = true;
       note = 'Your first time at the top!';
     } else if (time < best) {
@@ -1751,7 +1767,8 @@ class Game {
       note = 'Best time: ${fmtTime(best)}';
     }
     if (isBest) records.newBestTime(r, mode, time: time, moves: moves, climber: climber);
-    cele = Cele(c.copy(), Pt(clampD(c.x, 70, 290), r.topY + standHeight(climber)));
+    final top = holds[limbs[0].h!];
+    cele = Cele(c.copy(), Pt(clampD(c.x, top.x + 30, top.x2! - 30), r.topY + standHeight(climber)));
     for (final l in limbs) {
       l.h = null;
     }

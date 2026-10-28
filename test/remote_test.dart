@@ -294,6 +294,30 @@ void main() {
       await done(tester);
     });
 
+    testWidgets('an online climb is not saved in the records', (tester) async {
+      await inLobby(tester);
+      await started(tester);
+      expect(game.keepsRecords, isFalse);
+      final r = game.route!, top = r.holds.indexWhere((h) => h.t == HoldType.top);
+      game.maxY = 500;
+      game.limbs[0].h = top;
+      game.limbs[1].h = top;
+      await frames(tester, 0.3);
+      expect(game.phase, Phase.top);
+      await frames(tester, 2.2);
+      expect(game.topCard!.note, 'Online climbs are not saved in your records.');
+      game.goBack();
+      await frames(tester, 0.4);
+      final rec = game.records;
+      expect((rec.tops, rec.falls, rec.catches, rec.metres, rec.secs), (0, 0, 0, 0.0, 0.0));
+      expect(game.bestTime(r), isNull);
+      expect(game.bestHeight(r), 0);
+      // a climb alone afterwards counts again
+      game.startRoute(game.routes.first);
+      expect(game.keepsRecords, isTrue);
+      await done(tester);
+    });
+
     testWidgets('Leave from the pause card goes back to the title screen with your own mode', (tester) async {
       await inLobby(tester);
       await started(tester);
