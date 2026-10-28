@@ -87,7 +87,7 @@ class ScenePainter extends CustomPainter {
     canvas.translate(g.cw / 2 - g.camX * s + sx, g.ch / 2 + g.camY * s + sy);
     canvas.scale(s, -s);
     _wall(canvas, r);
-    _ground(canvas);
+    _ground(canvas, r);
     _holds(canvas, r, menu);
     double? bestY;
     if (!menu) {
@@ -320,7 +320,8 @@ class ScenePainter extends CustomPainter {
 
   /// The summit: flat where the top ledge is, then the rock falls away to both sides.
   static double wallEdgeY(ClimbRoute r, double x) {
-    final d = x < 40 ? 40 - x : (x > 320 ? x - 320 : 0.0), f = math.min(1.0, d / 40);
+    final a = r.wallLeft + 40, b = r.wallRight - 40;
+    final d = x < a ? a - x : (x > b ? x - b : 0.0), f = math.min(1.0, d / 40);
     return r.topY + 1 - math.min(d, 240) * 0.42 + f * (math.sin(x * 0.057 + 1.3) * 7 + math.sin(x * 0.13) * 3);
   }
 
@@ -358,7 +359,8 @@ class ScenePainter extends CustomPainter {
     final top = math.max(-60.0, v.y0), bottom = math.min(r.topY + 200, v.y1);
     if (_lightFor != r) {
       _lightFor = r;
-      _lightG = ui.Gradient.linear(Offset(-220, r.topY + 120), const Offset(580, -60),
+      // across the whole wall, so the lanes have no seam between them
+      _lightG = ui.Gradient.linear(Offset(-220, r.topY + 120), Offset(r.wallRight + 220, -60),
           [rgba(255, 170, 115, 0.26), rgba(255, 170, 115, 0.05), rgba(20, 24, 46, 0.30)], [0, 0.5, 1]);
     }
     _p
@@ -394,9 +396,11 @@ class ScenePainter extends CustomPainter {
     }
   }
 
-  void _ground(Canvas c) {
+  void _ground(Canvas c, ClimbRoute r) {
     final v = g.viewRange();
     if (v.y0 > 40) return;
+    // the crash pad's place in a lane, mirrored in a mirrored lane
+    double padX(Lane l, double x) => l.mirrored ? l.x1 - x : l.x0 + x;
     _p
       ..color = const Color(0xFF000000)
       ..shader = _earth;
@@ -411,7 +415,9 @@ class ScenePainter extends CustomPainter {
     // grass, swaying a little in the wind
     final grass = Path(), still = g.reducedMotion;
     for (final t in art.tufts) {
-      if (t.x < v.x0 || t.x > v.x1 || (t.x > 108 && t.x < 256)) continue;
+      if (t.x < v.x0 || t.x > v.x1) continue;
+      final l = r.laneAt(t.x), lx = l.mirrored ? l.x1 - t.x : t.x - l.x0;
+      if (lx > 108 && lx < 256) continue;
       final sway = still ? 0.0 : math.sin(g.clock * 1.6 + t.x * 0.05) * 1.6 + math.sin(g.clock * 3.7 + t.x * 0.13) * 0.5;
       for (var k = 0; k < t.n; k++) {
         grass
@@ -421,12 +427,17 @@ class ScenePainter extends CustomPainter {
       }
     }
     c.drawPath(grass, _line(Pal.grass, 1.3, cap: StrokeCap.round));
-    // crash pad
-    _fill(c, const Rect.fromLTWH(114, -24, 138, 6), rgba(0, 0, 0, 0.35));
-    c.drawRRect(roundRect(112, -22, 140, 18, 4), _p..color = Pal.pad);
-    c.drawRRect(roundRect(112, -6, 140, 7, 3), _p..color = Pal.padTop);
-    _fill(c, const Rect.fromLTWH(112, -14, 140, 2.2), rgba(242, 237, 228, 0.55));
-    _fill(c, const Rect.fromLTWH(181, -22, 2, 16), rgba(0, 0, 0, 0.25));
+    // a crash pad in each lane
+    for (final l in r.lanes) {
+      final x = math.min(padX(l, 112), padX(l, 252));
+      if (x > v.x1 || x + 140 < v.x0) continue;
+      final seam = math.min(padX(l, 181), padX(l, 183));
+      _fill(c, Rect.fromLTWH(math.min(padX(l, 114), padX(l, 252)), -24, 138, 6), rgba(0, 0, 0, 0.35));
+      c.drawRRect(roundRect(x, -22, 140, 18, 4), _p..color = Pal.pad);
+      c.drawRRect(roundRect(x, -6, 140, 7, 3), _p..color = Pal.padTop);
+      _fill(c, Rect.fromLTWH(x, -14, 140, 2.2), rgba(242, 237, 228, 0.55));
+      _fill(c, Rect.fromLTWH(seam, -22, 2, 16), rgba(0, 0, 0, 0.25));
+    }
   }
 
   // ---------------------------------------------------------------- holds
@@ -440,7 +451,8 @@ class ScenePainter extends CustomPainter {
       if (h.y > v.y1 + 60) break;
       if (h.t == HoldType.ground) continue;
       if (h.t.wide) {
-        ledges.add(k);
+        // the lamp's ring of light reaches about 70 past the ledge
+        if (h.x2! > v.x0 - 80 && h.x < v.x1 + 80) ledges.add(k);
         continue;
       }
       if (h.x < v.x0 - 20 || h.x > v.x1 + 20) continue;
@@ -602,8 +614,10 @@ class ScenePainter extends CustomPainter {
     c.save();
     c.clipRect(Rect.fromLTWH(h.x, -9, w, 6));
     final hatch = _line(isTop ? rgba(255, 122, 47, 0.8) : rgba(242, 237, 228, 0.2), 2);
-    final lines = Path();
-    for (var x = h.x - 10; x < x2 + 10; x += 9) {
+    // only the stripes in view (the top runs across every lane)
+    final v = g.viewRange(), lines = Path();
+    final skip = math.max(0.0, ((v.x0 - h.x) / 9).floorToDouble());
+    for (var x = h.x - 10 + skip * 9; x < math.min(x2 + 10, v.x1 + 10); x += 9) {
       lines
         ..moveTo(x, -9)
         ..lineTo(x + 6, -3);
@@ -612,22 +626,31 @@ class ScenePainter extends CustomPainter {
     c.restore();
     c.restore();
     if (isTop) {
-      final fx = x2 - 14, wave = g.reducedMotion ? 0.0 : 1.0;
-      _fill(c, Rect.fromLTWH(fx, h.y, 2.2, 50), hex(0xd9d2c6));
-      final flag = Path()..moveTo(fx + 2.2, h.y + 50);
-      for (var i = 1; i <= 6; i++) {
-        flag.lineTo(fx + 2.2 + i * 4.5, h.y + 50 - i * 1.2 + math.sin(g.clock * 5 - i) * 1.6 * wave);
+      // a flag over each lane, where the lane's own top ends
+      for (final l in r.lanes) {
+        final fx = l.mirrored ? l.x0 + 54 : l.x1 - 54;
+        if (fx > v.x0 - 40 && fx < v.x1 + 10) _flag(c, fx, h.y);
       }
-      for (var i = 6; i >= 1; i--) {
-        flag.lineTo(fx + 2.2 + i * 4.5, h.y + 36 + i * 0.6 + math.sin(g.clock * 5 - i) * 1.6 * wave);
-      }
-      flag
-        ..lineTo(fx + 2.2, h.y + 34)
-        ..close();
-      c.drawPath(flag, _p..color = Pal.signal);
     } else if (!r.endless) {
-      _lamp(c, h.x + 16, h.y, !menu && g.lit.contains(k), k);
+      final mirrored = r.laneAt(h.x).mirrored;
+      _lamp(c, mirrored ? x2 - 16 : h.x + 16, h.y, !menu && g.lit.contains(k), k);
     }
+  }
+
+  void _flag(Canvas c, double fx, double y) {
+    final wave = g.reducedMotion ? 0.0 : 1.0;
+    _fill(c, Rect.fromLTWH(fx, y, 2.2, 50), hex(0xd9d2c6));
+    final flag = Path()..moveTo(fx + 2.2, y + 50);
+    for (var i = 1; i <= 6; i++) {
+      flag.lineTo(fx + 2.2 + i * 4.5, y + 50 - i * 1.2 + math.sin(g.clock * 5 - i) * 1.6 * wave);
+    }
+    for (var i = 6; i >= 1; i--) {
+      flag.lineTo(fx + 2.2 + i * 4.5, y + 36 + i * 0.6 + math.sin(g.clock * 5 - i) * 1.6 * wave);
+    }
+    flag
+      ..lineTo(fx + 2.2, y + 34)
+      ..close();
+    c.drawPath(flag, _p..color = Pal.signal);
   }
 
   void _lamp(Canvas c, double x, double y, bool lit, int k) {
@@ -846,9 +869,11 @@ class ScenePainter extends CustomPainter {
   void _hint(Canvas c, Pose pose) {
     final r = g.route;
     if (r == null || !r.tutorial || g.moves != 0 || g.drag != null || g.phase != Phase.climb) return;
-    final from = pose.legs[1].e, u = (g.clock % 2.2) / 1.6;
+    // the step is the start cluster's, in the lane you are in (mirrored there too)
+    final l = r.laneAt(g.cd.x), from = pose.legs[l.mirrored ? 0 : 1].e, u = (g.clock % 2.2) / 1.6;
     if (u > 1) return;
-    final e = u * u * (3 - 2 * u), x = lerpD(from.x, 210, e), y = lerpD(from.y, 102, e);
+    final tx = l.mirrored ? l.x1 - 210 : l.x0 + 210;
+    final e = u * u * (3 - 2 * u), x = lerpD(from.x, tx, e), y = lerpD(from.y, 102, e);
     final a = math.sin(math.min(1.0, u * 1.15) * math.pi);
     c.drawPath(dashLine(from.x, from.y, x, y, 2, 4), _line(rgba(242, 237, 228, 0.35 * a), 1.5));
     _oval(c, x, y, 8, 8, rgba(242, 237, 228, 0.55 * a));

@@ -109,6 +109,9 @@ class Art {
   Art._();
   static final Art instance = Art._();
 
+  /// Grass and pebbles reach this far right, past the widest wall with lanes.
+  static const double groundRight = Wall.left + maxLanes * Wall.right + 420;
+
   bool _ready = false;
   late final Baked tile;
   late final List<CloudSprite> clouds;
@@ -161,6 +164,14 @@ class Art {
     pebbles = [
       for (var i = 0; i < 70; i++) Pebble(-420 + rg() * 1200, -8 - rg() * 60, 1.5 + rg() * 4, 1 + rg() * 2.2, rg() > 0.5),
     ];
+    // more of both for a wall with lanes, after the ones above so those stay the same
+    for (var x = t.last.x + 9 + rg() * 16; x < groundRight; x += 9 + rg() * 16) {
+      t.add(Tuft(x, 5 + rg() * 9, 2 + (rg() * 3).floor(), (rg() - 0.5) * 0.8));
+    }
+    final more = ((groundRight - 780) / 1200 * 70).round();
+    pebbles.addAll([
+      for (var i = 0; i < more; i++) Pebble(780 + rg() * (groundRight - 780), -8 - rg() * 60, 1.5 + rg() * 4, 1 + rg() * 2.2, rg() > 0.5),
+    ]);
   }
 
   /// Size of the rock texture in pixels. It is drawn at 0.55 units per pixel,

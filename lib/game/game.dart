@@ -546,7 +546,15 @@ class Game {
 
   // ================================================================ screens
 
+  /// Where [r] is in [routes]. A wall with lanes is a copy, so this goes by id.
+  int _routeIndex(ClimbRoute r) => routes.indexWhere((x) => x.id == r.id);
+
+  /// For testing a wide wall alone (`?lanes=N` on the web): climbs alone
+  /// start on a wall with this many lanes. Not saved in the records.
+  int debugLanes = 1;
+
   void startRoute(ClimbRoute r) {
+    if (debugLanes > 1 && !onlineClimb && r.lanes.length == 1) r = laneWall(r, debugLanes);
     commitSegment();
     route = r;
     keepsRecords = !onlineClimb && r.lanes.length == 1;
@@ -912,7 +920,7 @@ class Game {
   void nextRoute() {
     if (phase != Phase.top) return; // a second tap while the card fades out
     if (onlineClimb) return restart(); // the room climbs one route
-    final i = routes.indexOf(route!);
+    final i = _routeIndex(route!);
     startRoute(routes[(i + 1) % routes.length]);
   }
 
@@ -1782,7 +1790,7 @@ class Game {
         fl,
         note,
         !isBest,
-        routes.indexOf(r) == routes.length - 1 ? 'First route' : 'Next route',
+        _routeIndex(r) == routes.length - 1 ? 'First route' : 'Next route',
         climber.name,
       );
       screen = Screen.topCard;
@@ -1884,7 +1892,8 @@ class Game {
     if (drag == null) {
       final normY = camManual ?? cd.y + 40, normX = camXFor(cd.x);
       final lookY = r.endless ? cd.y + 320 : (r.topY + 50) / 2;
-      final ty = lerpD(normY, lookY, lookK), tx = lerpD(normX, 180, lookK), e = reducedMotion ? 1.0 : math.min(1.0, dt * 6);
+      // Look shows the lane you are in now
+      final ty = lerpD(normY, lookY, lookK), tx = lerpD(normX, r.laneAt(cd.x).mid, lookK), e = reducedMotion ? 1.0 : math.min(1.0, dt * 6);
       camY += (ty - camY) * e;
       camX += (tx - camX) * e;
     }
@@ -2085,13 +2094,21 @@ class Game {
     _tickSpan = span;
     _tickRoute = r;
     ticks = [];
+    final seen = <double>{};
     for (var k = 0; k < r.holds.length; k++) {
       final h = r.holds[k];
-      if (h.t != HoldType.ledge) continue;
+      // one mark per height: every lane has the same ledges
+      if (h.t != HoldType.ledge || !seen.add(h.y)) continue;
       final m = (h.y - 100) / unitsPerMetre;
       if (m > span) continue;
       ticks.add(Tick(m / span, k));
     }
+  }
+
+  /// A ledge mark is lit when a ledge at its height is lit, in any lane.
+  bool tickLit(Tick t) {
+    final y = holds[t.hold].y;
+    return lit.any((k) => holds[k].y == y);
   }
 
   /// Keeps the ledge marks on the progress bar in step with the Daily Wall.
