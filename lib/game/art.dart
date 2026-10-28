@@ -1,12 +1,16 @@
-// Art that is made once: the rock texture, the clouds, stars, grass, and the
-// rock facets of each route. Everything is drawn in code, no image files.
-// Things drawn every frame are batched here so a frame needs few draw calls.
+// Art that is made once: the rock texture (with its light and dark facets),
+// the clouds, stars and grass. Everything is drawn in code, no image files.
+// Whatever can be drawn ahead of time is, so a frame needs few draw calls.
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
+
+import 'baked.dart';
 import 'core.dart';
 import 'palette.dart';
+
+export 'baked.dart';
 
 /// A 2D affine transform as the 4x4 matrix Flutter wants.
 Float64List affine(double a, double b, double c, double d, double e, double f) =>
@@ -81,41 +85,11 @@ class Pebble {
   final bool light;
 }
 
-/// A few rows of rock facets, merged into one path per shade.
-class FacetBand {
-  FacetBand(this.y0, this.y1, this.paths, this.colors);
-  final double y0, y1;
-  final List<ui.Path> paths;
-  final List<ui.Color> colors;
-}
-
-/// What the painter keeps for one route: the rock facets in bands, and the
-/// holds sorted by height so only the ones in view are looked at.
-class RouteArt {
-  RouteArt(this.bands, this.byY, this.ys);
-  final List<FacetBand> bands;
-  final List<int> byY;
-  final List<double> ys;
-
-  /// The first position in [byY] whose hold is at or above [y].
-  int firstAbove(double y) {
-    var lo = 0, hi = ys.length;
-    while (lo < hi) {
-      final mid = (lo + hi) >> 1;
-      if (ys[mid] < y) {
-        lo = mid + 1;
-      } else {
-        hi = mid;
-      }
-    }
-    return lo;
-  }
-}
-
 class CloudSprite {
-  CloudSprite(this.image, this.w, this.h);
-  final ui.Image image;
+  CloudSprite(this.baked, this.w, this.h);
+  final Baked baked;
   final double w, h;
+  ui.Image get image => baked.image;
 }
 
 /// Where each cloud floats. h: height above the summit (world units),
@@ -136,7 +110,7 @@ class Art {
   static final Art instance = Art._();
 
   bool _ready = false;
-  late final ui.Image tile;
+  late final Baked tile;
   late final List<CloudSprite> clouds;
   late final List<Star> stars;
   late final List<Tuft> tufts;
@@ -189,27 +163,63 @@ class Art {
     ];
   }
 
-  ui.Image _makeTile() {
-    final rec = ui.PictureRecorder();
-    final c = ui.Canvas(rec);
+  /// Size of the rock texture in pixels. It is drawn at 0.55 units per pixel,
+  /// so it repeats every ~5.6 m.
+  static const double tileSize = 1024;
+
+  /// The rock: blotches, specks of grit and the big light and dark facets that
+  /// give the wall its shape. Everything wraps around, so the texture tiles
+  /// without seams, and the wall costs one textured rectangle per frame.
+  Baked _makeTile() => bake(tileSize.toInt(), tileSize.toInt(), _drawTile);
+
+  void _drawTile(ui.Canvas c) {
     final r = Rng(99);
-    const size = 512.0;
-    c.drawRect(const ui.Rect.fromLTWH(0, 0, size, size), ui.Paint()..color = hex(0x5a6070));
+    const size = tileSize;
+    const whole = ui.Rect.fromLTWH(0, 0, size, size);
+    c.drawRect(whole, ui.Paint()..color = hex(0x5a6070));
     final p = ui.Paint();
-    for (var i = 0; i < 20; i++) {
+    for (var i = 0; i < 80; i++) {
       final x = r() * size, y = r() * size, rad = 50 + r() * 150, light = r() > 0.5;
       for (var ox = -size; ox <= size; ox += size) {
         for (var oy = -size; oy <= size; oy += size) {
-          p.shader = ui.Gradient.radial(ui.Offset(x + ox, y + oy), rad, [
+          final box = ui.Rect.fromCircle(center: ui.Offset(x + ox, y + oy), radius: rad);
+          if (!box.overlaps(whole)) continue;
+          p.shader = ui.Gradient.radial(box.center, rad, [
             light ? rgba(170, 170, 190, 0.11) : rgba(28, 30, 40, 0.13),
             rgba(0, 0, 0, 0),
           ]);
-          c.drawRect(const ui.Rect.fromLTWH(0, 0, size, size), p);
+          c.drawRect(box.intersect(whole), p);
         }
       }
     }
     p.shader = null;
-    for (var i = 0; i < 4200; i++) {
+    // facets on a jittered grid that wraps around (cells of ~62 units)
+    const n = 9, cell = size / n;
+    final pts = [
+      for (var j = 0; j < n; j++)
+        [for (var i = 0; i < n; i++) ui.Offset(i * cell + (r() - 0.5) * cell * 0.75, j * cell + (r() - 0.5) * cell * 0.75)],
+    ];
+    ui.Offset at(int i, int j) => pts[j % n][i % n] + ui.Offset((i ~/ n) * size, (j ~/ n) * size);
+    for (var j = 0; j < n; j++) {
+      for (var i = 0; i < n; i++) {
+        final a = at(i, j), b = at(i + 1, j), cc = at(i, j + 1), d = at(i + 1, j + 1), flip = r() < 0.5;
+        for (final t in flip ? [[a, b, d], [a, d, cc]] : [[a, b, cc], [b, d, cc]]) {
+          final sh = (r() * 2 - 1) * 0.8 + 0.2;
+          p.color = sh > 0 ? rgba(255, 232, 205, sh * 0.085) : rgba(10, 12, 22, -sh * 0.13);
+          final tri = ui.Path()
+            ..moveTo(t[0].dx, t[0].dy)
+            ..lineTo(t[1].dx, t[1].dy)
+            ..lineTo(t[2].dx, t[2].dy)
+            ..close();
+          for (var ox = -size; ox <= 0; ox += size) {
+            for (var oy = -size; oy <= 0; oy += size) {
+              c.drawPath(tri.shift(ui.Offset(ox, oy)), p);
+            }
+          }
+        }
+      }
+    }
+    for (var i = 0; i < 16800; i++) {
       final x = r() * size, y = r() * size, s = 0.6 + r() * 2, v = r();
       p.color = v < 0.42
           ? rgba(18, 20, 26, 0.12 + r() * 0.2)
@@ -218,7 +228,6 @@ class Art {
               : rgba(226, 170, 150, 0.12 + r() * 0.16);
       c.drawRect(ui.Rect.fromLTWH(x, y, s, s * (0.6 + r() * 0.8)), p);
     }
-    return rec.endRecording().toImageSync(size.toInt(), size.toInt());
   }
 
   CloudSprite _makeCloud(int seed, double w, double h, _CloudPal pal, {bool streak = false}) {
@@ -309,78 +318,6 @@ class Art {
     paint.shader = ui.Gradient.linear(ui.Offset(0, base - h * 0.12), ui.Offset(0, base), [rgba(255, 214, 170, 0), pal.under]);
     x.drawRect(ui.Rect.fromLTWH(0, base - h * 0.12, w, h * 0.12), paint); // bright, flat underside
     x.restore();
-    final img = rec.endRecording().toImageSync((w * res).ceil(), (h * res).ceil());
-    return CloudSprite(img, w, h);
-  }
-
-  /// The light and dark facets that give the rock its shape, and the hold
-  /// index. Made once per route.
-  RouteArt artFor(ClimbRoute r) {
-    final cached = r.art;
-    if (cached is RouteArt) return cached;
-    final rng = Rng((r.topY * 7 + r.id.length * 131).toInt());
-    const step = 62.0, rowsPerBand = 4, levels = 8;
-    final cols = (1220 / step).ceil() + 1, rows = ((r.topY + 300) / step).ceil() + 1;
-    final pts = <List<ui.Offset>>[];
-    for (var j = 0; j < rows; j++) {
-      final row = <ui.Offset>[];
-      for (var i = 0; i < cols; i++) {
-        final px = -430 + i * step + (rng() - 0.5) * step * 0.75;
-        final py = -60 + j * step + (rng() - 0.5) * step * 0.75;
-        row.add(ui.Offset(px, py));
-      }
-      pts.add(row);
-    }
-    final bands = <FacetBand>[];
-    var paths = <int, ui.Path>{};
-    var y0 = double.infinity, y1 = -double.infinity;
-    void flush() {
-      if (paths.isEmpty) return;
-      final keys = paths.keys.toList()..sort();
-      bands.add(FacetBand(y0, y1, [for (final k in keys) paths[k]!], [
-        // shades are rounded to a few steps, so many facets share one path
-        for (final k in keys) k > 0 ? rgba(255, 232, 205, k / levels * 0.085) : rgba(10, 12, 22, -k / levels * 0.6 * 0.13),
-      ]));
-      paths = {};
-      y0 = double.infinity;
-      y1 = -double.infinity;
-    }
-
-    for (var j = 0; j < rows - 1; j++) {
-      for (var i = 0; i < cols - 1; i++) {
-        final a = pts[j][i], b = pts[j][i + 1], c = pts[j + 1][i], d = pts[j + 1][i + 1], flip = rng() < 0.5;
-        final tris = flip
-            ? [
-                [a, b, d],
-                [a, d, c],
-              ]
-            : [
-                [a, b, c],
-                [b, d, c],
-              ];
-        for (final t in tris) {
-          final s = (rng() * 2 - 1) * 0.8 + 0.2;
-          final k = s > 0 ? (s * levels).round().clamp(1, levels) : -(-s / 0.6 * levels).round().clamp(1, levels);
-          (paths[k] ??= ui.Path())
-            ..moveTo(t[0].dx, t[0].dy)
-            ..lineTo(t[1].dx, t[1].dy)
-            ..lineTo(t[2].dx, t[2].dy)
-            ..close();
-          for (final o in t) {
-            y0 = math.min(y0, o.dy);
-            y1 = math.max(y1, o.dy);
-          }
-        }
-      }
-      if ((j + 1) % rowsPerBand == 0) flush();
-    }
-    flush();
-    final byY = [
-      for (var k = 0; k < r.holds.length; k++)
-        if (r.holds[k].t != HoldType.ground) k,
-    ]..sort((a, b) => r.holds[a].y.compareTo(r.holds[b].y));
-    final out = RouteArt(bands, byY, [for (final k in byY) r.holds[k].y]);
-    r.art = out;
-    return out;
+    return CloudSprite(Baked(rec.endRecording(), (w * res).ceil(), (h * res).ceil()), w, h);
   }
 }

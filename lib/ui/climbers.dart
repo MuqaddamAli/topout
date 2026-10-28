@@ -62,7 +62,6 @@ class _ClimberCard extends StatelessWidget {
             color: on ? Color.alphaBlend(look.shirt[0].withAlpha(28), Pal.ink2) : Pal.ink2,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: on ? Pal.signal : Pal.line, width: on ? 2 : 1.5),
-            boxShadow: on ? [BoxShadow(color: Pal.signal.withAlpha(46), blurRadius: 18, offset: const Offset(0, 6))] : const [],
           ),
           padding: const EdgeInsets.fromLTRB(4, 6, 4, 8),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -198,7 +197,8 @@ class ClimberPortrait extends StatelessWidget {
   final bool glow;
 
   @override
-  Widget build(BuildContext context) => CustomPaint(painter: _PortraitPainter(climber, glow), size: Size.infinite);
+  Widget build(BuildContext context) =>
+      CachedPaint(cacheKey: 'portrait-${climber.id}-$glow', painter: _PortraitPainter(climber, glow));
 }
 
 class _PortraitPainter extends CustomPainter {

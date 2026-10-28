@@ -1,17 +1,18 @@
-import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// Sound effects the game can play. Each has a few recorded variants.
+import 'audio_engine.dart';
+
+/// Sound effects the game can play. Each has a few variants, and a level
+/// that sets it in the mix.
 enum Sfx {
   grabJug('grab_jug', 3),
   grabCrimp('grab_crimp', 3),
   grabSloper('grab_sloper', 3),
   foot('foot', 4),
-  chalk('chalk', 2),
+  chalk('chalk', 2, 0.7),
   slip('slip', 2),
   fall('fall', 1),
   land('land', 2),
@@ -25,15 +26,17 @@ enum Sfx {
   bird('bird', 4),
   breath('breath', 2);
 
-  const Sfx(this.file, this.variants);
+  const Sfx(this.file, this.variants, [this.level = 1]);
   final String file;
   final int variants;
+  final double level;
 }
 
 /// Plays the music, the wind and the sound effects.
 ///
-/// All sounds are files in assets/audio. They were made by the synth in the
-/// web prototype (see tool/render_audio.py), so they sound the same.
+/// All sounds are files in assets/audio, made by tool/make_audio.py. The
+/// files are already balanced against each other; the levels here set the
+/// music and the wind under the effects.
 class GameAudio {
   GameAudio({required bool musicOn, required bool sfxOn, this.enabled = true})
       : _musicOn = musicOn,
@@ -46,146 +49,89 @@ class GameAudio {
   bool get musicOn => _musicOn;
   bool get sfxOn => _sfxOn;
 
-  static const double musicLevel = 0.85;
+  static const double musicLevel = 0.55;
 
-  /// The wind file was made at this level, so in-game levels are divided by it.
-  static const double windFileLevel = 0.25;
-  static const int _voices = 8;
+  /// The game asks for wind from 0 to about 0.12; times this is the volume.
+  static const double windScale = 4;
 
   final _rand = math.Random();
-  AudioPlayer? _musicPlayer;
-  AudioPlayer? _windPlayer;
-  final List<AudioPlayer> _pool = [];
-  int _next = 0;
-  bool _started = false;
+  final _lastVariant = List<int>.filled(Sfx.values.length, 0);
+  AudioEngine? _engine;
   bool _muffled = false;
-  bool _suspended = false;
   double _windLevel = 0;
   double _nextBreath = 0;
   double _nextBird = 3;
 
+  /// Starts the sound. On the web this must come from a tap.
   Future<void> start() async {
-    if (!enabled || _started) return;
-    _started = true;
+    if (!enabled || _engine != null) return;
     try {
-      AudioCache.instance = AudioCache(prefix: 'assets/audio/');
-      final files = <String>['music.mp3', 'wind.mp3'];
-      for (final s in Sfx.values) {
-        for (var v = 1; v <= s.variants; v++) {
-          files.add('${s.file}_$v.mp3');
-        }
-      }
-      // Load in the background; a sound that is not cached yet still plays.
-      unawaited(AudioCache.instance.loadAll(files).then((_) {}, onError: (Object _) {}));
-      final music = AudioPlayer(playerId: 'music'), wind = AudioPlayer(playerId: 'wind');
-      _musicPlayer = music;
-      _windPlayer = wind;
-      await music.setReleaseMode(ReleaseMode.loop);
-      await wind.setReleaseMode(ReleaseMode.loop);
-      for (var k = 0; k < _voices; k++) {
-        final p = AudioPlayer(playerId: 'sfx$k');
-        await p.setReleaseMode(ReleaseMode.stop);
-        _pool.add(p);
-      }
-      await music.play(AssetSource('music.mp3'), volume: _musicOn ? musicLevel : 0);
-      await wind.play(AssetSource('wind.mp3'), volume: 0);
+      final engine = _engine = AudioEngine();
+      await engine.start([
+        for (final s in Sfx.values)
+          for (var v = 1; v <= s.variants; v++) '${s.file}_$v',
+      ], music: _musicOn ? musicLevel : 0);
+      _applyWind();
     } catch (e) {
       debugPrint('Audio could not start: $e');
     }
   }
 
-  void _safe(Future<void> Function() f) {
-    if (!enabled) return;
-    f().catchError((Object e) => debugPrint('Audio: $e'));
-  }
-
   void setMusic(bool on) {
     _musicOn = on;
-    _applyMusicVolume();
+    _applyMusic();
   }
 
   void setSfx(bool on) {
     _sfxOn = on;
-    _applyWindVolume();
+    _applyWind();
   }
 
-  void _applyMusicVolume() {
-    final p = _musicPlayer;
-    if (p == null) return;
-    final v = _musicOn ? (_muffled ? musicLevel * 0.35 : musicLevel) : 0.0;
-    _safe(() => p.setVolume(v));
-  }
+  void _applyMusic() => _engine?.setMusic(_musicOn ? musicLevel : 0, muffled: _muffled);
 
-  void _applyWindVolume() {
-    final p = _windPlayer;
-    if (p == null) return;
-    final v = _sfxOn ? (_windLevel / windFileLevel).clamp(0.0, 1.0) : 0.0;
-    _safe(() => p.setVolume(v));
-  }
+  void _applyWind() => _engine?.setWind(_sfxOn ? (_windLevel * windScale).clamp(0.0, 1.0) : 0);
 
-  /// Quieter music while the game is paused.
+  /// Quieter, darker music while the game is paused.
   void muffle(bool on) {
     if (_muffled == on) return;
     _muffled = on;
-    _applyMusicVolume();
+    _applyMusic();
   }
 
   /// Wind gets louder as you climb. [level] is 0 to about 0.12.
   void setWind(double level) {
-    if (!_started || (level - _windLevel).abs() < 0.004) return;
+    if ((level - _windLevel).abs() < 0.004) return;
     _windLevel = level;
-    _applyWindVolume();
+    _applyWind();
   }
 
   /// Stop all sound while the app is in the background.
-  void suspend() {
-    if (_suspended) return;
-    _suspended = true;
-    final m = _musicPlayer, w = _windPlayer;
-    _safe(() async {
-      await m?.pause();
-      await w?.pause();
-    });
-  }
+  void suspend() => _engine?.suspend();
 
-  void resume() {
-    if (!_suspended) return;
-    _suspended = false;
-    final m = _musicPlayer, w = _windPlayer;
-    _safe(() async {
-      await m?.resume();
-      await w?.resume();
-    });
-  }
+  void resume() => _engine?.resume();
 
   /// Play a sound. [pan] is -1 (left) to 1 (right). [volume] scales it.
+  /// The same variant never plays twice in a row.
   void play(Sfx s, {double pan = 0, double volume = 1}) {
-    if (!enabled || !_started || !_sfxOn || _pool.isEmpty) return;
-    final v = 1 + _rand.nextInt(s.variants);
-    final p = _pool[_next];
-    _next = (_next + 1) % _pool.length;
-    _safe(() async {
-      await p.stop();
-      try {
-        await p.setBalance(pan.clamp(-1.0, 1.0));
-      } catch (_) {
-        // Not every platform can pan a sound. That is fine.
-      }
-      await p.play(AssetSource('${s.file}_$v.mp3'), volume: volume.clamp(0.0, 1.0));
-    });
+    final engine = _engine;
+    if (engine == null || !_sfxOn) return;
+    var v = 1 + _rand.nextInt(s.variants);
+    if (v == _lastVariant[s.index] && s.variants > 1) v = v % s.variants + 1;
+    _lastVariant[s.index] = v;
+    engine.play('${s.file}_$v', volume: (volume * s.level).clamp(0.0, 1.0), pan: pan.clamp(-1.0, 1.0));
   }
 
-  /// Breathing when a hand is very tired. [level] is 0 to 1.
+  /// Breathing when a hand is nearly out of grip. [level] is 0 to 1.
   void breath(double level, double now) {
     if (now < _nextBreath) return;
-    _nextBreath = now + 1.5 - level * 0.5;
-    play(Sfx.breath, volume: (0.025 + level * 0.04) / 0.065);
+    _nextBreath = now + 2.2 + _rand.nextDouble() * 0.8 - level * 0.4;
+    play(Sfx.breath, volume: 0.35 + level * 0.35);
   }
 
   /// Birds now and then, when [low] (near the ground or on the title screen).
   void ambience(double now, {required bool low}) {
     if (now < _nextBird) return;
-    _nextBird = now + 6 + _rand.nextDouble() * 9;
+    _nextBird = now + 12 + _rand.nextDouble() * 16;
     if (low) play(Sfx.bird, pan: (_rand.nextDouble() - 0.5) * 1.4);
   }
 

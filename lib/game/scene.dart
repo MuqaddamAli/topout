@@ -1,6 +1,7 @@
 // Draws the world: sky, clouds, mountains, the rock wall, holds, ledges and
 // lamps, the subtle markers while you aim, particles and the climber.
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
@@ -8,6 +9,7 @@ import 'package:flutter/widgets.dart';
 import 'art.dart';
 import 'climber.dart';
 import 'core.dart';
+import 'effects.dart';
 import 'game.dart';
 import 'palette.dart';
 
@@ -18,8 +20,9 @@ class ScenePainter extends CustomPainter {
 
   final Paint _p = Paint();
   final Paint _s = Paint()..style = PaintingStyle.stroke;
-  final Map<String, TextPainter> _labels = {};
+  TextPainter? _label; // the best-height label, kept while its text stays
   ImageShader? _tileShader;
+  ui.Image? _tileImage;
 
   // gradients that only change with the screen size or the route
   ui.Gradient? _vignetteG;
@@ -27,10 +30,17 @@ class ScenePainter extends CustomPainter {
   ui.Gradient? _lightG;
   ClimbRoute? _lightFor;
 
-  /// Each kind of hold drawn once (with and without chalk and snow), then stamped.
-  static final Map<int, ui.Picture> _holdPics = {};
+  /// Every kind of small hold (with and without chalk and snow) drawn once
+  /// into one image; a frame stamps all holds in view with one drawRawAtlas.
+  static Baked? _atlas;
+  static const double _atlasPx = 5; // atlas pixels per world unit
+  static const double _cellL = 18, _cellB = 19, _cellW = 39, _cellH = 32; // a cell around the hold, in units
+  Float32List _xf = Float32List(256), _rects = Float32List(256);
+  final List<int> _ledges = [];
+  final Paint _atlasPaint = Paint()..filterQuality = FilterQuality.medium;
 
-  late final Paint _shadowLayer = Paint()..color = const Color.fromRGBO(0, 0, 0, 0.24);
+  /// Turns whatever is drawn into the layer into a see-through black shadow.
+  final Paint _shadowLayer = Paint()..colorFilter = const ColorFilter.mode(Color(0x3D000000), BlendMode.srcIn);
   static final ui.Gradient _jug = ui.Gradient.radial(
       Offset.zero, 13, [hex(0xe8e3da), hex(0x8a857d)], null, TileMode.clamp, null, const Offset(-4, 4), 1);
   static final ui.Gradient _crimp = ui.Gradient.linear(const Offset(0, 3), const Offset(0, -3), [hex(0xefeae0), hex(0x79746d)]);
@@ -79,12 +89,18 @@ class ScenePainter extends CustomPainter {
     }
     final pose = g.pose, gear = g.gear;
     if (pose != null && gear != null) {
-      // cast shadow on the rock, sun from the upper left
-      canvas.saveLayer(null, _shadowLayer);
+      // The climber is recorded once and drawn twice: first as the cast
+      // shadow on the rock (sun from the upper left), then for real. The
+      // shadow layer is only as big as the climber; an unbounded one would
+      // cost a full-screen pass.
+      final rec = ui.PictureRecorder();
+      climber.draw(Canvas(rec), pose, gear, g.outfit);
+      final body = rec.endRecording();
+      canvas.saveLayer(_bounds(pose, gear).shift(const Offset(7, -10)), _shadowLayer);
       canvas.translate(7, -10);
-      climber.draw(canvas, pose, gear, g.outfit, sil: true);
+      canvas.drawPicture(body);
       canvas.restore();
-      climber.draw(canvas, pose, gear, g.outfit);
+      canvas.drawPicture(body);
       if (!menu) {
         _rings(canvas, pose);
         _hang(canvas);
@@ -103,14 +119,50 @@ class ScenePainter extends CustomPainter {
     if (g.curtain > 0) _fill(canvas, Offset.zero & size, Pal.ink.withAlpha((g.curtain * g.curtain * 235).round()));
   }
 
+  /// Everything the climber draws, with a margin for outlines and shoes.
+  static Rect _bounds(Pose p, Gear gear) {
+    var x0 = p.c.x, x1 = p.c.x, y0 = p.c.y, y1 = p.c.y;
+    void add(Pt q) {
+      if (q.x < x0) x0 = q.x;
+      if (q.x > x1) x1 = q.x;
+      if (q.y < y0) y0 = q.y;
+      if (q.y > y1) y1 = q.y;
+    }
+
+    for (final a in p.arms) {
+      add(a.m);
+      add(a.e);
+    }
+    for (final l in p.legs) {
+      add(l.k);
+      add(l.e);
+    }
+    add(p.head);
+    add(gear.bag);
+    gear.tail.forEach(add);
+    return Rect.fromLTRB(x0 - 18, y0 - 18, x1 + 18, y1 + 22);
+  }
+
   /// Dust in the evening light. It drifts slowly and moves a little with the view.
   void _motes(Canvas c, ClimbRoute r) {
     if (g.reducedMotion || (r.endless && g.cd.y > snowY - 400)) return;
     final cw = g.cw, ch = g.ch, shift = g.camY * g.scale * 0.25;
-    for (final m in g.motes) {
+    // four brightness steps, one draw each
+    final steps = List.generate(4, (_) => <double>[]);
+    for (final m in g.effects.motes) {
       final y = (m.y * ch * 1.1 + shift) % (ch * 1.1) - ch * 0.05;
-      final a = 0.08 + 0.2 * (0.5 + 0.5 * math.sin(g.clock * m.f + m.ph));
-      c.drawCircle(Offset(m.x * cw, y), m.r, _p..color = rgba(255, 222, 176, a));
+      final a = 0.5 + 0.5 * math.sin(g.clock * m.f + m.ph);
+      steps[(a * 3.99).floor()]
+        ..add(m.x * cw)
+        ..add(y);
+    }
+    _dot
+      ..strokeWidth = 2.6
+      ..strokeCap = StrokeCap.round;
+    for (var k = 0; k < 4; k++) {
+      if (steps[k].isEmpty) continue;
+      _dot.color = rgba(255, 222, 176, 0.08 + 0.2 * (k + 0.5) / 4);
+      c.drawRawPoints(ui.PointMode.points, Float32List.fromList(steps[k]), _dot);
     }
   }
 
@@ -171,31 +223,35 @@ class ScenePainter extends CustomPainter {
       (0.55, 0x5c5079, 105.0, 0.017, 4.1),
       (0.75, 0x373a60, 70.0, 0.026, 7.3),
     ];
+    // Big concave anti-aliased paths are slow to fill, so each range is one
+    // fill (its warm glow is part of the gradient) and stops just under the
+    // summit edge, which dips at most ~111 below the top; the wall covers the rest.
+    final bottom = math.min(ch, crest + 130 * sc);
     for (final (p, col, amp, fr, seed) in ranges) {
       final base = ch / 2 + (p * d - (1 - p) * 120) * sc;
       if (base - amp * sc > crest + 100 * sc) continue;
-      final path = Path()..moveTo(0, ch);
+      final path = Path()..moveTo(0, bottom);
       for (var x = 0.0; x <= cw + 10; x += 10) {
         final wx = x / sc + g.camX * p;
         final n = 0.55 + 0.25 * math.sin(wx * fr + seed) + 0.15 * math.sin(wx * fr * 2.7 + seed * 2) + 0.05 * math.sin(wx * fr * 7 + seed);
         path.lineTo(x, base - amp * sc * n);
       }
       path
-        ..lineTo(cw, ch)
+        ..lineTo(cw, bottom)
         ..close();
-      c.drawPath(path, _p..color = hex(col));
-      _p.color = const Color(0xFF000000);
-      _p.shader = ui.Gradient.linear(Offset(0, base - amp * sc * 0.4), Offset(0, base + 30 * sc),
-          [rgba(240, 150, 140, 0), rgba(240, 150, 140, 0.22)]);
+      _p
+        ..color = const Color(0xFF000000)
+        ..shader = ui.Gradient.linear(Offset(0, base - amp * sc * 0.4), Offset(0, base + 30 * sc),
+            [hex(col), Color.alphaBlend(rgba(240, 150, 140, 0.22), hex(col))]);
       c.drawPath(path, _p);
       _p.shader = null;
     }
   }
 
   void _birds(Canvas c, ClimbRoute r, double crest) {
-    if (g.birds.isEmpty) return;
+    if (g.effects.birds.isEmpty) return;
     final paint = _line(rgba(42, 32, 64, 0.75), 1.3, cap: StrokeCap.round);
-    for (final b in g.birds) {
+    for (final b in g.effects.birds) {
       final x = b.u * g.cw, y = g.ch / 2 + (0.45 * (g.camY - r.topY) - b.h) * g.scale;
       if (y > crest - 4) continue;
       final s = b.s * g.scale * 0.8, w = math.sin(b.ph) * s * 0.6;
@@ -219,27 +275,33 @@ class ScenePainter extends CustomPainter {
   void _wall(Canvas c, ClimbRoute r) {
     final v = g.viewRange();
     if (v.y0 > r.topY + 20) return;
-    final edge = Path()..moveTo(v.x0, -500);
-    for (var x = v.x0; x <= v.x1 + 8; x += 8) {
-      edge.lineTo(x, wallEdgeY(r, x));
+    final tile = Art.instance.tile.image;
+    if (_tileImage != tile) {
+      // first the lazy image, then (on the web) the baked pixels
+      _tileImage = tile;
+      _tileShader = ImageShader(tile, TileMode.repeated, TileMode.repeated, scaleMatrix(0.55), filterQuality: FilterQuality.low);
     }
-    edge
-      ..lineTo(v.x1 + 8, -500)
-      ..close();
-    final art = Art.instance;
     _p
-      ..shader = _tileShader ??= ImageShader(art.tile, TileMode.repeated, TileMode.repeated, scaleMatrix(0.55))
+      ..shader = _tileShader
       ..color = const Color(0xFF000000);
-    c.drawPath(edge, _p);
-    _p.shader = null;
+    // The summit edge dips at most ~110 below the top. Below that, the whole
+    // view is rock, so a plain rectangle does and nothing needs clipping.
+    final summit = v.y1 > r.topY - 120;
     c.save();
-    c.clipPath(edge);
-    for (final b in art.artFor(r).bands) {
-      if (b.y1 < v.y0 || b.y0 > v.y1) continue;
-      for (var k = 0; k < b.paths.length; k++) {
-        c.drawPath(b.paths[k], _p..color = b.colors[k]);
+    if (summit) {
+      final edge = Path()..moveTo(v.x0, -500);
+      for (var x = v.x0; x <= v.x1 + 8; x += 8) {
+        edge.lineTo(x, wallEdgeY(r, x));
       }
+      edge
+        ..lineTo(v.x1 + 8, -500)
+        ..close();
+      c.drawPath(edge, _p);
+      c.clipPath(edge);
+    } else {
+      c.drawRect(Rect.fromLTRB(v.x0, v.y0, v.x1, v.y1), _p);
     }
+    _p.shader = null;
     // warm light from the low sun on the upper left, shade toward the foot
     final top = math.max(-60.0, v.y0), bottom = math.min(r.topY + 200, v.y1);
     if (_lightFor != r) {
@@ -318,18 +380,68 @@ class ScenePainter extends CustomPainter {
   // ---------------------------------------------------------------- holds
 
   void _holds(Canvas c, ClimbRoute r, bool menu) {
-    final v = g.viewRange(), art = Art.instance.artFor(r), idx = art.byY;
-    for (var n = art.firstAbove(v.y0 - 30); n < idx.length; n++) {
-      final k = idx[n], h = r.holds[k];
+    final v = g.viewRange(), idx = r.byY, atlas = (_atlas ??= _makeAtlas()).image;
+    var n = 0;
+    final ledges = _ledges..clear();
+    for (var i = r.firstAtOrAbove(v.y0 - 30); i < idx.length; i++) {
+      final k = idx[i], h = r.holds[k];
       if (h.y > v.y1 + 60) break;
-      if (h.x2 == null && (h.x < v.x0 - 20 || h.x > v.x1 + 20)) continue;
+      if (h.t == HoldType.ground) continue;
       if (h.t.wide) {
-        _ledgeAt(c, r, h, k, menu);
-      } else {
-        _hold(c, r, h, k, menu);
+        ledges.add(k);
+        continue;
       }
+      if (h.x < v.x0 - 20 || h.x > v.x1 + 20) continue;
+      final chalk = !menu && g.chalked.contains(k) && h.t != HoldType.chip, snow = r.endless && h.y > snowY;
+      // a hold you just grabbed gives a little
+      final e = 1 + 0.07 * (menu ? 0.0 : g.grabPulse(k)), k2 = e / _atlasPx;
+      if ((n + 1) * 4 > _xf.length) {
+        _xf = Float32List(_xf.length * 2)..setAll(0, _xf);
+        _rects = Float32List(_rects.length * 2)..setAll(0, _rects);
+      }
+      final cell = _cellOf(h.t, chalk, snow), cx = (cell % 4) * _cellW * _atlasPx, cy = (cell ~/ 4) * _cellH * _atlasPx;
+      _xf
+        ..[n * 4] = k2
+        ..[n * 4 + 1] = 0
+        ..[n * 4 + 2] = h.x - _cellL * e
+        ..[n * 4 + 3] = h.y - _cellB * e;
+      _rects
+        ..[n * 4] = cx
+        ..[n * 4 + 1] = cy
+        ..[n * 4 + 2] = cx + _cellW * _atlasPx
+        ..[n * 4 + 3] = cy + _cellH * _atlasPx;
+      n++;
+    }
+    if (n > 0) {
+      c.drawRawAtlas(atlas, Float32List.sublistView(_xf, 0, n * 4), Float32List.sublistView(_rects, 0, n * 4), null, null,
+          null, _atlasPaint);
+    }
+    for (final k in ledges) {
+      _ledgeAt(c, r, r.holds[k], k, menu);
     }
   }
+
+  static int _cellOf(HoldType t, bool chalk, bool snow) {
+    final type = switch (t) { HoldType.jug => 0, HoldType.crimp => 1, HoldType.sloper => 2, _ => 3 };
+    return type * 4 + (chalk ? 1 : 0) + (snow ? 2 : 0);
+  }
+
+  /// Draws each small hold into its cell of the atlas. The world has y up and
+  /// the scene flips it; the cells are not flipped, so the two flips cancel.
+  Baked _makeAtlas() => bake((4 * _cellW * _atlasPx).ceil(), (4 * _cellH * _atlasPx).ceil(), (c) {
+    for (final t in const [HoldType.jug, HoldType.crimp, HoldType.sloper, HoldType.chip]) {
+      for (final chalk in const [false, true]) {
+        for (final snow in const [false, true]) {
+          final cell = _cellOf(t, chalk, snow);
+          c.save();
+          c.translate(((cell % 4) * _cellW + _cellL) * _atlasPx, ((cell ~/ 4) * _cellH + _cellB) * _atlasPx);
+          c.scale(_atlasPx, _atlasPx);
+          _drawHold(c, t, chalk && t != HoldType.chip, snow);
+          c.restore();
+        }
+      }
+    }
+  });
 
   static Path holdPath(HoldType t, double x, double y) {
     switch (t) {
@@ -351,22 +463,6 @@ class ScenePainter extends CustomPainter {
       default:
         return Path();
     }
-  }
-
-  void _hold(Canvas c, ClimbRoute r, Hold h, int k, bool menu) {
-    final chalk = !menu && g.chalked.contains(k) && h.t != HoldType.chip, snow = r.endless && h.y > snowY;
-    final pic = _holdPics.putIfAbsent(h.t.index * 4 + (chalk ? 1 : 0) + (snow ? 2 : 0), () {
-      final rec = ui.PictureRecorder();
-      _drawHold(Canvas(rec), h.t, chalk, snow);
-      return rec.endRecording();
-    });
-    c.save();
-    c.translate(h.x, h.y);
-    // a hold you just grabbed gives a little
-    final pulse = menu ? 0.0 : g.grabPulse(k);
-    if (pulse > 0) c.scale(1 + 0.09 * pulse, 1 - 0.05 * pulse);
-    c.drawPicture(pic);
-    c.restore();
   }
 
   /// One hold at (0, 0) with its shadow, highlights, chalk and snow.
@@ -634,36 +730,55 @@ class ScenePainter extends CustomPainter {
     final p = g.w2s(0, y);
     if (p.dy < 100 || p.dy > g.ch - 140) return;
     final text = 'Best ${g.bestHeight(r).toStringAsFixed(1)} m';
-    final tp = _labels.putIfAbsent(
-        text,
-        () => TextPainter(
-              text: TextSpan(
-                  text: text,
-                  style: TextStyle(fontFamily: 'Atkinson', fontWeight: FontWeight.w700, fontSize: 12, color: Pal.jump)),
-              textDirection: TextDirection.ltr,
-            )..layout());
+    var tp = _label;
+    if (tp == null || tp.plainText != text) {
+      tp?.dispose();
+      tp = _label = TextPainter(
+        text: TextSpan(
+            text: text, style: TextStyle(fontFamily: 'Atkinson', fontWeight: FontWeight.w700, fontSize: 12, color: Pal.jump)),
+        textDirection: TextDirection.ltr,
+      )..layout();
+    }
     c.drawRRect(roundRect(10, p.dy - 22, tp.width + 14, 18, 6), _p..color = rgba(12, 14, 20, 0.78));
     tp.paint(c, Offset(17, p.dy - 13 - tp.height / 2));
   }
 
+  /// Particles grouped by look (kind, size step, alpha step), so all of them
+  /// take a handful of drawRawPoints calls instead of one call each.
+  final Paint _dot = Paint();
+
   void _parts(Canvas c) {
-    for (final p in g.parts) {
+    if (g.effects.parts.isEmpty) return;
+    final batches = <int, List<double>>{};
+    for (final p in g.effects.parts) {
       final k = 1 - p.t / p.max;
-      switch (p.kind) {
-        case PartKind.chalk:
-          final r = p.r * (1 + p.t * 3);
-          _oval(c, p.x, p.y, r, r, rgba(250, 248, 242, 0.55 * k));
-        case PartKind.dust:
-          final r = p.r * (1 + p.t * 2.5);
-          _oval(c, p.x, p.y, r, r, rgba(150, 140, 128, 0.45 * k));
-        case PartKind.snow:
-          _fill(c, Rect.fromLTWH(p.x, p.y, p.r, p.r), rgba(245, 248, 255, 0.8));
-        case PartKind.spark:
-          _fill(c, Rect.fromLTWH(p.x - 1.2, p.y - 1.2, 2.4, 2.4), rgba(255, 200, 110, k));
-        case PartKind.pebble:
-          _fill(c, Rect.fromLTWH(p.x - p.r / 2, p.y - p.r / 2, p.r, p.r), rgba(120, 116, 110, k));
-      }
+      // size in steps of half a unit, alpha in eighths
+      final double size = switch (p.kind) {
+        PartKind.chalk => p.r * (1 + p.t * 3) * 2,
+        PartKind.dust => p.r * (1 + p.t * 2.5) * 2,
+        PartKind.snow || PartKind.pebble => p.r,
+        PartKind.spark => 2.4,
+      };
+      final alpha = p.kind == PartKind.snow ? 8 : (k * 8).ceil().clamp(1, 8);
+      final key = (p.kind.index * 64 + (size * 2).round().clamp(1, 63)) * 16 + alpha;
+      (batches[key] ??= [])
+        ..add(p.x)
+        ..add(p.y);
     }
+    batches.forEach((key, pts) {
+      final alpha = (key % 16) / 8, size = (key ~/ 16 % 64) / 2, kind = PartKind.values[key ~/ 16 ~/ 64];
+      _dot
+        ..strokeWidth = size
+        ..strokeCap = kind == PartKind.chalk || kind == PartKind.dust ? StrokeCap.round : StrokeCap.square
+        ..color = switch (kind) {
+          PartKind.chalk => rgba(250, 248, 242, 0.55 * alpha),
+          PartKind.dust => rgba(150, 140, 128, 0.45 * alpha),
+          PartKind.snow => rgba(245, 248, 255, 0.8),
+          PartKind.spark => rgba(255, 200, 110, alpha),
+          PartKind.pebble => rgba(120, 116, 110, alpha),
+        };
+      c.drawRawPoints(ui.PointMode.points, Float32List.fromList(pts), _dot);
+    });
   }
 
   void _vignette(Canvas c, Size size) {

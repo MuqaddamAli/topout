@@ -470,10 +470,27 @@ class ClimbRoute {
   List<int> startHands = [];
   double topY = 0;
 
-  /// Art caches that belong to this route (set by the painter).
-  Object? art;
-
   int get ledgeCount => holds.where((h) => h.t == HoldType.ledge).length;
+
+  /// Indices of all holds sorted by height (made on first use, after the route
+  /// is built), so the game and the painter only look at holds near a height.
+  late final List<int> byY = List<int>.generate(holds.length, (k) => k)
+    ..sort((a, b) => holds[a].y.compareTo(holds[b].y));
+  late final List<double> _ys = [for (final k in byY) holds[k].y];
+
+  /// The first position in [byY] whose hold is at height [y] or above.
+  int firstAtOrAbove(double y) {
+    var lo = 0, hi = _ys.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (_ys[mid] < y) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  }
 }
 
 /// Keeps track of where holds are while a route is being built.

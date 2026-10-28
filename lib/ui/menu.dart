@@ -133,10 +133,7 @@ class _Brand extends StatelessWidget {
           const TextSpan(text: 'TOP'),
           TextSpan(text: 'OUT', style: TextStyle(color: Pal.signal)),
         ]),
-        style: Txt.display(big, weight: FontWeight.w900, spacing: 0.01).copyWith(
-          height: 0.8,
-          shadows: [Shadow(color: rgba(10, 10, 20, 0.5), blurRadius: 30, offset: const Offset(0, 6))],
-        ),
+        style: Txt.display(big, weight: FontWeight.w900, spacing: 0.01).copyWith(height: 0.8),
       ),
       const SizedBox(height: 8),
       Text('Climb one hand or foot at a time.', style: Txt.body(18, color: Pal.chalk.withAlpha(217), height: 1.4)),
@@ -215,7 +212,11 @@ class _RouteCard extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              SizedBox(width: 72, height: 128, child: CustomPaint(painter: TopoPainter(r))),
+              SizedBox(
+                width: 72,
+                height: 128,
+                child: CachedPaint(cacheKey: 'topo-${r.id}-${r.date}', painter: TopoPainter(r)),
+              ),
               const SizedBox(width: 14),
               Expanded(
                 child: ConstrainedBox(
@@ -360,12 +361,12 @@ class _LogPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final m = (game.logSecs / 60).floor();
+    final m = (game.records.secs / 60).floor();
     final time = m >= 60 ? '${m ~/ 60} h ${m % 60} min' : '$m min';
     final tiles = [
-      ('Tops', '${game.logTops}'),
-      ('Metres', game.logMetres.toStringAsFixed(0)),
-      ('Falls', '${game.logFalls}'),
+      ('Tops', '${game.records.tops}'),
+      ('Metres', game.records.metres.toStringAsFixed(0)),
+      ('Falls', '${game.records.falls}'),
       ('Time', time),
     ];
     return _Panel(title: 'Your climbs', children: [

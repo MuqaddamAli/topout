@@ -342,11 +342,7 @@ class _Progress extends StatelessWidget {
             height: 4,
             width: w * fill,
             child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Pal.signal,
-                borderRadius: BorderRadius.circular(2),
-                boxShadow: [BoxShadow(color: Pal.signal.withAlpha(110), blurRadius: 6)],
-              ),
+              decoration: BoxDecoration(color: Pal.signal, borderRadius: BorderRadius.circular(2)),
             ),
           ),
           for (final t in game.ticks)
@@ -371,7 +367,7 @@ class _Progress extends StatelessWidget {
   }
 }
 
-/// A ledge mark on the progress bar. It glows when its lamp is lit.
+/// A ledge mark on the progress bar. It grows a halo when its lamp is lit.
 class _Tick extends StatelessWidget {
   const _Tick({required this.lit});
   final bool lit;
@@ -384,7 +380,8 @@ class _Tick extends StatelessWidget {
       decoration: BoxDecoration(
         color: lit ? Pal.lamp : rgba(242, 237, 228, 0.55),
         borderRadius: BorderRadius.circular(1),
-        boxShadow: [BoxShadow(color: Pal.lamp.withAlpha(lit ? 200 : 0), blurRadius: lit ? 8 : 0, spreadRadius: lit ? 1 : 0)],
+        // a flat halo (spread, no blur): blurs are redrawn every frame on the web
+        boxShadow: [BoxShadow(color: Pal.lamp.withAlpha(lit ? 90 : 0), spreadRadius: lit ? 1.5 : 0)],
       ),
     );
   }
@@ -569,7 +566,6 @@ class _TipCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: rgba(242, 237, 228, 0.96),
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: rgba(0, 0, 0, 0.4), blurRadius: 30, offset: const Offset(0, 12))],
       ),
       child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
         Expanded(child: Text(text, style: Txt.body(16, color: Pal.ink, height: 1.35))),

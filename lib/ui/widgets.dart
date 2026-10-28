@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../game/art.dart';
 import '../game/core.dart';
 import '../game/palette.dart';
 
@@ -301,14 +302,10 @@ class GaugePainter extends CustomPainter {
     canvas.scale(s);
     const center = Offset(32, 32);
     if (glow > 0) {
-      canvas.drawCircle(
-          center,
-          27 + glow * 2,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 6
-            ..color = Pal.bad.withAlpha((glow * 110).round())
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
+      // two soft rings instead of a blur, which would be redrawn every frame on the web
+      final halo = Paint()..style = PaintingStyle.stroke;
+      canvas.drawCircle(center, 28 + glow * 2, halo..strokeWidth = 9..color = Pal.bad.withAlpha((glow * 40).round()));
+      canvas.drawCircle(center, 27.5 + glow, halo..strokeWidth = 5..color = Pal.bad.withAlpha((glow * 60).round()));
     }
     final track = Paint()
       ..style = PaintingStyle.stroke
@@ -381,6 +378,54 @@ class TracePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant TracePainter old) => old.trace != trace || old.hand != hand || old.progress != progress;
+}
+
+/// Paints [painter] once into an image (at the screen's pixel ratio) and then
+/// only draws that image. On the web every layer is drawn again each frame,
+/// so a detailed picture that never changes is much cheaper this way.
+/// [cacheKey] must change whenever the picture would.
+class CachedPaint extends StatelessWidget {
+  const CachedPaint({super.key, required this.cacheKey, required this.painter});
+  final String cacheKey;
+  final CustomPainter painter;
+
+  static final Map<String, Baked> _images = {};
+
+  @override
+  Widget build(BuildContext context) {
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    return LayoutBuilder(builder: (context, c) {
+      final size = c.biggest;
+      if (size.isEmpty || !size.isFinite) return const SizedBox.shrink();
+      if (_images.length > 48) _images.clear(); // sizes change on resize; keep it small
+      final baked = _images.putIfAbsent('$cacheKey|${size.width.round()}x${size.height.round()}@$dpr', () {
+        return bake((size.width * dpr).ceil(), (size.height * dpr).ceil(), (canvas) {
+          canvas.scale(dpr);
+          painter.paint(canvas, size);
+        });
+      });
+      return CustomPaint(size: size, painter: _ImagePainter(baked, dpr));
+    });
+  }
+}
+
+class _ImagePainter extends CustomPainter {
+  // repaints when the web swaps in the baked pixels
+  _ImagePainter(this.baked, this.dpr) : super(repaint: baked);
+  final Baked baked;
+  final double dpr;
+
+  static final Paint _paint = Paint()..filterQuality = FilterQuality.low;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final img = baked.image;
+    canvas.drawImageRect(img, Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+        Rect.fromLTWH(0, 0, img.width / dpr, img.height / dpr), _paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ImagePainter old) => old.baked != baked;
 }
 
 /// A small map of a route for the route cards.

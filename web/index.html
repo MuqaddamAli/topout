@@ -82,6 +82,19 @@
   </style>
 </head>
 <body>
+  <script>
+    // Draw at most 2 device pixels per CSS pixel. On 3x phones that is 56%
+    // fewer pixels to fill every frame, and the cel-shaded art looks the same.
+    (function () {
+      var d = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio') ||
+        Object.getOwnPropertyDescriptor(Window.prototype, 'devicePixelRatio');
+      if (!d || !d.get || d.configurable === false) return;
+      Object.defineProperty(window, 'devicePixelRatio', {
+        configurable: true,
+        get: function () { return Math.min(2, d.get.call(window)); },
+      });
+    })();
+  </script>
   <div id="splash" role="status" aria-label="Loading Topout">
     <div class="mark">TOP<span>OUT</span></div>
     <div class="bar"><i></i></div>

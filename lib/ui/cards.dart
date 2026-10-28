@@ -38,7 +38,6 @@ class _Overlay extends StatelessWidget {
                   color: Pal.ink2,
                   borderRadius: BorderRadius.circular(22),
                   border: Border.all(color: Pal.line, width: 1.5),
-                  boxShadow: [BoxShadow(color: rgba(0, 0, 0, 0.4), blurRadius: 50, offset: const Offset(0, 20))],
                 ),
                 child: child,
               ),

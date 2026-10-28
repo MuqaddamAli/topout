@@ -1,6 +1,7 @@
-// The game: state, the 60 Hz simulation, input, falls, records, and the
-// climber's pose. Drawing lives in scene.dart and climber.dart; the menus and
-// HUD are widgets in lib/ui.
+// The game: state, the 60 Hz simulation, input, falls and the climber's
+// pose. Records live in records.dart and the ambient effects in effects.dart;
+// drawing lives in scene.dart and climber.dart; the menus and HUD are widgets
+// in lib/ui.
 import 'dart:math' as math;
 import 'dart:ui' show Offset, Size;
 
@@ -10,7 +11,9 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'audio.dart';
 import 'body.dart';
 import 'core.dart';
+import 'effects.dart';
 import 'palette.dart';
+import 'records.dart';
 import 'store.dart';
 
 export 'body.dart';
@@ -21,8 +24,6 @@ enum Phase { menu, climb, paused, falling, fallCard, top }
 enum Screen { menu, hud, fallCard, topCard, pause }
 
 enum HoldStatus { good, weak, no, dyno, far }
-
-enum PartKind { chalk, dust, pebble, snow, spark }
 
 enum ToastKind { plain, warn, ok }
 
@@ -114,27 +115,6 @@ class Cele {
   bool burst = false;
 }
 
-class Particle {
-  Particle(this.x, this.y, this.vx, this.vy, this.r, this.max, this.kind);
-  double x, y, vx, vy;
-  final double r, max;
-  final PartKind kind;
-  double t = 0;
-}
-
-/// A speck of dust floating in the evening light. Positions are fractions of the screen.
-class Mote {
-  Mote(this.x, this.y, this.vx, this.vy, this.r, this.ph, this.f);
-  double x, y;
-  final double vx, vy, r, ph, f;
-}
-
-class Bird {
-  Bird(this.u, this.h, this.v, this.ph, this.s);
-  double u, ph;
-  final double h, v, s;
-}
-
 class Shake {
   Shake(this.i, this.t);
   final int i;
@@ -224,22 +204,13 @@ class Game {
     mode = Mode.fromName(store.getString('mode'));
     climber = Climber.byId(store.getString('climber'));
     outfit = Look.of(climber.id);
-    for (var k = 0; k < 18; k++) {
-      motes.add(Mote(_rand.nextDouble(), _rand.nextDouble(), (_rand.nextDouble() - 0.5) * 0.012, -0.004 - _rand.nextDouble() * 0.01,
-          0.7 + _rand.nextDouble() * 1.3, _rand.nextDouble() * 6.3, 0.6 + _rand.nextDouble() * 1.4));
-    }
-    final l = store.getMap('log');
-    if (l != null) {
-      logTops = (l['tops'] as num?)?.toInt() ?? 0;
-      logMetres = (l['metres'] as num?)?.toDouble() ?? 0;
-      logFalls = (l['falls'] as num?)?.toInt() ?? 0;
-      logSecs = (l['secs'] as num?)?.toDouble() ?? 0;
-    }
     setMenuPose();
   }
 
   final Store store;
   final GameAudio audio;
+  late final Records records = Records(store);
+  final Effects effects = Effects();
 
   /// Set by tests to pin the Daily Wall to one day.
   final DateTime? _fixedDay;
@@ -292,7 +263,6 @@ class Game {
   String? tipCur;
   double tipShownAt = 0;
   double clock = 0;
-  List<Particle> parts = [];
   double camShake = 0;
   DynoState? dyno;
   double hangT = 0;
@@ -310,14 +280,11 @@ class Game {
   List<bool> fFree = [false, false];
   List<double> freeT = [0, 0];
   int? chalkHand;
-  double lastChalk = -9;
+  double lastChalk = -9, lastChalkSound = -9;
   double tremble = 0;
   Gear? gear;
   Pose? pose;
   Cele? cele;
-  List<Bird> birds = [];
-  double nextFlock = 4;
-  final List<Mote> motes = [];
 
   /// A dark veil over the scene that lifts after the view jumps (a new route,
   /// the title screen), from 1 down to 0.
@@ -341,13 +308,8 @@ class Game {
   double _tickSpan = 0;
   ClimbRoute? _tickRoute;
 
-  // ---- records
-  int logTops = 0, logFalls = 0;
-  double logMetres = 0, logSecs = 0;
-  final Map<String, double> _heights = {};
-
   final List<_Later> _later = [];
-  double _acc = 0, _tipAcc = 0;
+  double _acc = 0, _tipAcc = 0, _coveredFor = 0;
 
   /// When each hold was last grabbed, for the little give it shows.
   final Map<int, double> _grabbedAt = {};
@@ -438,41 +400,21 @@ class Game {
 
   // ================================================================ records
 
-  String _heightKey(ClimbRoute r) => 'height.${r.endless ? 'daily.$todayKey' : r.id}.${mode.name}';
+  // Records for the current mode (and, on the Daily Wall, today).
+  double bestHeight(ClimbRoute r) => records.bestHeight(r, mode, todayKey);
+  double? bestTime(ClimbRoute r) => records.bestTime(r, mode);
+  Climber? bestClimber(ClimbRoute r) => records.bestClimber(r, mode);
+  double bestEverDaily() => records.bestEverDaily(mode);
 
-  double bestHeight(ClimbRoute r) {
-    final k = _heightKey(r);
-    return _heights.putIfAbsent(k, () => store.getNum(k, 0));
-  }
-
-  String bestKey(ClimbRoute r) => 'best.${r.id}.${mode.name}';
-  double? bestTime(ClimbRoute r) => (store.getMap(bestKey(r))?['time'] as num?)?.toDouble();
-
-  /// Who climbed the best time, or null for records from before there were climbers.
-  Climber? bestClimber(ClimbRoute r) {
-    final id = store.getMap(bestKey(r))?['climber'];
-    return id is String ? Climber.byId(id) : null;
-  }
-  double bestEverDaily() => store.getNum('height.daily.all.${mode.name}', 0);
-
-  void _saveLog() => store.set('log', {'tops': logTops, 'metres': logMetres, 'falls': logFalls, 'secs': logSecs});
-
+  /// Adds the climbing since [openSegment] to the log and the best height.
   void commitSegment() {
     final r = route;
     if (r == null || !segOpen) return;
     segOpen = false;
-    logMetres += math.max(0, maxY - segStartY) / unitsPerMetre;
-    logSecs += math.max(0, time - segTime);
-    final h = math.max(0, maxY - 100) / unitsPerMetre;
-    if (h > bestHeight(r)) {
-      store.set(_heightKey(r), h);
-      _heights[_heightKey(r)] = h.toDouble();
-    }
-    if (r.endless) {
-      final k = 'height.daily.all.${mode.name}';
-      if (h > store.getNum(k, 0)) store.set(k, h);
-    }
-    _saveLog();
+    records.metres += math.max(0, maxY - segStartY) / unitsPerMetre;
+    records.secs += math.max(0, time - segTime);
+    records.reached(r, mode, todayKey, math.max(0, maxY - 100) / unitsPerMetre);
+    records.saveLog();
   }
 
   void openSegment() {
@@ -512,7 +454,7 @@ class Game {
     tipCur = null;
     tipShownAt = 0;
     shake = null;
-    parts = [];
+    effects.parts.clear();
     camShake = 0;
     _later.clear();
     endDraw = limbs.map((l) => Pt(l.x, l.y)).toList();
@@ -556,7 +498,7 @@ class Game {
     fFree = [false, false];
     freeT = [0, 0];
     chalkHand = null;
-    lastChalk = -9;
+    lastChalk = lastChalkSound = -9;
     tremble = 0;
     gear = null;
     pose = null;
@@ -600,7 +542,7 @@ class Game {
     setMenuPose(); // the hair and the height are different
     _menuHop = 0;
     _menuLanded = false;
-    burst(cd.x, cd.y - 18, PartKind.chalk, 10);
+    effects.burst(cd.x, cd.y - 18, PartKind.chalk, 10);
     _play(Sfx.chalk, pan: panOf(cd.x));
     _ui();
   }
@@ -611,7 +553,7 @@ class Game {
     _refreshDaily();
     phase = Phase.menu;
     cele = null;
-    parts = [];
+    effects.parts.clear();
     _later.clear();
     setMenuPose();
     curtain = 1;
@@ -629,7 +571,6 @@ class Game {
     final now = DateTime.now(), key = dateKey(now);
     if (key == todayKey) return;
     todayKey = key;
-    _heights.clear();
     routes[routes.length - 1] = dailyWallFor(now);
   }
 
@@ -725,41 +666,6 @@ class Game {
   }
 
   bool get toastVisible => toastText != null && clock < toastUntil;
-
-  // ================================================================ particles
-
-  void burst(double x, double y, PartKind kind, int n) {
-    for (var k = 0; k < n; k++) {
-      final a = _rand.nextDouble() * math.pi * 2;
-      final sp = kind == PartKind.pebble ? 20 + _rand.nextDouble() * 30 : 14 + _rand.nextDouble() * 38;
-      parts.add(Particle(
-        x,
-        y,
-        math.cos(a) * sp,
-        kind == PartKind.pebble ? 10 + _rand.nextDouble() * 25 : (math.sin(a)).abs() * sp * 0.8,
-        kind == PartKind.chalk ? 1.4 + _rand.nextDouble() * 2.2 : 1 + _rand.nextDouble() * 2,
-        0.5 + _rand.nextDouble() * 0.5,
-        kind,
-      ));
-    }
-  }
-
-  void _updateParts(double dt) {
-    for (final p in parts) {
-      p.t += dt;
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      if (p.kind == PartKind.pebble) {
-        p.vy -= 700 * dt;
-      } else if (p.kind == PartKind.snow) {
-        p.x += math.sin(p.t * 1.7 + p.r * 3) * 0.25;
-      } else {
-        p.vx *= 0.9;
-        p.vy = p.vy * 0.9 + (p.kind == PartKind.chalk ? 6 : -4) * dt;
-      }
-    }
-    parts.removeWhere((p) => p.t >= p.max);
-  }
 
   // ================================================================ input
 
@@ -859,10 +765,12 @@ class Game {
   }
 
   void _computeStatus() {
-    final d = drag!, h = holds;
+    final d = drag!, h = holds, r = route!, idx = r.byY;
     d.status.clear();
-    for (var k = 0; k < h.length; k++) {
-      final hold = h[k];
+    // only holds within 230 of the body matter; the Daily Wall has thousands
+    for (var n = r.firstAtOrAbove(c.y - 230); n < idx.length; n++) {
+      final k = idx[n], hold = h[k];
+      if (hold.y > c.y + 230) break;
       if (holdDist(hold, c.x, c.y) > 230) continue;
       final q = quality(hold, d.i);
       if (q == Quality.no) {
@@ -893,10 +801,12 @@ class Game {
     final w = s2w(sx, sy);
     d.px = w.x;
     d.py = w.y;
-    final h = holds;
+    final h = holds, r = route!, idx = r.byY;
     var best = -1;
     var bd = 30.0;
-    for (var k = 0; k < h.length; k++) {
+    for (var n = r.firstAtOrAbove(w.y - bd); n < idx.length; n++) {
+      final k = idx[n];
+      if (h[k].y > w.y + bd) break;
       final dist = holdDist(h[k], w.x, w.y);
       if (dist < bd) {
         bd = dist;
@@ -951,7 +861,7 @@ class Game {
       }
       _grabbed(d.cand);
       final hand = isHand[d.i];
-      burst(l.x, l.y + (hand ? 3 : 0), hand ? PartKind.chalk : PartKind.dust, hand ? 8 : 6);
+      effects.burst(l.x, l.y + (hand ? 3 : 0), hand ? PartKind.chalk : PartKind.dust, hand ? 8 : 6);
       _play(hand ? _grabSound(holds[d.cand].t) : Sfx.foot, pan: panOf(l.x));
       _ui();
     } else {
@@ -1054,6 +964,11 @@ class Game {
 
   void frame(double rawDt) {
     final dt = math.min(0.1, rawDt);
+    // Once a card fully covers the scene, nothing behind it needs to move or
+    // be drawn again (it sits under an 86% dark backdrop).
+    final covered = screen == Screen.pause || screen == Screen.fallCard || screen == Screen.topCard;
+    _coveredFor = covered ? _coveredFor + dt : 0;
+    if (_coveredFor > 0.5) return;
     _acc += dt;
     while (_acc >= 1 / 60) {
       _step(1 / 60);
@@ -1129,7 +1044,7 @@ class Game {
       newBestShown = true;
       toast('New best!', ToastKind.ok);
       _play(Sfx.best);
-      burst(cd.x, cd.y + 50, PartKind.spark, 12);
+      effects.burst(cd.x, cd.y + 50, PartKind.spark, 12);
     }
     if (s.standing) _checkpointAt(s);
     final h0 = limbs[0].h, h1 = limbs[1].h;
@@ -1155,7 +1070,7 @@ class Game {
     holdTime[dy.i] = 0;
     dyno = null;
     hangT = climber.hangTime;
-    burst(l.x, l.y + 3, PartKind.chalk, 14);
+    effects.burst(l.x, l.y + 3, PartKind.chalk, 14);
     camShake = math.max(camShake, 3.0);
     _play(Sfx.catchHold, pan: panOf(l.x));
     toast('Grab another hold!', ToastKind.warn);
@@ -1165,7 +1080,7 @@ class Game {
   void _releaseHand(int i, Support s) {
     final l = limbs[i], h = holds[l.h!];
     final info = FallInfo(hang: false, i: i, t: h.t, feetW: s.feetW, hands: s.hands, height: climberHeight());
-    burst(l.x, l.y, PartKind.pebble, 5);
+    effects.burst(l.x, l.y, PartKind.pebble, 5);
     camShake = math.max(camShake, 3.0);
     _play(Sfx.slip, pan: panOf(l.x));
     slipFlash = 1;
@@ -1199,7 +1114,7 @@ class Game {
         lit.add(id);
         litAt[id] = clock;
         toast('Saved', ToastKind.ok);
-        burst(h.x + 16, h.y + 10, PartKind.spark, 14);
+        effects.burst(h.x + 16, h.y + 10, PartKind.spark, 14);
         _play(Sfx.save, pan: panOf(h.x + 16));
       }
       _ui();
@@ -1215,8 +1130,8 @@ class Game {
     info.reached = math.max(0, maxY - 100) / unitsPerMetre;
     info.prevBest = bestHeight(route!);
     commitSegment();
-    logFalls++;
-    _saveLog();
+    records.falls++;
+    records.saveLog();
     _play(Sfx.fall, pan: panOf(c.x));
     fall = FallState(info, trace.map((e) => [...e]).toList());
     for (final l in limbs) {
@@ -1245,7 +1160,7 @@ class Game {
     holdTime = [0, 0];
     history.clear();
     trace.clear();
-    parts = [];
+    effects.parts.clear();
     cpLedge = cp.ledge;
     fall = null;
     camManual = null;
@@ -1321,8 +1236,8 @@ class Game {
   void _topOut() {
     phase = Phase.top;
     commitSegment();
-    logTops++;
-    _saveLog();
+    records.tops++;
+    records.saveLog();
     _play(Sfx.top);
     final r = route!, best = bestTime(r);
     final String note;
@@ -1337,7 +1252,7 @@ class Game {
       isBest = false;
       note = 'Best time: ${fmtTime(best)}';
     }
-    if (isBest) store.set(bestKey(r), {'time': time, 'moves': moves, 'climber': climber.id});
+    if (isBest) records.newBestTime(r, mode, time: time, moves: moves, climber: climber);
     cele = Cele(c.copy(), Pt(clampD(c.x, 70, 290), r.topY + standHeight(climber)));
     for (final l in limbs) {
       l.h = null;
@@ -1365,9 +1280,7 @@ class Game {
 
   void _animate(double dt) {
     clock += dt;
-    _updateParts(dt);
-    _updateBirds(dt);
-    _updateMotes(dt);
+    effects.update(dt, clock);
     curtain = math.max(0.0, curtain - dt / 0.45);
     slipFlash = math.max(0.0, slipFlash - dt * 1.4);
     camShake = math.max(0.0, camShake - dt * 18);
@@ -1384,7 +1297,7 @@ class Game {
       _placeMenuClimber(u < 1 && !reducedMotion ? math.sin(u * math.pi) * 15 : 0);
       if (u >= 1 && !_menuLanded) {
         _menuLanded = true;
-        burst(cd.x, menuRoute.topY + 2, PartKind.dust, 8);
+        effects.burst(cd.x, menuRoute.topY + 2, PartKind.dust, 8);
         _play(Sfx.foot, pan: panOf(cd.x));
       }
       pose = buildPose();
@@ -1408,7 +1321,7 @@ class Game {
         if (!f.landed) {
           f.landed = true;
           camShake = 7;
-          burst(c.x, 4, PartKind.dust, 16);
+          effects.burst(c.x, 4, PartKind.dust, 16);
           _play(Sfx.land, pan: panOf(c.x));
         }
         f.v = 0;
@@ -1427,7 +1340,7 @@ class Game {
       if (ce.t > 0.9 && !ce.burst) {
         ce.burst = true;
         for (var n = 0; n < 4; n++) {
-          later(n * 0.14, () => burst(cd.x + (_rand.nextDouble() - 0.5) * 60, cd.y + 60 + _rand.nextDouble() * 30, PartKind.spark, 12));
+          later(n * 0.14, () => effects.burst(cd.x + (_rand.nextDouble() - 0.5) * 60, cd.y + 60 + _rand.nextDouble() * 30, PartKind.spark, 12));
         }
       }
     } else {
@@ -1451,13 +1364,10 @@ class Game {
     audio.setWind(phase == Phase.climb ? 0.03 + 0.09 * clampD(cd.y / (r.endless ? 3000 : r.topY), 0, 1) : 0.02);
     final low = math.min(grip[0], grip[1]);
     tremble = phase == Phase.climb && low < 30 ? (30 - low) / 30 * 1.3 : 0.0;
-    if (phase == Phase.climb && low < 32) audio.breath((32 - low) / 32, clock);
-    if (r.endless && cd.y > snowY - 400 && parts.length < 170 && !reducedMotion) {
+    if (phase == Phase.climb && low < 25) audio.breath((25 - low) / 25, clock);
+    if (r.endless && cd.y > snowY - 400 && !reducedMotion) {
       final v = viewRange();
-      for (var k = 0; k < 2; k++) {
-        parts.add(Particle(v.x0 + _rand.nextDouble() * (v.x1 - v.x0), v.y1, 10 + _rand.nextDouble() * 14,
-            -35 - _rand.nextDouble() * 25, 0.8 + _rand.nextDouble() * 1.6, 9, PartKind.snow));
-      }
+      effects.snow(dt, v.x0, v.x1, v.y1);
     }
     _limbTargets(dt);
     // body lean: hands over feet
@@ -1547,8 +1457,12 @@ class Game {
         final e = endDraw[i];
         if (hypot(e.x - tx, e.y - ty) < 5 && clock - lastChalk > 2.4) {
           lastChalk = clock;
-          burst(tx, ty, PartKind.chalk, 6);
-          _play(Sfx.chalk, pan: panOf(tx));
+          effects.burst(tx, ty, PartKind.chalk, 6);
+          // A puff on every dip, but the sound only now and then.
+          if (clock - lastChalkSound > 6) {
+            lastChalkSound = clock;
+            _play(Sfx.chalk, pan: panOf(tx));
+          }
         }
       } else {
         tx = j.x + sideOf[i] * (hand ? 9 : 7);
@@ -1568,39 +1482,6 @@ class Game {
       e.x += (tx - e.x) * k;
       e.y += (ty - e.y) * k;
     }
-  }
-
-  void _updateMotes(double dt) {
-    for (final m in motes) {
-      m.x += (m.vx + math.sin(clock * 0.5 + m.ph) * 0.006) * dt;
-      m.y += m.vy * dt;
-      if (m.x < -0.05) m.x += 1.1;
-      if (m.x > 1.05) m.x -= 1.1;
-      if (m.y < -0.05) m.y += 1.1;
-    }
-  }
-
-  void _updateBirds(double dt) {
-    nextFlock -= dt;
-    if (nextFlock <= 0) {
-      nextFlock = 14 + _rand.nextDouble() * 16;
-      final dir = _rand.nextDouble() < 0.5 ? 1.0 : -1.0, n = 3 + _rand.nextInt(3);
-      final h = 150 + _rand.nextDouble() * 220, sp = 22 + _rand.nextDouble() * 14;
-      for (var k = 0; k < n; k++) {
-        birds.add(Bird(
-          dir > 0 ? -0.1 - k * 0.03 : 1.1 + k * 0.03,
-          h + (k.isOdd ? -10 : 10) * (k / 2).ceil() + _rand.nextDouble() * 6,
-          dir * sp / 400,
-          _rand.nextDouble() * 6,
-          2.6 + _rand.nextDouble() * 1.2,
-        ));
-      }
-    }
-    for (final b in birds) {
-      b.u += b.v * dt;
-      b.ph += dt * 9;
-    }
-    birds.removeWhere((b) => b.u <= -0.3 || b.u >= 1.3);
   }
 
   // ================================================================ pose

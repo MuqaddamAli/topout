@@ -2,7 +2,7 @@
 
 A calm 2D climbing game for phones. You move one hand or foot at a time, watch your grip, rest on ledges and find your own way up the wall.
 
-This is the Flutter version of the Topout web prototype (kept in `web_prototype/` for reference). The rules, routes, art, music and sounds are the same.
+This is the Flutter version of the Topout web prototype (kept in `web_prototype/` for reference). The rules, routes and art are the same; the music and sounds were made anew (see Sounds and music).
 
 ## What is in the game
 
@@ -15,7 +15,7 @@ This is the Flutter version of the Topout web prototype (kept in `web_prototype/
 - After a fall, a card explains why you fell and shows your hand strength before the fall.
 - Records: best time per route, highest point, today's best on the Daily Wall, and a log of tops, metres, falls and time.
 - A climber drawn in code (helmet, ponytail, harness, quickdraws and chalk bag that swing), sunset clouds, mountains, birds, lamps and snow.
-- Lofi music and sound effects, with wind that grows as you climb. Phones also buzz a little on grabs, slips and landings.
+- Calm music (electric piano, a soft pad, bass and kalimba, no drums) and soft sound effects in the same key, with wind that grows as you climb. Phones also buzz a little on grabs, slips and landings.
 - Soft animations everywhere: cards and tips slide in, buttons press in, holds give a little when you grab them, lamps send out a ring of light, grass sways, dust floats in the evening light, the hand gauges pulse when a hand is about to slip, and the end-of-climb numbers count up. All of it turns off when the phone asks for less motion.
 
 ## Climbers
@@ -75,12 +75,16 @@ To build the same thing on your own machine: `bash tool/vercel_build.sh` (set `F
 | Path | What it does |
 | --- | --- |
 | `lib/game/core.dart` | Rules with no Flutter code: holds, the body solver, grip, jumps, the climbers and their stats, route and Daily Wall builders, random numbers |
-| `lib/game/game.dart` | Game state, the 60 Hz simulation, touch input, falls, saves, records |
+| `lib/game/game.dart` | Game state, the 60 Hz simulation, touch input, falls and saves |
+| `lib/game/records.dart` | Best heights and times per route and mode, and the climbing log |
+| `lib/game/effects.dart` | Things that move by themselves, only for show: particles, dust in the light, birds |
 | `lib/game/body.dart` | The climber's body: pose, arms and legs (two-bone IK, scaled to each climber's reach), and the gear that swings |
 | `lib/game/scene.dart` | Paints the world: sky, clouds, mountains, rock, holds, ledges, lamps, aiming markers, particles, dust |
 | `lib/game/climber.dart` | Paints a climber (cel shading, seen from behind) in their colours and hair style |
-| `lib/game/art.dart` | Art made once: rock texture, cloud sprites, stars, grass, and per route the rock facets (merged into a few paths) and a height index of the holds |
-| `lib/game/audio.dart` | Music, wind and sound effects (`audioplayers`), plus phone buzzes |
+| `lib/game/art.dart` | Art made once: the rock texture (with its facets), cloud sprites, stars, grass |
+| `lib/game/baked.dart` | `Baked`: a drawing turned into an image once, so drawing it again is cheap (see Keeping it fast) |
+| `lib/game/audio.dart` | Music, wind and sound effects: when and how loud, plus phone buzzes |
+| `lib/game/audio_engine*.dart` | Plays the files: one Web Audio graph in browsers, `audioplayers` on phones and desktops |
 | `lib/game/store.dart` | Saves settings and records (`shared_preferences`) |
 | `lib/ui/` | Flutter widgets: title screen and climber picker, HUD, fall, top and pause cards |
 | `assets/audio/` | Music and sounds (MP3) |
@@ -90,9 +94,16 @@ To build the same thing on your own machine: `bash tool/vercel_build.sh` (set `F
 
 ### Keeping it fast
 
+On the web every layer is drawn again each frame (there is no raster cache), so the game avoids work that costs per pixel or per draw call:
+
+- Art that never changes is drawn once into an image and then stamped: the rock texture (one textured rectangle covers the wall), the clouds, every kind of hold (all holds in view are one `drawRawAtlas` call), the climber's torso, shoes and bag, and the portraits and route maps on the title screen (`CachedPaint` in `lib/ui/widgets.dart`). On the web, the image `toImageSync` gives would be drawn again from its picture every time, so `Baked` (`lib/game/baked.dart`) reads its pixels back once and keeps a plain image. The web engine reads back on the same surface it draws frames on, so `Baked` packs the waiting images into one read-back exactly the size of the frame (then the surface is never resized under a frame), and checks a marker pixel to know nothing was clipped.
+- No blurs: shadows and glows are flat or soft strokes. The mountains are one fill each and stop just under the summit (big anti-aliased paths are slow). The climber is recorded once and drawn twice, as the shadow (a layer only as big as the climber) and for real.
+- Particles and dust are drawn in a few batches (`drawRawPoints`), and only holds near the view are looked at (`ClimbRoute.byY`).
+- The web build draws at most 2 pixels per CSS pixel (`web/index.html`), and nothing behind a card that covers the screen is updated.
 - The HUD is not rebuilt every frame. Each number on it (height, time, grip) rebuilds only when the shown value changes (`FrameSelect` in `lib/ui/hud.dart`).
-- The rock facets of a route are merged into a few paths per band of rows, each hold is drawn once into a picture and then stamped, and only holds in view are looked at.
-- Gradients that only depend on the screen size or the route are made once.
+- On the web, the sound effects are decoded once and played from memory through a single `AudioContext`.
+
+To measure, open the web build with `?perf` (frame times in the browser console every 2 s) or `?perf=steps` to also start that route (`first`, `steps`, `crimps`, `daily`).
 
 ### Units
 
@@ -100,13 +111,15 @@ World units are centimetres with y pointing up. The ground is at y = 0, and 100 
 
 ## Sounds and music
 
-All sounds are made by a small synth (Web Audio) in `web_prototype/topout.html`. `tool/render_audio.py` plays that synth in headless Chromium and saves the result as MP3, so the app plays exactly the same sounds:
+`tool/make_audio.py` makes every file in `assets/audio/`. It is all synthesis in numpy, with no samples and no noise floor, so every sound fades to true silence. Sounds with a pitch use notes from the music's key (D major), so they sit well with it. The music is a 24-bar loop at 66 bpm: electric-piano chords, a soft pad, a gentle bass and a few kalimba notes. Its reverb tail wraps around to the start, so it loops without a seam.
 
 ```bash
-pip install playwright numpy && playwright install chromium   # ffmpeg is also needed
-python tool/render_audio.py          # sound effects and wind
-python tool/render_audio.py music    # the 32-bar music loop (takes a few minutes)
+pip install numpy          # ffmpeg (with MP3 support) is also needed
+python tool/make_audio.py              # everything (about a minute)
+python tool/make_audio.py grab foot    # only the files whose names start so
 ```
+
+The files are balanced against each other; `GameAudio` in `lib/game/audio.dart` sets the music and wind under them and gives each effect its own level (`Sfx`).
 
 ## Before you publish to the stores
 
