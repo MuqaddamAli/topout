@@ -167,10 +167,16 @@ void main() {
     expect(g.camX, lessThanOrEqualTo(r.wallRight - half + 8 + 0.5));
     await shot(tester, '45_lanes_right_edge');
 
-    // the ground between lane 1 and lane 2, with both crash pads
-    place(g, r.lanes[0].startHands, footX: Wall.right);
+    // the ground between lane 1 and lane 2, with both crash pads and their
+    // lane numbers (yours in orange: here as if you were in lane 2)
+    g.spawn = r.lanes[1].spawns[0];
+    final at = spawnPose(r, g.spawn!, g.climber);
+    g.limbs = at.limbs;
+    g.c = at.c;
+    g.cd = at.c.copy();
     await frames(tester, 1.5);
     await shot(tester, '46_lanes_ground_edge');
+    g.spawn = null;
     await tester.pumpWidget(const SizedBox());
   });
 

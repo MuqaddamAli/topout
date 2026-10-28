@@ -110,6 +110,8 @@ void main() {
     expect(find.text('1/8 players'), findsOneWidget);
     expect(find.text('CREATOR'), findsOneWidget);
     expect(find.text('YOU'), findsOneWidget);
+    expect(find.text('One lane: two climbers side by side.'), findsOneWidget);
+    expect(find.text('Ada · Lane 1, left'), findsOneWidget);
     await tap(tester, 'Copy');
     expect(copied, 'KXMP');
     expect(find.text('Copied'), findsOneWidget);
@@ -119,6 +121,11 @@ void main() {
     await settle(tester);
     expect(find.text('5/8 players'), findsOneWidget);
     expect(find.text('Ed'), findsOneWidget);
+    // the lane each player will get, in the order they joined
+    expect(find.text('3 lanes side by side, two climbers in each. Bridges join them.'), findsOneWidget);
+    for (final lane in ['Lane 1, left', 'Lane 1, right', 'Lane 2, left', 'Lane 2, right', 'Lane 3, left']) {
+      expect(find.text('Ada · $lane'), findsOneWidget, reason: lane);
+    }
 
     // a climber picked in the lobby is sent to the room
     await tap(tester, 'KAI');
@@ -126,10 +133,20 @@ void main() {
 
     await tap(tester, 'Start');
     expect(link().did('start'), isTrue);
-    link().push('room', roomJson(names: ['Ada', 'Bo'], started: true));
-    link().push('started', {'startsIn': 3000});
+    // from the start, the server's lanes are shown
+    link().push('room', {
+      ...roomJson(names: ['Ada', 'Bo'], started: true),
+      'lanes': 1,
+      'players': [
+        {'id': 'me', 'name': 'Ada', 'climber': 'kai', 'connected': true, 'lane': 0, 'side': 0},
+        {'id': 'p1', 'name': 'Bo', 'climber': 'ada', 'connected': true, 'lane': 0, 'side': 1},
+      ],
+    });
+    link().push('started', {'startsIn': 3000, 'lanes': 1});
     await settle(tester);
     expect(find.text('Starting in 3'), findsOneWidget);
+    expect(find.text('Kai · Lane 1, left'), findsOneWidget);
+    expect(find.text('Ada · Lane 1, right'), findsOneWidget);
     expect(game.online.startsAt, isNotNull);
     await done(tester);
   });

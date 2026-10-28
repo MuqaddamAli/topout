@@ -821,14 +821,12 @@ class Game {
 
   /// The wall of room [r]: its route with one lane per two players, as
   /// many as the server fixed at the start.
-  ClimbRoute roomWall(RoomView r) => laneWall(roomRoute(r), r.lanes ?? lanesFor(r.players.length));
+  ClimbRoute roomWall(RoomView r) => laneWall(roomRoute(r), r.laneCount);
 
-  /// Your spawn on [wall]: the lane and side the server gave you (an older
-  /// server gives none, then your place in the room decides, the same way).
+  /// Your spawn on [wall]: the lane and side the server gave you.
   Spawn roomSpawn(RoomView r, ClimbRoute wall) {
-    final me = r.player(online.you), k = math.max(0, r.players.indexOf(me ?? r.players.first));
-    final lane = math.min(me?.lane ?? k ~/ 2, wall.lanes.length - 1), side = me?.side ?? k % 2;
-    return wall.lanes[lane].spawns[side];
+    final me = r.player(online.you) ?? r.players.first, at = r.slot(me);
+    return wall.lanes[math.min(at.lane, wall.lanes.length - 1)].spawns[at.side];
   }
 
   /// Everyone in the room starts the same route in the same mode, each at

@@ -811,6 +811,9 @@ const int maxLanes = 4;
 
 int lanesFor(int players) => math.max(1, math.min(maxLanes, (players + 1) ~/ 2));
 
+/// "Lane 2, left": a lane (0 is the first) and a side (0 left, 1 right), for people.
+String laneLabel(int lane, int side) => 'Lane ${lane + 1}, ${side == 0 ? 'left' : 'right'}';
+
 /// How far a spawn's body stands to the side of the start hold its hand is on.
 const double spawnStep = 52;
 

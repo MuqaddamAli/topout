@@ -233,7 +233,13 @@ class _OnlineScreenState extends State<OnlineScreen> {
       const SizedBox(height: 12),
       GamePanel(title: 'Players', children: [
         Text('${room.players.length}/${room.max} players', style: Txt.mono(14, color: Pal.good)),
-        for (final p in room.players) _PlayerRow(player: p, you: p.id == online.you, host: p.id == room.host),
+        Text(
+            room.laneCount == 1
+                ? 'One lane: two climbers side by side.'
+                : '${room.laneCount} lanes side by side, two climbers in each. Bridges join them.',
+            style: Txt.body(13, color: Pal.chalkDim)),
+        for (final p in room.players)
+          _PlayerRow(player: p, lane: room.slot(p), you: p.id == online.you, host: p.id == room.host),
       ]),
       const SizedBox(height: 18),
       Text('YOUR CLIMBER', style: Txt.eyebrow()),
@@ -337,8 +343,9 @@ class _Field extends StatelessWidget {
 }
 
 class _PlayerRow extends StatelessWidget {
-  const _PlayerRow({required this.player, required this.you, required this.host});
+  const _PlayerRow({required this.player, required this.lane, required this.you, required this.host});
   final RoomPlayer player;
+  final ({int lane, int side}) lane;
   final bool you, host;
 
   @override
@@ -352,7 +359,8 @@ class _PlayerRow extends StatelessWidget {
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(player.name, overflow: TextOverflow.ellipsis, style: Txt.body(16, weight: FontWeight.w700, height: 1.2)),
-            Text(player.connected ? k.name : 'Reconnecting…', style: Txt.body(13, color: Pal.chalkDim, height: 1.2)),
+            Text(player.connected ? '${k.name} · ${laneLabel(lane.lane, lane.side)}' : 'Reconnecting…',
+                style: Txt.body(13, color: Pal.chalkDim, height: 1.2)),
           ]),
         ),
         if (host) _Tag(label: 'Creator', color: Pal.lamp),

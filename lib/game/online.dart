@@ -3,9 +3,12 @@
 // with --dart-define=MP_SERVER=https://...; nothing connects until you open
 // Play online.
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as sio;
+
+import 'core.dart';
 
 const String mpServer = String.fromEnvironment('MP_SERVER', defaultValue: 'http://localhost:3000');
 
@@ -134,6 +137,18 @@ class RoomView {
       );
 
   RoomPlayer? player(String? id) => players.where((p) => p.id == id).firstOrNull;
+
+  /// How many lanes the wall has: fixed by the server at the start, and
+  /// before it, how many the players in the room now would get.
+  int get laneCount => lanes ?? lanesFor(players.length);
+
+  /// The lane (0 is the first) and side (0 left, 1 right) of [p]: the
+  /// server's from the start; before it (or from an older server), by the
+  /// order they joined, the way the server gives them.
+  ({int lane, int side}) slot(RoomPlayer p) {
+    final k = math.max(0, players.indexOf(p));
+    return (lane: math.min(p.lane ?? k ~/ 2, laneCount - 1), side: p.side ?? k % 2);
+  }
 }
 
 /// Room codes are four letters, never I, L or O.

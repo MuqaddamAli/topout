@@ -43,6 +43,9 @@ class ScenePainter extends CustomPainter {
   /// Other players' climbers are drawn see-through, each in a layer only as big as it.
   final Paint _ghost = Paint()..color = const Color(0x9EFFFFFF);
 
+  /// The lane numbers on the crash pads (yours and the others'), made once.
+  final Map<(int, bool), TextPainter> _laneMarks = {};
+
   /// Name tags of the other climbers, kept while the name stays the same.
   final Map<String, (String, TextPainter)> _names = {};
 
@@ -437,7 +440,28 @@ class ScenePainter extends CustomPainter {
       c.drawRRect(roundRect(x, -6, 140, 7, 3), _p..color = Pal.padTop);
       _fill(c, Rect.fromLTWH(x, -14, 140, 2.2), rgba(242, 237, 228, 0.55));
       _fill(c, Rect.fromLTWH(seam, -22, 2, 16), rgba(0, 0, 0, 0.25));
+      if (r.lanes.length > 1) _laneMark(c, l.index, x + 70, l.index == g.spawn?.lane);
     }
+  }
+
+  /// "LANE 2" on the front of a lane's crash pad, in orange on your own lane.
+  void _laneMark(Canvas c, int lane, double cx, bool yours) {
+    final tp = _laneMarks[(lane, yours)] ??= TextPainter(
+      text: TextSpan(
+        text: 'LANE ${lane + 1}',
+        style: TextStyle(
+            fontFamily: 'BigShoulders', fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 1.2, color: yours ? Pal.signal : rgba(242, 237, 228, 0.8)),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final w = tp.width + 10;
+    c.save();
+    c.translate(cx, -13);
+    c.scale(1, -1); // the world has y up; text is drawn the right way round
+    c.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: Offset.zero, width: w, height: tp.height + 2), const Radius.circular(3)),
+        _p..color = rgba(13, 15, 21, yours ? 0.8 : 0.55));
+    tp.paint(c, Offset(-tp.width / 2, -tp.height / 2));
+    c.restore();
   }
 
   // ---------------------------------------------------------------- holds

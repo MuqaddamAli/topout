@@ -22,8 +22,9 @@ Future<void> main() async {
   // also opens that route (used to measure performance). ?perf=online makes
   // a room and prints its code: fill it with bots and it starts by itself.
   final perf = kIsWeb ? Uri.base.queryParameters['perf'] : null;
-  // For testing (for now): ?lanes=N makes climbs alone use a wall with N lanes.
-  final lanes = kIsWeb ? int.tryParse(Uri.base.queryParameters['lanes'] ?? '') : null;
+  // For development: ?lanes=N makes climbs alone use a wall with N lanes.
+  // Debug and profile builds only; the live site (a release build) ignores it.
+  final lanes = kIsWeb && !kReleaseMode ? int.tryParse(Uri.base.queryParameters['lanes'] ?? '') : null;
   if (lanes != null) game.debugLanes = lanes.clamp(1, maxLanes);
   if (perf != null) _measure(game, perf);
 }
