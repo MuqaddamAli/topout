@@ -538,9 +538,9 @@ void main() {
       expect(find.text(fmtTime(game.myFinish!)), findsWidgets);
       expect(find.text(fmtTime(80.5)), findsWidgets);
       expect(find.textContaining('did not finish'), findsOneWidget);
-      expect(find.text('Play again'), findsOneWidget);
-      expect(find.text('Leave'), findsOneWidget);
-      await tester.tap(find.text('Play again'));
+      expect(find.text('PLAY AGAIN'), findsOneWidget);
+      expect(find.text('LEAVE'), findsOneWidget);
+      await tester.tap(find.text('PLAY AGAIN'));
       await frames(tester, 0.2);
       expect(link.did('again'), isTrue);
       // the server starts the next climb: a countdown, then everyone from the spawns
@@ -563,9 +563,9 @@ void main() {
       link.push('room', endedRoom(2, 1, [50, null]));
       await frames(tester, 0.5);
       expect(game.screen, Screen.results);
-      expect(find.text('Play again'), findsNothing);
+      expect(find.text('PLAY AGAIN'), findsNothing);
       expect(find.text('Waiting for P0 to play again…'), findsOneWidget);
-      await tester.tap(find.text('Leave'));
+      await tester.tap(find.text('LEAVE'));
       await frames(tester, 0.5);
       expect(game.onlineClimb, isFalse);
       expect(game.screen, Screen.menu);
@@ -577,7 +577,7 @@ void main() {
       game.pause();
       await frames(tester, 0.4);
       // before the top the HUD has no End climb (it cannot be tapped)
-      await tester.tap(find.descendant(of: find.byType(PauseCard), matching: find.text('End climb')));
+      await tester.tap(find.descendant(of: find.byType(PauseCard), matching: find.text('END CLIMB')));
       await frames(tester, 0.2);
       expect(link.did('end'), isTrue);
       await done(tester);
@@ -587,7 +587,7 @@ void main() {
       await startIn(tester, laneRoom(2, 1));
       game.pause();
       await frames(tester, 0.4);
-      expect(find.descendant(of: find.byType(PauseCard), matching: find.text('End climb')), findsNothing);
+      expect(find.descendant(of: find.byType(PauseCard), matching: find.text('END CLIMB')), findsNothing);
       await done(tester);
     });
 
@@ -596,9 +596,9 @@ void main() {
       await started(tester);
       game.pause();
       await frames(tester, 0.4);
-      expect(find.text('Leave'), findsOneWidget);
-      expect(find.text('Routes'), findsNothing);
-      await tester.tap(find.text('Leave'));
+      expect(find.text('LEAVE'), findsOneWidget);
+      expect(find.text('ROUTES'), findsNothing);
+      await tester.tap(find.text('LEAVE'));
       await frames(tester, 0.4);
       expect(game.phase, Phase.menu);
       expect(game.screen, Screen.menu);
@@ -728,8 +728,8 @@ void main() {
       expect(find.text('1:32'), findsWidgets);
       expect(find.text('climbing · 2.3 m'), findsOneWidget);
       // online there is no next route
-      expect(find.text('Next route'), findsNothing);
-      expect(find.text('Leave'), findsOneWidget);
+      expect(find.text('NEXT ROUTE'), findsNothing);
+      expect(find.text('LEAVE'), findsOneWidget);
       await done(tester);
     });
 

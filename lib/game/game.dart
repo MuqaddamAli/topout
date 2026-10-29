@@ -12,10 +12,13 @@ import 'audio.dart';
 import 'body.dart';
 import 'core.dart';
 import 'effects.dart';
+import 'mountain.dart';
+import 'moves.dart';
 import 'online.dart';
 import 'palette.dart';
 import 'records.dart';
 import 'remote.dart';
+import 'snowfall.dart';
 import 'walk.dart';
 import 'store.dart';
 
@@ -86,6 +89,7 @@ class FallInfo {
     required this.feetW,
     required this.hands,
     required this.height,
+    this.snowy = false,
   });
   final bool hang;
   final int i;
@@ -93,6 +97,9 @@ class FallInfo {
   final double feetW;
   final int hands;
   final double height;
+
+  /// The hold the hand let go of still had snow on it.
+  final bool snowy;
   double reached = 0;
   double prevBest = 0;
 
@@ -245,8 +252,6 @@ class Pulse extends ChangeNotifier {
   void fire() => notifyListeners();
 }
 
-/// The Daily Wall gets snow above this height.
-const double snowY = 2000;
 
 const Map<HoldType, String> holdWord = {
   HoldType.jug: 'a big hold',
@@ -410,6 +415,9 @@ class Game {
 
   // ---- view
   double cw = 390, ch = 844;
+
+  /// The screen's safe area at the top (a notch), for the title poster.
+  double padTop = 0;
   bool portrait = true;
   double camX = 180, camY = 120, scale = 1;
   double? camManual;
@@ -426,6 +434,12 @@ class Game {
   Pt c = Pt(180, 100), cd = Pt(180, 100);
   List<double> grip = [100, 100], holdTime = [0, 0];
   int moves = 0, falls = 0;
+
+  /// Falls caught this climb (by grabbing a hold on the way down).
+  int caught = 0;
+
+  /// The last input was a finger (no key hints then).
+  bool usedTouch = false;
   double time = 0;
   final List<Snapshot> history = [];
   Checkpoint? checkpoint;
@@ -469,7 +483,32 @@ class Game {
   final Set<int> lit = {};
   final Map<int, double> litAt = {};
   Set<int> chalked = {};
+
+  /// Holds that started this climb under snow ([Mountain.snowCovered]), how
+  /// much of its snow each has lost (1: all of it), and the ones under a limb
+  /// right now that still have snow on them (they are slick).
+  Set<int> snowCover = {};
+  final Map<int, double> snowWear = {};
+  Set<int> snowyHeld = const {};
+
+  /// The snow falling in front of the view.
+  final Snowfall snowfall = Snowfall();
   double tilt = 0, br = 0, lookX = 0, lookUp = 0;
+
+  // How fast the drawn body, the view, the lean and the head are moving:
+  // they follow their targets on springs, so they speed up and slow down
+  // smoothly instead of jumping into motion.
+  final Pt _cdV = Pt(0, 0);
+  double _camVX = 0, _camVY = 0, _tiltV = 0, _lookXV = 0, _lookUpV = 0;
+  List<Pt> _endV = [for (var i = 0; i < 4; i++) Pt(0, 0)];
+
+  /// How long the climber has hung still, and their fidget now (eased in
+  /// and out; see moves.dart). Only for show.
+  double _still = 0;
+  double _fdx = 0, _fdy = 0, _fTilt = 0, _fLookX = 0, _fLookUp = 0;
+
+  /// How high the climber hops while celebrating at the top.
+  double _hop = 0;
   List<HandStyle> hStyle = [HandStyle.grip, HandStyle.grip];
   List<HoldType> hKind = [HoldType.jug, HoldType.jug];
   List<bool> fFree = [false, false];
@@ -664,6 +703,7 @@ class Game {
     moves = 0;
     time = 0;
     falls = 0;
+    caught = 0;
     history.clear();
     drag = null;
     fall = null;
@@ -682,12 +722,17 @@ class Game {
     camShake = 0;
     _later.clear();
     endDraw = limbs.map((l) => Pt(l.x, l.y)).toList();
+    _endV = [for (var i = 0; i < 4; i++) Pt(0, 0)];
+    _cdV.x = _cdV.y = 0;
     checkpoint = Checkpoint(snapshot(), 0);
     cpLedge = 0;
     lit.clear();
     litAt.clear();
     _grabbedAt.clear();
     chalked = at != null ? {} : {...r.startHands};
+    snowCover = {for (var k = 0; k < r.holds.length; k++) if (Mountain.snowCovered(r, k)) k};
+    snowWear.clear();
+    snowyHeld = const {};
     dyno = null;
     hangT = 0;
     _clearCatch();
@@ -1335,6 +1380,10 @@ class Game {
   }
 
   void pointerDown(int id, Offset pos, bool touch) {
+    if (touch != usedTouch) {
+      usedTouch = touch;
+      _ui();
+    }
     if (phase == Phase.falling && (fall?.window ?? false)) {
       _tapCatch(pos);
       return;
@@ -1637,6 +1686,10 @@ class Game {
   }
 
   bool key(LogicalKeyboardKey k, {bool ctrl = false}) {
+    if (usedTouch) {
+      usedTouch = false;
+      _ui();
+    }
     final f = fall;
     if (phase == Phase.falling && f != null && f.window && k == LogicalKeyboardKey.space) {
       final b = f.best;
@@ -1756,7 +1809,8 @@ class Game {
     final sol = solve(c, anc, 24);
     c.x = sol.x;
     c.y = sol.y;
-    final g = gripRates(limbs, holds, mode, climber), s = g.s;
+    _brushSnow(dt);
+    final g = gripRates(limbs, holds, mode, climber, snowyHeld), s = g.s;
     for (var i = 0; i < 2; i++) {
       var r = g.rates[i];
       if (r < 0 && drag != null) r *= climber.aimSlow;
@@ -1840,9 +1894,37 @@ class Game {
     _ui();
   }
 
+  /// How much snow is left on hold [k], from 1 (all of it) to 0.
+  double snowOn(int k) => snowCover.contains(k) ? 1 - math.min(1.0, snowWear[k] ?? 0) : 0;
+
+  /// A hand on a snowy hold brushes its snow off in [brushHand] seconds, a
+  /// foot in [brushFoot]; until then the hold is slick (see [snowSlick]).
+  static const double brushHand = 1.2, brushFoot = 0.8;
+
+  void _brushSnow(double dt) {
+    Set<int>? held;
+    for (var i = 0; i < 4; i++) {
+      final k = limbs[i].h;
+      if (k == null || !snowCover.contains(k)) continue;
+      final w = snowWear[k] ?? 0;
+      if (w >= 1) continue;
+      final now = w + dt / (isHand[i] ? brushHand : brushFoot);
+      snowWear[k] = now;
+      if (now >= 1) {
+        final h = holds[k];
+        effects.burst(h.x, h.y + 3, PartKind.snow, 9);
+        _play(Sfx.chalk, pan: panOf(h.x));
+      } else {
+        (held ??= {}).add(k);
+      }
+    }
+    snowyHeld = held ?? const {};
+  }
+
   void _releaseHand(int i, Support s) {
     final l = limbs[i], h = holds[l.h!];
-    final info = FallInfo(hang: false, i: i, t: h.t, feetW: s.feetW, hands: s.hands, height: climberHeight());
+    final info = FallInfo(
+        hang: false, i: i, t: h.t, feetW: s.feetW, hands: s.hands, height: climberHeight(), snowy: snowyHeld.contains(l.h));
     effects.burst(l.x, l.y, PartKind.pebble, 5);
     camShake = math.max(camShake, 3.0);
     _play(Sfx.slip, pan: panOf(l.x));
@@ -1936,7 +2018,7 @@ class Game {
     _ui();
   }
 
-  /// Time speeds up again and the holds stop glowing; the chance is used.
+  /// Time speeds up again and the chalk marks go; the chance is used.
   void _endSlowMo(FallState f) {
     f.window = false;
     f.chance = false;
@@ -1996,7 +2078,7 @@ class Game {
     f.options = out;
   }
 
-  /// A tap while falling: catch the glowing hold under the finger, if any.
+  /// A tap while falling: catch the marked hold under the finger, if any.
   void _tapCatch(Offset pos) {
     final f = fall!;
     final at = s2w(pos.dx, pos.dy);
@@ -2054,6 +2136,7 @@ class Game {
     history.clear(); // no undo back into the fall
     camManual = null;
     showRecenter = false;
+    caught++;
     if (keepsRecords) {
       records.catches++;
       records.saveLog();
@@ -2082,6 +2165,8 @@ class Game {
     _walkV = walkAmt = 0;
     cd = c.copy();
     endDraw = limbs.map((l) => Pt(l.x, l.y)).toList();
+    _endV = [for (var i = 0; i < 4; i++) Pt(0, 0)];
+    _cdV.x = _cdV.y = 0;
     grip = [100, 100];
     holdTime = [0, 0];
     history.clear();
@@ -2128,7 +2213,10 @@ class Game {
       } else if (f.hands == 1) {
         why += ' You held on with one hand.';
       }
-      fix = f.feetW < 2
+      if (f.snowy) why += ' It still had snow on it, which made it slick.';
+      fix = f.snowy && f.feetW >= 1
+          ? 'Snow comes off a hold after a moment. Hold a big hold while it does, or rest first.'
+          : f.feetW < 2
           ? 'Put both feet on holds before you move a hand.'
           : (f.t == HoldType.crimp || f.t == HoldType.sloper)
               ? 'Small and round holds make you tired fast. Move on quickly.'
@@ -2149,7 +2237,7 @@ class Game {
     }
     // until the first catch, teach it on a fall that could have been caught
     if (note == null && fall!.offered && !store.getBool('tip.catch', false)) {
-      note = 'While you fall, tap a glowing hold to catch it.';
+      note = 'While you fall, tap a hold marked in chalk to catch it.';
     }
     fallCard = FallCardData(
       endless: endless,
@@ -2264,7 +2352,7 @@ class Game {
     if (phase == Phase.menu) {
       scale = baseScale();
       camX = 180;
-      camY = menuRoute.topY - 0.11 * ch / scale;
+      camY = menuRoute.topY - (portrait ? 0.06 : 0.11) * ch / scale;
       lookX = -2.2 + math.sin(clock * 0.3) * 0.5;
       _menuHop += dt;
       final u = _menuHop / 0.42;
@@ -2305,6 +2393,7 @@ class Game {
       }
       cd.x = c.x;
       cd.y = c.y;
+      _cdV.x = _cdV.y = 0;
       if (f.window) {
         _findCatches(f);
         if (-f.v > snatchMaxSpeed || f.landed) _closeCatch(f);
@@ -2313,11 +2402,10 @@ class Game {
     } else if (ce != null) {
       ce.t += dt;
       final u = clampD(ce.t / 0.9, 0, 1), e = u * u * (3 - 2 * u);
+      _hop = ce.cheer && !reducedMotion ? cheerHop(climber.id, ce.t - 0.9) : 0.0;
       c.x = lerpD(ce.c0.x, ce.c1.x, e);
-      c.y = lerpD(ce.c0.y, ce.c1.y, e) + math.sin(u * math.pi) * 14;
-      final k = math.min(1.0, dt * 18);
-      cd.x += (c.x - cd.x) * k;
-      cd.y += (c.y - cd.y) * k;
+      c.y = lerpD(ce.c0.y, ce.c1.y, e) + math.sin(u * math.pi) * 14 + _hop;
+      _springTo(cd, _cdV, c.x, c.y, 20, dt);
       if (ce.cheer && ce.t > 0.9 && !ce.burst) {
         ce.burst = true;
         for (var n = 0; n < 4; n++) {
@@ -2338,10 +2426,9 @@ class Game {
       _swing = t > 2.2 ? null : (dx: sw.dx, dy: sw.dy, dip: sw.dip, t: t);
       cd.x = c.x + sw.dx * math.exp(-t / 0.45) * math.cos(t * 9);
       cd.y = c.y + sw.dy * math.exp(-t / 0.08) - sw.dip * math.exp(-t / 0.22) * math.sin(t * 14);
+      _cdV.x = _cdV.y = 0;
     } else {
-      final k = math.min(1.0, dt * 18);
-      cd.x += (c.x - cd.x) * k;
-      cd.y += (c.y - cd.y) * k;
+      _springTo(cd, _cdV, c.x, c.y, 17, dt);
     }
     final cf = catchFlash;
     if (cf != null && (cf.t += dt) > 0.4) catchFlash = null;
@@ -2354,9 +2441,20 @@ class Game {
       final normY = camManual ?? at.y + 40, normX = camXFor(at.x);
       final lookY = r.endless ? at.y + 320 : (r.topY + 50) / 2;
       // Look shows the lane you are in now
-      final ty = lerpD(normY, lookY, lookK), tx = lerpD(normX, r.laneAt(at.x).mid, lookK), e = reducedMotion ? 1.0 : math.min(1.0, dt * 6);
-      camY += (ty - camY) * e;
-      camX += (tx - camX) * e;
+      final ty = lerpD(normY, lookY, lookK), tx = lerpD(normX, r.laneAt(at.x).mid, lookK);
+      if (reducedMotion) {
+        camY = ty;
+        camX = tx;
+      } else {
+        final (y, vy) = spring(camY, _camVY, ty, 7.5, dt);
+        final (x, vx) = spring(camX, _camVX, tx, 7.5, dt);
+        camY = y;
+        camX = x;
+        _camVY = vy;
+        _camVX = vx;
+      }
+    } else {
+      _camVX = _camVY = 0;
     }
     final sh = shake;
     if (sh != null) {
@@ -2367,10 +2465,7 @@ class Game {
     final low = math.min(grip[0], grip[1]);
     tremble = phase == Phase.climb && low < 30 ? (30 - low) / 30 * 1.3 : 0.0;
     if (phase == Phase.climb && low < 25) audio.breath((25 - low) / 25, clock);
-    if (r.endless && cd.y > snowY - 400 && !reducedMotion) {
-      final v = viewRange();
-      effects.snow(dt, v.x0, v.x1, v.y1);
-    }
+    if (!reducedMotion) snowfall.update(dt, camX: camX, camY: camY, scale: scale, w: cw, h: ch);
     _limbTargets(dt);
     // body lean: hands over feet
     final e = endDraw;
@@ -2379,7 +2474,9 @@ class Game {
         ? sp.tilt
         : clampD(((e[2].x + e[3].x) - (e[0].x + e[1].x)) * 0.5 * 0.0035, -0.16, 0.16) +
         (phase == Phase.falling && !reducedMotion ? math.sin((fall?.t ?? 0) * 7 + 1) * 0.25 : 0);
-    tilt += (tl - tilt) * math.min(1.0, dt * 8);
+    final (t1, tv) = spring(tilt, _tiltV, tl, 10, dt);
+    tilt = t1;
+    _tiltV = tv;
     // where the head looks
     Pt? tgt;
     if (drag != null) {
@@ -2397,10 +2494,36 @@ class Game {
         : (standOn != null && walkAmt > 0.05 ? facing * 2.2 : math.sin(clock * 0.35) * 1.2);
     final lkUp = tgt != null ? clampD((tgt.y - hy) * 0.008, -0.6, 1) : 0.5;
     final emoting = emote != null && sp != null;
-    lookX += ((emoting ? sp.lookX : lkX) - lookX) * math.min(1.0, dt * 6);
-    lookUp += ((emoting ? sp.lookUp : lkUp) - lookUp) * math.min(1.0, dt * 6);
+    final (lx1, lxv) = spring(lookX, _lookXV, emoting ? sp.lookX : lkX, 8, dt);
+    final (lu1, luv) = spring(lookUp, _lookUpV, emoting ? sp.lookUp : lkUp, 8, dt);
+    lookX = lx1;
+    lookUp = lu1;
+    _lookXV = lxv;
+    _lookUpV = luv;
+    // hanging still for a while, each climber fidgets in their own way
+    final calm = phase == Phase.climb && drag == null && dyno == null && fall == null && cele == null && standOn == null &&
+        hangT <= 0 && watching == null && !reducedMotion;
+    _still = calm ? _still + dt : 0;
+    final fid = fidget(climber.id, _still, clock), fk = math.min(1.0, dt * 5);
+    _fdx += (fid.dx - _fdx) * fk;
+    _fdy += (fid.dy - _fdy) * fk;
+    _fTilt += (fid.tilt - _fTilt) * fk;
+    _fLookX += (fid.lookX - _fLookX) * fk;
+    _fLookUp += (fid.lookUp - _fLookUp) * fk;
     pose = buildPose();
     _gearUpdate(dt);
+  }
+
+  /// Moves point [p] with velocity [v] toward ([tx], [ty]) on a spring of stiffness [w].
+  static void _springTo(Pt p, Pt v, double tx, double ty, double w, double dt) {
+    final (x, vx) = spring(p.x, v.x, tx, w, dt);
+    final (y, vy) = spring(p.y, v.y, ty, w, dt);
+    p
+      ..x = x
+      ..y = y;
+    v
+      ..x = vx
+      ..y = vy;
   }
 
   void _limbTargets(double dt) {
@@ -2426,8 +2549,10 @@ class Game {
             ty = ce.edge;
             style = HandStyle.grip;
           } else if (ce.cheer) {
-            tx = cd.x + sideOf[i] * 36;
-            ty = cd.y + 84 + math.sin(clock * 6 + i) * 2;
+            final h = cheerHand(climber.id, i, cd.x, cd.y, reducedMotion ? 0 : u - 0.55);
+            tx = h.x;
+            ty = h.y;
+            if (h.fist) style = HandStyle.fist;
           } else {
             // up on a ledge: the hands let go and hang, as when you stand
             final e = standAt(climber, cd.x, ce.edge, facing: facing).ends[i];
@@ -2436,7 +2561,7 @@ class Game {
           }
         } else {
           tx = cd.x + sideOf[i] * (ce.feetOn ? 12 : 14);
-          ty = ce.feetOn || u > 0.5 ? ce.edge : j.y - 60;
+          ty = ce.feetOn || u > 0.5 ? ce.edge + _hop * 0.9 : j.y - 60;
           free = !ce.feetOn && u <= 0.5;
         }
       } else if (dy != null && dy.i == i) {
@@ -2463,8 +2588,10 @@ class Game {
         if (o != null) {
           (tx, ty) = _toward(i, j, o.pt); // reaching for a hold, fingers open
         } else {
-          tx = j.x + sideOf[i] * (hand ? 26 : 16);
-          ty = j.y + (hand ? 38 : -52);
+          // each climber flails their own way
+          final f = flail(climber.id, i, j.x, j.y, reducedMotion ? 0 : clock, climber.reach[i]);
+          tx = f.x;
+          ty = f.y;
         }
         free = true;
       } else if (dy != null) {
@@ -2499,10 +2626,15 @@ class Game {
       } else {
         fFree[i - 2] = free;
       }
-      final e = endDraw[i];
-      final k = (d != null && d.i == i) || snap ? 1.0 : math.min(1.0, dt * 12);
-      e.x += (tx - e.x) * k;
-      e.y += (ty - e.y) * k;
+      final e = endDraw[i], v = _endV[i];
+      if ((d != null && d.i == i) || snap) {
+        e
+          ..x = tx
+          ..y = ty;
+        v.x = v.y = 0;
+      } else {
+        _springTo(e, v, tx, ty, 20, dt);
+      }
     }
   }
 
@@ -2540,11 +2672,11 @@ class Game {
 
   Pose buildPose() => climberPose(
         climber,
-        cd.copy(),
-        tilt,
+        Pt(cd.x + _fdx, cd.y + _fdy),
+        tilt + _fTilt,
         br,
-        lookX,
-        lookUp,
+        lookX + _fLookX,
+        lookUp + _fLookUp,
         [_handEnd(0), _handEnd(1)],
         hStyle,
         hKind,

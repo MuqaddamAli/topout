@@ -6,7 +6,6 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -27,8 +26,9 @@ Future<void> _loadFonts() async {
   }
 
   await load('Atkinson', ['AtkinsonHyperlegible-Regular.ttf', 'AtkinsonHyperlegible-Bold.ttf']);
-  await load('BigShoulders', ['BigShouldersDisplay-ExtraBold.ttf', 'BigShouldersDisplay-Black.ttf']);
-  await load('PlexMono', ['IBMPlexMono-Medium.ttf']);
+  await load('ArchivoXC', ['Archivo-ExtraCondensedBlack.ttf']);
+  await load('CourierPrime', ['CourierPrime-Regular.ttf', 'CourierPrime-Bold.ttf']);
+  await load('Reenie', ['ReenieBeanie-Regular.ttf']);
   // Real icons too, if the Flutter SDK is where we expect it.
   final root = Platform.environment['FLUTTER_ROOT'];
   if (root != null) {
@@ -147,7 +147,7 @@ void main() {
     expect(game.phase, Phase.fallCard);
     expect(find.text('YOU FELL'), findsOneWidget);
     await shot(tester, '08_fall');
-    await tester.tap(find.text('Start again'));
+    await tester.tap(find.text('START AGAIN'));
     await frames(tester, 0.6);
     expect(game.phase, Phase.climb);
 
@@ -170,11 +170,11 @@ void main() {
     await shot(tester, '09_top_out');
     await frames(tester, 1.5);
     expect(game.screen, Screen.topCard);
-    expect(find.text('Again'), findsOneWidget);
+    expect(find.text('AGAIN'), findsOneWidget);
     await shot(tester, '10_top_card');
 
     // the Daily Wall, high up in the snow
-    await tester.tap(find.text('Routes'));
+    await tester.tap(find.text('ROUTES'));
     await frames(tester, 0.5);
     expect(game.phase, Phase.menu);
     game.startRoute(game.routes.last);
@@ -188,11 +188,11 @@ void main() {
     // pause
     game.recenter();
     await frames(tester, 0.3);
-    await tester.tap(find.byIcon(Icons.pause_rounded));
+    await tester.tap(find.bySemanticsLabel('Pause'));
     await frames(tester, 0.4);
     expect(game.phase, Phase.paused);
     await shot(tester, '13_pause');
-    await tester.tap(find.text('Resume'));
+    await tester.tap(find.text('BACK ON THE WALL'));
     await frames(tester, 0.3);
     expect(game.phase, Phase.climb);
 
@@ -248,7 +248,7 @@ void main() {
       expect(game.fall!.options, isNotEmpty);
     }
 
-    // 1. tap the glowing hold: the right hand catches it and the body hangs there
+    // 1. tap the marked hold: the right hand catches it and the body hangs there
     await slip();
     expect(game.fall!.slow, lessThan(1), reason: 'time runs slow');
     await shot(tester, '11_catch_window');

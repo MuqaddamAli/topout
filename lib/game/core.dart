@@ -188,7 +188,13 @@ class Support {
   final bool supported;
 }
 
-Support supportInfo(List<Limb> limbs, List<Hold> holds) {
+/// While a hold is still covered in snow, a hand on it tires [snowSlick]
+/// times as fast, and a foot on it counts [snowFoot] of a dry one. The snow
+/// comes off after the limb has been on it a moment (see Game).
+const double snowSlick = 1.5, snowFoot = 0.6;
+
+/// How the limbs hold the body up. [snowy] are the holds that still have snow on them.
+Support supportInfo(List<Limb> limbs, List<Hold> holds, [Set<int> snowy = const {}]) {
   var hands = 0, feet = 0, rest = 0;
   var feetW = 0.0;
   final restIds = <int>[];
@@ -200,7 +206,7 @@ Support supportInfo(List<Limb> limbs, List<Hold> holds) {
       hands++;
     } else {
       feet++;
-      feetW += t.feet;
+      feetW += t.feet * (snowy.contains(l.h) ? snowFoot : 1);
       if (t.rest) {
         rest++;
         restIds.add(l.h!);
@@ -220,9 +226,10 @@ class GripRates {
 }
 
 /// How fast each hand gains (+) or loses (-) grip per second, for climber [k].
-GripRates gripRates(List<Limb> limbs, List<Hold> holds, Mode mode, [Climber? k]) {
+/// [snowy] are the holds that still have snow on them.
+GripRates gripRates(List<Limb> limbs, List<Hold> holds, Mode mode, [Climber? k, Set<int> snowy = const {}]) {
   final kk = k ?? Climber.base;
-  final s = supportInfo(limbs, holds);
+  final s = supportInfo(limbs, holds, snowy);
   final rates = <double>[0, 0];
   for (var i = 0; i < 2; i++) {
     final l = limbs[i];
@@ -234,7 +241,8 @@ GripRates gripRates(List<Limb> limbs, List<Hold> holds, Mode mode, [Climber? k])
       rates[i] = 12 * kk.restMul;
       continue;
     }
-    rates[i] = -kk.holdDrain(holds[l.h!].t) * feetMult(s.feetW) * (s.hands == 1 ? kk.oneHand : 1) * mode.drain;
+    rates[i] = -kk.holdDrain(holds[l.h!].t) * feetMult(s.feetW) * (s.hands == 1 ? kk.oneHand : 1) * mode.drain *
+        (snowy.contains(l.h) ? snowSlick : 1);
   }
   return GripRates(rates, s);
 }

@@ -1,4 +1,4 @@
-package com.muqaddamali.topout
+package com.mw.topout
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -8,17 +8,20 @@ This is the Flutter version of the Topout web prototype (kept in `web_prototype/
 
 - Four climbers to pick from (see below). Each is good at something different, and nobody is best at everything.
 - Three routes (easy, medium, hard) and a **Daily Wall**: a new endless wall every day, the same for everyone, that gets harder and snowier as you go up.
+- The mountain changes as you climb (see The mountain): the colours of the sky, the rock and the holds follow your height, the afternoon turns to dusk on the way up (and to night high on the hard route and the Daily Wall, with a headlamp), and the upper part of every route is under snow.
 - Limb-by-limb climbing: drag a hand or foot to a hold. Big holds, small edges, round holds and foot steps all feel different.
 - Grip: each hand gets tired on a hold and rests when you let go. Feet on the wall help your hands. Ledges let you rest and save your place (the lamp lights up).
 - Jumps: a hand can jump to a hold that is a little too far, if a foot is on a hold. After the catch you must grab a second hold fast.
-- Catch a fall: when you lose your hold, time slows for a moment and every hold within reach on the way down glows. Tap one (or press Space) and your hand snatches it, then the body swings under it and you have a second or two to get a foot or the other hand on. The longer you fell, the more grip the catch costs: green holds leave you plenty, yellow ones little, and red ones are too much for a tired hand (the fingers slip off). Each fall gets one chance, so a fall out of the hang after a catch is final. The moment lasts longest in Relaxed and is shortest in No saves.
+- Catch a fall: when you lose your hold, time slows for a moment and every hold within reach on the way down gets a chalk mark. Tap one (or press Space) and your hand snatches it, then the body swings under it and you have a second or two to get a foot or the other hand on. The longer you fell, the more grip the catch costs: a ring leaves you plenty, a broken ring little, and a cross is too much for a tired hand (the fingers slip off). Each fall gets one chance, so a fall out of the hang after a catch is final. The moment lasts longest in Relaxed and is shortest in No saves.
 - Three modes: Relaxed, Normal, and No saves.
 - Online play: up to 8 players, each on their own device, climb the same wall at the same time and see each other live. The wall gets one lane per two players, with bridges between the lanes. Online you can walk along the ground, ledges and the top, wait for friends, cheer, taunt or lie back to show off, say a few set phrases, and watch the others once you are up; the room sees everyone's times at the end and can play again (see Online play).
-- After a fall, a card explains why you fell and shows your hand strength before the fall.
+- The look is the Field Book (`design/field-book/HANDOFF.md`): every piece of UI is something a climber would carry. The route and the time are on a paper scrap, Pause hangs on a luggage tag, an altimeter tape runs down the left edge, and Undo, Look and each hand's strength hang from a rope sling on carabiners; a grip halo over the helmet shows both hands. The one thing to do next is a strap of orange webbing, the rest are typed index lines; pages are ruled and torn, final things get an ink stamp, and counts are tally marks.
+- After a fall, a torn page of the log explains why you fell and shows your hand strength before the fall in pencil; at the top you sign the summit register.
 - Records: best time per route, highest point, today's best on the Daily Wall, and a log of tops, metres, falls (and how many you caught) and time.
-- A climber drawn in code (helmet, ponytail, harness, quickdraws and chalk bag that swing), sunset clouds, mountains, birds, lamps and snow.
+- Climbers drawn in code, each in their own build and clothes, with soft shading and thin outlines, and a harness, quickdraws, chalk bag and hair that swing; holds that are part of the rock; a sky, clouds and snowy mountain ranges in the colours of the hour; lamps, mist, falling snow, frost and birds.
+- While you aim, chalk on the rock shows where a hand or foot can go: a ring is a good hold, a broken ring a poor one, a cross no hold, a ring of dots a jump, with a word like "jug!" or "crimp" by the hold under your finger. The shape says it, so it reads without colour.
 - Calm music (electric piano, a soft pad, bass and kalimba, no drums) and soft sound effects in the same key, with wind that grows as you climb. Phones also buzz a little on grabs, slips and landings.
-- Soft animations everywhere: cards and tips slide in, buttons press in, holds give a little when you grab them, lamps send out a ring of light, grass sways, dust floats in the evening light, the hand gauges pulse when a hand is about to slip, and the end-of-climb numbers count up. All of it turns off when the phone asks for less motion.
+- Soft animations everywhere: cards and tips slide in, buttons press in, holds give a little when you grab them, lamps send out a ring of light, grass sways, dust floats in the evening light, snow falls and mist drifts, luggage tags sway, the grip halo and a hand's tag pulse when the hand is about to slip, stamps land, and the end-of-climb numbers count up. All of it turns off when the phone asks for less motion.
 
 ## Climbers
 
@@ -36,7 +39,24 @@ Pick a climber on the title screen. Each has four stats from 1 to 5 that always 
 - **Rest**: how fast a hand gets its grip back (15% per point).
 - **Jump**: how far a jump goes (10 cm per point), how long you have to grab a second hold after it, and how much grip a catch costs, after a jump or in a fall.
 
-`test/balance_test.dart` checks that this stays fair: a small bot climbs every route with every climber using the real rules, and the test fails if one climber cannot reach the top or needs a lot more moves than the others. Best times remember who set them.
+Each one also looks and moves like themselves (only for show; the rules use the stats):
+
+| Climber | Build | Wears | Hanging still | At the top | Falling |
+| --- | --- | --- | --- | --- | --- |
+| Ada | in between | a helmet, a ponytail, a T-shirt, climbing pants | looks up the route, then around | a fist pump | flails |
+| Rio | tall and lanky | a beanie, a racerback tank top, three quarter pants, a watch | sways and takes in the view | arms wide | windmills |
+| Mei | small and compact | a headband, a braid, a hoodie, leggings, taped fingers | studies the holds above | claps | tucks in |
+| Kai | broad and springy | a sweatband, a top knot, a loose T-shirt with rolled sleeves, joggers, wristbands | bounces on the toes | jumps, arms up | a starfish |
+
+`test/balance_test.dart` checks that this stays fair: a small bot climbs every route with every climber using the real rules, and the test fails if one climber cannot reach the top or needs a lot more moves than the others. It also replays those climbs with the real grip rules to check that the snow costs the hands only a little more (about 5%) and hits everyone about the same. Best times remember who set them.
+
+## The mountain
+
+Each route climbs a mountain, and what you see follows how far up it you are (`lib/game/mountain.dart`, with the colours from the Field Book in `lib/game/field_book.dart`):
+
+- **Four bands**: valley (the first quarter of a route), cliff band, icefall and summit ridge. Each has its own colours for the sky, the far and near ranges, the rock and the holds, blended at the edges so nothing jumps. On the Daily Wall the icefall starts at the snow line (about 19 m) and the summit ridge at about 41 m.
+- **The hour passes as you climb**: every route starts on a clear afternoon and reaches dusk near its top, with the sun going down behind the ranges. The hard route goes on into the night over its upper part, and the Daily Wall turns to night from about 50 m: the moon and stars come out, and outside the headlamp's circle (around you and the hold you aim at) it is dark. Looking out over the route lifts the night a little. Frost creeps in at the edges of the screen high up and at night.
+- **Snow** lies on the upper part of every route (from the icefall band on, more of it higher up) and falls there, in flakes at three depths that drift and come in gusts. A hold that starts under snow is slick: a hand on it tires 1.5 times as fast, and a foot on it helps the hands less. After a hand has held it for 1.2 s (a foot stood on it for 0.8 s) the snow is brushed off with a puff, and it is like any other hold. Ledges, the ground and the top carry snow too, but you stand on those, so it never makes them slick. A fall card says when snow made a hold slick.
 
 ## Run it
 
@@ -47,7 +67,7 @@ flutter pub get
 flutter run
 ```
 
-The `android`, `ios` and `web` folders are included. If you ever need to rebuild one of them, run `flutter create . --platforms=android,ios,web --org com.muqaddamali --project-name topout`; it only adds missing files and does not change `lib/`.
+The `android`, `ios` and `web` folders are included. If you ever need to rebuild one of them, run `flutter create . --platforms=android,ios,web --org com.mw --project-name topout`; it only adds missing files and does not change `lib/`.
 
 The game is made for phones held upright (portrait). It also runs on the web and on desktop. On a desktop you can use the keyboard: **U** undo, **L** look, **Space** catch a hold while falling, **Esc** pause or back, **Enter** try again or go on. Online there is more: **A/D** or the arrows walk, **1 2 3** emote, **Q W E R** quick chat, **Tab** watch (see docs/MULTIPLAYER.md).
 
@@ -91,10 +111,17 @@ To build the same thing on your own machine: `bash tool/vercel_build.sh` (set `F
 | `lib/game/game.dart` | Game state, the 60 Hz simulation, touch input, falls and saves |
 | `lib/game/records.dart` | Best heights and times per route and mode, and the climbing log |
 | `lib/game/effects.dart` | Things that move by themselves, only for show: particles, dust in the light, birds |
+| `lib/game/snowfall.dart` | Falling snow, in screen space, at three depths, with gusts |
+| `lib/game/mountain.dart` | The mountain around a route: its band and hour at each height, how much snow lies there, which holds start under snow |
+| `lib/game/field_book.dart` | The Field Book look (design/field-book/HANDOFF.md): kit colours, the mountain's palettes, type styles |
 | `lib/game/body.dart` | The climber's body: pose, arms and legs (two-bone IK, scaled to each climber's reach), and the gear that swings |
-| `lib/game/scene.dart` | Paints the world: sky, clouds, mountains, rock, holds, ledges, lamps, aiming markers, particles, dust |
-| `lib/game/climber.dart` | Paints a climber (cel shading, seen from behind) in their colours and hair style |
-| `lib/game/art.dart` | Art made once: the rock texture (with its facets), cloud sprites, stars, grass |
+| `lib/game/moves.dart` | Each climber's own moves (fidgets, the cheer at the top, the flail in a fall) and the springs the body, the view and the head move on |
+| `lib/game/scene.dart` | Paints the world: the rock in the mountain's colours, holds, ledges, lamps, trail blazes, chalk marks while you aim, particles, snow, the headlamp and frost |
+| `lib/game/scenery.dart` | The world behind the wall: the sky, sun, moon and stars, clouds, mountain ranges with snowy peaks, mist |
+| `lib/game/holds.dart` | The holds as features of the rock, three shapes of each kind, with their chalk and snow, drawn once into one atlas |
+| `lib/game/chalk.dart` | The chalk marks (ring, broken ring, cross, dots) and chalk words |
+| `lib/game/climber.dart` | Paints a climber, seen from behind, in their own build, clothes and colours (soft shading, thin outlines in a darker shade of each part) |
+| `lib/game/art.dart` | Art made once: the rock texture (and the snow that sits on it), cloud sprites, mist, snowflakes, trail blazes, stars, grass |
 | `lib/game/baked.dart` | `Baked`: a drawing turned into an image once, so drawing it again is cheap (see Keeping it fast) |
 | `lib/game/audio.dart` | Music, wind and sound effects: when and how loud, plus phone buzzes |
 | `lib/game/audio_engine*.dart` | Plays the files: one Web Audio graph in browsers, `audioplayers` on phones and desktops |
@@ -102,11 +129,13 @@ To build the same thing on your own machine: `bash tool/vercel_build.sh` (set `F
 | `lib/game/online.dart` | Online play: the connection to the room server, the room and the lobby |
 | `lib/game/remote.dart` | Other players' climbers: the state sent over the network, played back smoothly |
 | `lib/game/walk.dart` | Online: standing and walking on flat holds, the emotes, the quick chat phrases |
+| `lib/ui/kit.dart` | The Field Book parts: paper, tape, luggage tags, the webbing strap, index lines, index cards, ink stamps, tally marks, the log page, pencil marks |
 | `lib/ui/` | Flutter widgets: title screen and climber picker, Play online and the lobby, HUD, fall, top, pause and room results cards |
 | `server/` | The room server for online play (Node.js and Socket.io), with bots for testing |
 | `docs/MULTIPLAYER.md` | How to test online play and put the server online |
 | `assets/audio/` | Music and sounds (MP3) |
-| `assets/fonts/` | Big Shoulders Display, Atkinson Hyperlegible, IBM Plex Mono (SIL Open Font License, see `assets/fonts/licenses`) |
+| `assets/fonts/` | Archivo ExtraCondensed Black (titles, buttons, big numbers), Courier Prime (anything typed), Reenie Beanie (a few handwritten words), Atkinson Hyperlegible (sentences), all under the SIL Open Font License (see `assets/fonts/licenses`) |
+| `design/field-book/` | The design handoff for the look: mockups, tokens and notes |
 | `web_prototype/` | The original web version (one HTML file) and its rules (`core.js`) |
 | `tool/` | Scripts that make the test data and the sound files, and the Vercel build script |
 
@@ -114,15 +143,15 @@ To build the same thing on your own machine: `bash tool/vercel_build.sh` (set `F
 
 On the web every layer is drawn again each frame (there is no raster cache), so the game avoids work that costs per pixel or per draw call:
 
-- Art that never changes is drawn once into an image and then stamped: the rock texture (one textured rectangle covers the wall), the clouds, every kind of hold (all holds in view are one `drawRawAtlas` call), the climber's torso, shoes and bag, and the portraits and route maps on the title screen (`CachedPaint` in `lib/ui/widgets.dart`). On the web, the image `toImageSync` gives would be drawn again from its picture every time, so `Baked` (`lib/game/baked.dart`) reads its pixels back once and keeps a plain image. The web engine reads back on the same surface it draws frames on, so `Baked` packs the waiting images into one read-back exactly the size of the frame (then the surface is never resized under a frame), and checks a marker pixel to know nothing was clipped.
-- No blurs: shadows and glows are flat or soft strokes. The mountains are one fill each and stop just under the summit (big anti-aliased paths are slow). The climber is recorded once and drawn twice, as the shadow (a layer only as big as the climber) and for real.
+- Art that never changes is drawn once into an image and then stamped: the rock texture (one textured rectangle covers the wall, tinted with the mountain's colour by a colour filter, and its snow is a second one), the clouds (tinted the same way), every kind of hold (all holds in view are one `drawRawAtlas` call tinted with the hold colour, and their chalk and snow a second one), the chalk marks, the climber's torso, shoes and bag, and the portraits, route maps and ink stamps (`CachedPaint` in `lib/ui/widgets.dart`). On the web, the image `toImageSync` gives would be drawn again from its picture every time, so `Baked` (`lib/game/baked.dart`) reads its pixels back once and keeps a plain image. The web engine reads back on the same surface it draws frames on, so `Baked` packs the waiting images into one read-back exactly the size of the frame (then the surface is never resized under a frame), and checks a marker pixel to know nothing was clipped.
+- No blurs while playing: shadows and glows are flat, soft strokes or gradients. The soft shadows of the holds and the edges of mist and snow are blurred once, when they are baked. The mountains and their snow caps are triangle meshes (`drawVertices`) with a clear one-pixel fringe for smooth edges, not paths: big concave anti-aliased paths are slow, and on the web they were filled again from scratch every frame. Each range stops just under the summit. The climber is recorded once and drawn three times: twice as the shadow, a little apart, for a soft edge (layers only as big as the climber), and for real. The headlamp and the frost are one gradient rectangle each, and falling snow is one `drawRawAtlas` call.
 - Particles and dust are drawn in a few batches (`drawRawPoints`), and only holds near the view are looked at (`ClimbRoute.byY`).
 - The web build draws at most 2 pixels per CSS pixel (`web/index.html`), and nothing behind a card that covers the screen is updated.
-- The HUD is not rebuilt every frame. Each number on it (height, time, grip) rebuilds only when the shown value changes (`FrameSelect` in `lib/ui/hud.dart`).
+- The HUD is not rebuilt every frame. Each number on it (height, time, grip) rebuilds only when the shown value changes (`FrameSelect` in `lib/ui/hud.dart`). Its paper is drawn with flat fills and a few lines, and its shadows are offset copies, not blurs.
 - On the web, the sound effects are decoded once and played from memory through a single `AudioContext`.
 
 - A wall with lanes costs the same per frame as one lane: ledges and the long top are only drawn near the view, like the holds.
-- Other players' climbers are drawn the cheap way (flat colours, no cel bands, no small gear), and the ones far outside the view are skipped. Their walking is played back from how the body moves (no extra data), name tags, bubbles and arrow labels are laid out once per text and kept, and a full room of 8 walking, emoting and chatting measured about 140 fps (build 2–3 ms, raster 6–7 ms) on a laptop.
+- Other players' climbers are drawn the cheap way (flat colours, no shading, no small gear), and the ones far outside the view are skipped. Their walking is played back from how the body moves (no extra data), name tags, bubbles and arrow labels are laid out once per text and kept, and a full room of 8 walking, emoting and chatting measured about 140 fps (build 2–3 ms, raster 6–7 ms) on a laptop.
 
 To measure, open the web build with `?perf` (frame times in the browser console every 2 s) or `?perf=steps` to also start that route (`first`, `steps`, `crimps`, `daily`). `?perf=online` makes a room and prints the command that fills it with bots; it starts by itself when 8 climbers are in (see docs/MULTIPLAYER.md). In a profile build (`flutter run -d chrome --profile`), `?perf=steps&lanes=4` measures a route on a wall with 4 lanes (`?lanes` works in debug and profile builds only).
 
@@ -141,9 +170,3 @@ python tool/make_audio.py grab foot    # only the files whose names start so
 ```
 
 The files are balanced against each other; `GameAudio` in `lib/game/audio.dart` sets the music and wind under them and gives each effect its own level (`Sfx`).
-
-## Before you publish to the stores
-
-- The app id is `com.muqaddamali.topout`. Change it if you want a different one before your first upload.
-- Make an app icon and a splash screen.
-- Set up release signing for Android (`android/key.properties`) and a team for iOS.

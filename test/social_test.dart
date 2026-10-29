@@ -246,18 +246,18 @@ void main() {
 
   testWidgets('the ready check: Ready in the lobby, everyone sees who is ready, the creator sees how many', (tester) async {
     await lobby(tester, 3);
-    expect(find.text('Start · 0/3 ready'), findsOneWidget);
-    await tester.ensureVisible(find.text('Ready'));
-    await tester.tap(find.text('Ready'));
+    expect(find.text('START · 0/3 READY'), findsOneWidget);
+    await tester.ensureVisible(find.text("I'M READY"));
+    await tester.tap(find.text("I'M READY"));
     await frames(tester, 0.2);
     expect(link.last('ready'), isTrue);
     link.push('room', room(3, started: false, ready: [true, false, true]));
     await frames(tester, 0.3);
-    expect(find.text('Start · 2/3 ready'), findsOneWidget);
+    expect(find.text('START · 2/3 READY'), findsOneWidget);
     expect(find.text('READY'), findsNWidgets(2));
-    expect(find.text('Ready ✓'), findsOneWidget);
+    expect(find.text('READY ✓'), findsOneWidget);
     // tapping again: not ready
-    await tester.tap(find.text('Ready ✓'));
+    await tester.tap(find.text('READY ✓'));
     await frames(tester, 0.2);
     expect(link.last('ready'), isFalse);
     await done(tester);

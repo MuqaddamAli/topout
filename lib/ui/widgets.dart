@@ -4,30 +4,43 @@ import 'package:flutter/material.dart';
 
 import '../game/art.dart';
 import '../game/core.dart';
+import '../game/field_book.dart';
 import '../game/palette.dart';
+import 'kit.dart';
 
-/// Text styles (fonts are in assets/fonts).
+/// Text styles (fonts are in assets/fonts). The Field Book's three hands:
+/// Archivo for titles (write them in capitals), Courier for anything typed,
+/// Atkinson for sentences. See also [FbTxt].
 class Txt {
-  static TextStyle display(double size, {FontWeight weight = FontWeight.w800, Color? color, double spacing = 0.02}) =>
+  /// Archivo ExtraCondensed Black. It has one weight; [weight] is kept so
+  /// call sites keep working.
+  static TextStyle display(double size, {FontWeight weight = FontWeight.w900, Color? color, double spacing = 0.01}) =>
       TextStyle(
-        fontFamily: 'BigShoulders',
-        fontWeight: weight,
+        fontFamily: 'ArchivoXC',
+        fontWeight: FontWeight.w900,
         fontSize: size,
-        height: 0.95,
+        height: 0.9,
         letterSpacing: size * spacing,
-        color: color ?? Pal.chalk,
+        color: color ?? Kit.blazeWhite,
       );
   static TextStyle body(double size, {FontWeight weight = FontWeight.w400, Color? color, double height = 1.38}) =>
-      TextStyle(fontFamily: 'Atkinson', fontSize: size, fontWeight: weight, color: color ?? Pal.chalk, height: height);
-  static TextStyle mono(double size, {Color? color}) =>
-      TextStyle(fontFamily: 'PlexMono', fontSize: size, fontWeight: FontWeight.w500, color: color ?? Pal.chalk, height: 1.1);
+      TextStyle(fontFamily: 'Atkinson', fontSize: size, fontWeight: weight, color: color ?? Kit.blazeWhite, height: height);
 
-  /// Small capitals label, like "ROUTES".
-  static TextStyle eyebrow({double size = 11, double spacing = 0.16, Color? color}) => TextStyle(
-        fontFamily: 'Atkinson',
+  /// Courier Prime: numbers, times and typed lines.
+  static TextStyle mono(double size, {Color? color, bool bold = true}) => TextStyle(
+      fontFamily: 'CourierPrime',
+      fontSize: size,
+      fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+      color: color ?? Kit.blazeWhite,
+      height: 1.1);
+
+  /// Small typed capitals, like "ROUTES".
+  static TextStyle eyebrow({double size = 11, double spacing = 0.12, Color? color}) => TextStyle(
+        fontFamily: 'CourierPrime',
+        fontWeight: FontWeight.w700,
         fontSize: size,
-        letterSpacing: size * spacing,
-        color: color ?? Pal.chalkDim,
+        letterSpacing: size * spacing.clamp(0.08, 0.14),
+        color: color ?? Kit.blazeWhite.withValues(alpha: 0.7),
         height: 1.2,
       );
 }
@@ -112,7 +125,9 @@ class Stagger extends StatelessWidget {
   }
 }
 
-/// Button in the game's style. [primary] is the orange one.
+/// Button in the game's style. [primary] is the one thing to do next, a
+/// strap of webbing; the others are index lines ([index] is the number they
+/// show).
 class GameButton extends StatelessWidget {
   const GameButton({
     super.key,
@@ -120,74 +135,82 @@ class GameButton extends StatelessWidget {
     required this.onTap,
     this.primary = false,
     this.icon,
-    this.minHeight = 48,
+    this.minHeight = 64,
     this.width,
-    this.radius = 14,
     this.on = false,
-    this.compact = false,
     this.semanticLabel,
+    this.index,
+    this.extra,
+    this.keyHint,
   });
   final String label;
   final VoidCallback? onTap;
   final bool primary;
   final IconData? icon;
+
+  /// The height of a webbing strap (at least 64).
   final double minHeight;
   final double? width;
-  final double radius;
 
-  /// Highlighted (like the Look button while looking).
+  /// Picked (an index line gets a pencil ring).
   final bool on;
-
-  /// Icon above a small capital label (the HUD buttons).
-  final bool compact;
   final String? semanticLabel;
+
+  /// The number an index line shows (02, 03…).
+  final int? index;
+
+  /// Small typed text at the end of a webbing strap.
+  final String? extra;
+
+  /// A key that does the same, shown on a desktop.
+  final String? keyHint;
 
   @override
   Widget build(BuildContext context) {
-    final filled = primary || on;
-    final fg = filled ? Pal.signalInk : Pal.chalk;
-    final disabled = onTap == null;
-    final Widget content;
-    if (compact) {
-      content = Column(mainAxisSize: MainAxisSize.min, children: [
-        if (icon != null) Icon(icon, size: 22, color: fg),
-        const SizedBox(height: 3),
-        Text(label.toUpperCase(), style: Txt.body(11, weight: FontWeight.w700, color: fg).copyWith(letterSpacing: 0.9)),
-      ]);
-    } else {
-      content = Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-        if (icon != null) ...[Icon(icon, size: 22, color: fg), if (label.isNotEmpty) const SizedBox(width: 8)],
-        if (label.isNotEmpty) Text(label, style: Txt.body(15, weight: FontWeight.w700, color: fg, height: 1.1)),
-      ]);
-    }
+    final Widget b = primary
+        ? WebbingButton(label: label, onTap: onTap, extra: extra ?? keyHint, height: math.max(minHeight, 64), semanticLabel: semanticLabel)
+        : IndexLine(label: label, onTap: onTap, number: index, icon: icon, on: on, semanticLabel: semanticLabel, keyHint: keyHint);
+    return width == null ? b : SizedBox(width: width, child: b);
+  }
+}
+
+/// One choice of a few side by side (Relaxed, Normal, No saves): the picked
+/// one has a pencil ring round it.
+class GameChoice extends StatelessWidget {
+  const GameChoice({super.key, required this.label, required this.on, required this.onTap});
+  final String label;
+  final bool on;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = Surface.ink(context);
     return Semantics(
+      inMutuallyExclusiveGroup: true,
+      checked: on,
+      label: label,
       button: true,
-      enabled: !disabled,
-      label: semanticLabel ?? label,
       excludeSemantics: true,
-      child: AnimatedOpacity(
-        opacity: disabled ? 0.38 : 1,
-        duration: const Duration(milliseconds: 180),
-        child: PressScale(
-          enabled: !disabled,
-          child: SizedBox(
-            width: width,
-            child: Material(
-              color: filled ? Pal.signal : Pal.ink2,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(radius),
-                side: filled ? BorderSide.none : BorderSide(color: Pal.line, width: 1.5),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: onTap,
-                splashColor: Pal.chalk.withAlpha(30),
-                highlightColor: Pal.chalk.withAlpha(18),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: minHeight),
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: compact || label.isEmpty ? 0 : 18, vertical: compact ? 6 : 0),
-                    child: Center(widthFactor: width == null ? 1 : null, heightFactor: 1, child: content),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: PressScale(
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 46),
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: CustomPaint(
+                foregroundPainter: on ? PencilRing(color: ink) : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(label.toUpperCase(),
+                        maxLines: 1,
+                        textAlign: TextAlign.center,
+                        style: FbTxt.label(22, color: on ? ink : ink.withValues(alpha: 0.62))),
                   ),
                 ),
               ),
@@ -199,77 +222,7 @@ class GameButton extends StatelessWidget {
   }
 }
 
-/// A dark rounded panel with a title in capitals.
-class GamePanel extends StatelessWidget {
-  const GamePanel({super.key, required this.title, required this.children});
-  final String title;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Pal.ink2,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Pal.line, width: 1.5),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title.toUpperCase(), style: Txt.display(20, spacing: 0.06)),
-        for (final c in children) ...[const SizedBox(height: 12), c],
-      ]),
-    );
-  }
-}
-
-/// One choice of a few side by side (Relaxed, Normal, No saves): orange when on.
-class GameChoice extends StatelessWidget {
-  const GameChoice({super.key, required this.label, required this.on, required this.onTap});
-  final String label;
-  final bool on;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      inMutuallyExclusiveGroup: true,
-      checked: on,
-      label: label,
-      button: true,
-      excludeSemantics: true,
-      child: PressScale(
-        child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        decoration: BoxDecoration(
-          color: on ? Pal.signal : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Material(
-        color: Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: on ? BorderSide.none : BorderSide(color: Pal.line, width: 1.5),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 46),
-            alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(label,
-                textAlign: TextAlign.center,
-                style: Txt.body(14, weight: FontWeight.w700, color: on ? Pal.signalInk : Pal.chalk, height: 1.1)),
-          ),
-        ),
-      ),
-      ),
-      ),
-    );
-  }
-}
-
-/// On/off switch with a label (Music, Sounds).
+/// On/off switch with a label (Music, Sounds): a box drawn in pencil, ticked when on.
 class GameToggle extends StatelessWidget {
   const GameToggle({super.key, required this.label, required this.value, required this.onChanged});
   final String label;
@@ -283,35 +236,18 @@ class GameToggle extends StatelessWidget {
       label: label,
       button: true,
       excludeSemantics: true,
-      child: Material(
-        color: Colors.transparent,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12), side: BorderSide(color: Pal.line, width: 1.5)),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: () => onChanged(!value),
           child: Container(
             constraints: const BoxConstraints(minHeight: 44),
-            padding: const EdgeInsets.fromLTRB(10, 0, 14, 0),
+            padding: const EdgeInsets.fromLTRB(2, 0, 12, 0),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                width: 34,
-                height: 20,
-                decoration: BoxDecoration(color: value ? Pal.signal : Pal.ink3, borderRadius: BorderRadius.circular(10)),
-                child: AnimatedAlign(
-                  duration: const Duration(milliseconds: 150),
-                  alignment: value ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
-                    width: 14,
-                    height: 14,
-                    margin: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(color: value ? Pal.signalInk : Pal.chalkDim, shape: BoxShape.circle),
-                  ),
-                ),
-              ),
+              PencilBox(on: value),
               const SizedBox(width: 10),
-              Text(label, style: Txt.body(14, weight: FontWeight.w700, height: 1.1)),
+              Text(label.toUpperCase(), style: FbTxt.typed(15, bold: true, color: Surface.ink(context), height: 1.1)),
             ]),
           ),
         ),
@@ -320,86 +256,10 @@ class GameToggle extends StatelessWidget {
   }
 }
 
-/// Three bars that show how hard a route is.
-class Pips extends StatelessWidget {
-  const Pips({super.key, required this.level});
-  final int level;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      label: const ['', 'Easy', 'Medium', 'Hard'][level.clamp(0, 3)],
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          for (var k = 1; k <= 3; k++)
-            Container(
-              width: 5,
-              height: 3.0 + k * 3,
-              margin: EdgeInsets.only(left: k == 1 ? 0 : 3),
-              decoration: BoxDecoration(color: k <= level ? Pal.signal : Pal.line, borderRadius: BorderRadius.circular(1.5)),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class DailyBadge extends StatelessWidget {
-  const DailyBadge({super.key});
-  @override
-  Widget build(BuildContext context) => Container(
-        height: 20,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(color: Pal.jump, borderRadius: BorderRadius.circular(6)),
-        child: Text('DAILY',
-            style: Txt.body(11, weight: FontWeight.w700, color: hex(0x0b1a26), height: 1).copyWith(letterSpacing: 0.9)),
-      );
-}
-
-/// The ring that shows how strong a hand still is. [glow] (0 to 1) is a red
-/// halo that pulses while the hand is about to slip.
-class GaugePainter extends CustomPainter {
-  GaugePainter(this.value, {this.glow = 0});
-  final double value;
-  final double glow;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final s = size.width / 64;
-    canvas.scale(s);
-    const center = Offset(32, 32);
-    if (glow > 0) {
-      // two soft rings instead of a blur, which would be redrawn every frame on the web
-      final halo = Paint()..style = PaintingStyle.stroke;
-      canvas.drawCircle(center, 28 + glow * 2, halo..strokeWidth = 9..color = Pal.bad.withAlpha((glow * 40).round()));
-      canvas.drawCircle(center, 27.5 + glow, halo..strokeWidth = 5..color = Pal.bad.withAlpha((glow * 60).round()));
-    }
-    final track = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 5
-      ..color = Pal.ink3;
-    canvas.drawCircle(center, 26, track);
-    final v = value.clamp(0.0, 100.0) / 100;
-    if (v <= 0) return;
-    final col = value > 60 ? Pal.good : (value > 30 ? Pal.weak : Pal.bad);
-    canvas.drawArc(Rect.fromCircle(center: center, radius: 26), -math.pi / 2, math.pi * 2 * v, false,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 5
-          ..strokeCap = StrokeCap.round
-          ..color = col);
-  }
-
-  @override
-  bool shouldRepaint(covariant GaugePainter old) => old.value != value || old.glow != glow;
-}
-
-/// Hand strength over the last seconds before a fall. Red shading shows
-/// moments with no feet on the wall, yellow with one foot. [progress] (0 to 1)
-/// draws the line from the left, so it can be played in.
+/// Hand strength over the last seconds before a fall, as a pencil line on
+/// the page: it turns blaze red where the hand was running out. Red shading
+/// shows moments with no feet on the wall, yellow with one foot. [progress]
+/// (0 to 1) draws the line from the left, so it can be played in.
 class TracePainter extends CustomPainter {
   TracePainter(this.trace, this.hand, {this.progress = 1});
   final List<List<double>> trace;
@@ -409,41 +269,39 @@ class TracePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final w = size.width, h = size.height;
-    canvas.drawRRect(RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(10)), Paint()..color = Pal.ink);
     final n = trace.length;
     if (n < 2) return;
-    double px(int k) => 8 + (w - 16) * (80 - n + k) / 79;
-    double py(double v) => h - 8 - (h - 16) * v / 100;
+    double px(int k) => 4 + (w - 8) * (80 - n + k) / 79;
+    double py(double v) => h - 6 - (h - 12) * v / 100;
     final band = Paint();
     for (var k = 0; k < n; k++) {
       final fw = trace[k][2];
       if (fw < 2) {
-        band.color = fw == 0 ? rgba(255, 90, 90, 0.22) : rgba(244, 198, 77, 0.14);
+        band.color = fw == 0 ? rgba(196, 42, 28, 0.12) : rgba(217, 164, 65, 0.16);
         canvas.drawRect(Rect.fromLTWH(px(k) - w / 160, 0, w / 79 + 1, h), band);
       }
     }
-    canvas.drawLine(Offset(0, py(30)), Offset(w, py(30)),
-        Paint()
-          ..color = rgba(242, 237, 228, 0.18)
-          ..strokeWidth = 1);
-    // the line, up to where it has been played in
+    // where a hand starts to slip
+    canvas.drawPath(dashLine(0, py(30), w, py(30), 4, 4), Paint()
+      ..style = PaintingStyle.stroke
+      ..color = Kit.blaze.withValues(alpha: 0.45)
+      ..strokeWidth = 1);
+    // the line, up to where it has been played in: graphite, red when low
     final upTo = (n - 1) * progress.clamp(0.0, 1.0), last = upTo.floor();
-    final line = Path()..moveTo(px(0), py(trace[0][hand]));
-    for (var k = 1; k <= last; k++) {
-      line.lineTo(px(k), py(trace[k][hand]));
+    final pencil = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    for (var k = 1; k <= math.min(last + 1, n - 1); k++) {
+      final f = k <= last ? 1.0 : upTo - last;
+      if (f <= 0) break;
+      final a = Offset(px(k - 1), py(trace[k - 1][hand]));
+      final b = Offset(px(k - 1) + (px(k) - px(k - 1)) * f, py(trace[k - 1][hand] + (trace[k][hand] - trace[k - 1][hand]) * f));
+      pencil.color = trace[k][hand] < 30 ? Kit.blaze : Kit.graphite;
+      canvas.drawLine(a, b, pencil);
     }
-    if (last < n - 1) {
-      final f = upTo - last;
-      line.lineTo(px(last) + (px(last + 1) - px(last)) * f, py(trace[last][hand] + (trace[last + 1][hand] - trace[last][hand]) * f));
-    }
-    canvas.drawPath(
-        line,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.2
-          ..strokeJoin = StrokeJoin.round
-          ..color = Pal.chalk);
-    if (progress >= 1) canvas.drawCircle(Offset(px(n - 1), py(trace[n - 1][hand])), 4, Paint()..color = Pal.bad);
+    if (progress >= 1) canvas.drawCircle(Offset(px(n - 1), py(trace[n - 1][hand])), 4, Paint()..color = Kit.blaze);
   }
 
   @override
@@ -498,54 +356,165 @@ class _ImagePainter extends CustomPainter {
   bool shouldRepaint(covariant _ImagePainter old) => old.baked != baked;
 }
 
-/// A small map of a route for the route cards.
+/// The topo of a route, drawn in the field book: the outline of the face
+/// with a wash of colour for each band of the mountain, pencil hatching
+/// along its edges, the line the route takes, the ledges as numbered belay
+/// circles, a flag on the top, and a height scale down the right. The
+/// Daily Wall shows its first three sections.
 class TopoPainter extends CustomPainter {
   TopoPainter(this.route);
   final ClimbRoute route;
 
+  static final List<Color> _washes = [hex(0xBCCB9A), hex(0xDCC9A0), hex(0xBFD9E8), hex(0xD3DAEA)];
+
   @override
   void paint(Canvas canvas, Size size) {
-    const w = 144.0, hh = 256.0;
-    canvas.save();
-    canvas.clipRRect(RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(12)));
-    canvas.scale(size.width / w, size.height / hh);
-    final r = route;
-    final p = Paint();
-    p.shader = LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [hex(0x2b2f55), hex(0xc47b74)])
-        .createShader(const Rect.fromLTWH(0, 0, w, 44));
-    canvas.drawRect(const Rect.fromLTWH(0, 0, w, 44), p);
+    final r = route, w = size.width, h = size.height;
     final span = r.endless ? 3 * chunkHeight : r.topY;
-    final s = math.min((w - 12) / 300, (hh - 40) / (span + 40));
-    double x(double v) => w / 2 + (v - 180) * s;
-    double y(double v) => hh - 12 - v * s;
-    p.shader = LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [hex(0x7b7488), hex(0x3e4350)])
-        .createShader(const Rect.fromLTWH(0, 0, w, hh));
-    final rock = Path()..moveTo(0, hh);
-    for (var px = 0.0; px <= w; px += 6) {
-      rock.lineTo(px, r.endless ? 0 : y(r.topY + 60) + math.sin(px * 0.2) * 3);
+    final left = w * 0.04, right = w * 0.86, top = h * 0.08, bottom = h - 4;
+    double x(double v) => left + (v - Wall.left) / (Wall.right - Wall.left) * (right - left);
+    double y(double v) => bottom - v / span * (bottom - top);
+    final rng = Rng(r.id.length * 17 + 3);
+    // the face: ragged sides that lean in toward a summit
+    final face = Path()..moveTo(x(-4), bottom);
+    final pts = <Offset>[];
+    for (var k = 0; k <= 10; k++) {
+      final u = k / 10, lean = u * u * 0.18;
+      pts.add(Offset(x(-4) + (right - left) * lean + (rng() - 0.5) * w * 0.03, bottom - u * (bottom - top)));
     }
-    rock
-      ..lineTo(w, hh)
-      ..close();
-    canvas.drawPath(rock, p);
-    p.shader = null;
-    for (final h in r.holds) {
-      if (h.t == HoldType.ground || h.y > span + 30) continue;
-      if (h.t.wide) {
-        p.color = h.t == HoldType.top ? Pal.signal : Pal.chalk;
-        canvas.drawRect(Rect.fromLTWH(x(h.x), y(h.y) - 1.5, (h.x2! - h.x) * s, 3), p);
-        continue;
+    for (final p in pts) {
+      face.lineTo(p.dx, p.dy);
+    }
+    final peak = Offset((left + right) / 2 + (rng() - 0.5) * w * 0.06, top - h * 0.05);
+    face.lineTo(peak.dx, peak.dy);
+    final rightPts = <Offset>[];
+    for (var k = 10; k >= 0; k--) {
+      final u = k / 10, lean = u * u * 0.18;
+      rightPts.add(Offset(x(364) - (right - left) * lean + (rng() - 0.5) * w * 0.03, bottom - u * (bottom - top)));
+    }
+    for (final p in rightPts) {
+      face.lineTo(p.dx, p.dy);
+    }
+    face.close();
+    canvas.save();
+    canvas.clipPath(face);
+    // a wash for each band: valley, cliff band, icefall, summit ridge
+    for (var b = 0; b < 4; b++) {
+      final y0 = bottom - (b + 1) / 4 * (bottom - top + h * 0.06), y1 = bottom - b / 4 * (bottom - top + h * 0.06);
+      canvas.drawRect(Rect.fromLTRB(0, y0, w, y1 + 1), Paint()..color = _washes[b].withValues(alpha: 0.75));
+    }
+    // snow up high
+    canvas.drawRect(Rect.fromLTRB(0, 0, w, top + (bottom - top) * 0.12), Paint()..color = hex(0xF7F4EC).withValues(alpha: 0.85));
+    // pencil hatching along the edges
+    final hatch = Paint()
+      ..strokeWidth = 1
+      ..strokeCap = StrokeCap.round
+      ..color = Kit.ink.withValues(alpha: 0.4);
+    for (var k = 0; k < pts.length - 1; k++) {
+      for (var t = 0.0; t < 1; t += 0.34) {
+        final a = Offset.lerp(pts[k], pts[k + 1], t)!;
+        canvas.drawLine(a + const Offset(3, 0), a + const Offset(11, -7), hatch);
       }
-      p.color = switch (h.t) {
-        HoldType.chip => rgba(242, 237, 228, 0.4),
-        HoldType.crimp => Pal.weak,
-        HoldType.sloper => hex(0xf0a35a),
-        _ => Pal.chalk,
-      };
-      canvas.drawCircle(Offset(x(h.x), y(h.y)), h.t == HoldType.chip ? 1.5 : 2.4, p);
     }
-    canvas.drawRect(const Rect.fromLTWH(0, hh - 12, w, 12), p..color = Pal.earth);
+    for (var k = 0; k < rightPts.length - 1; k++) {
+      for (var t = 0.0; t < 1; t += 0.34) {
+        final a = Offset.lerp(rightPts[k], rightPts[k + 1], t)!;
+        canvas.drawLine(a - const Offset(3, 0), a - const Offset(11, 7), hatch);
+      }
+    }
     canvas.restore();
+    final ink = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeJoin = StrokeJoin.round
+      ..color = Kit.ink;
+    canvas.drawPath(face, ink);
+    // the line the route takes: through the middle of the hand holds, band by band
+    final line = <Offset>[Offset(x(180), y(60))];
+    const step = 70.0;
+    for (var b = 60.0 + step; b < span; b += step) {
+      var sx = 0.0, n = 0;
+      for (final hd in r.holds) {
+        if (hd.t.wide || hd.t.hand == Quality.no || hd.y < b - step / 2 || hd.y > b + step / 2) continue;
+        sx += hd.x;
+        n++;
+      }
+      if (n > 0) line.add(Offset(x(sx / n), y(b)));
+    }
+    if (!r.endless) line.add(Offset(x(180), y(span)));
+    final path = Path()..moveTo(line.first.dx, line.first.dy);
+    for (var k = 1; k < line.length; k++) {
+      final m = Offset.lerp(line[k - 1], line[k], 0.5)!;
+      path.quadraticBezierTo(line[k - 1].dx, line[k - 1].dy, m.dx, m.dy);
+    }
+    path.lineTo(line.last.dx, line.last.dy);
+    canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 6
+          ..strokeCap = StrokeCap.round
+          ..color = Kit.card);
+    final dots = Path();
+    for (final m in path.computeMetrics()) {
+      for (var d = 0.0; d < m.length; d += 7) {
+        dots.addPath(m.extractPath(d, d + 3.5), Offset.zero);
+      }
+    }
+    canvas.drawPath(
+        dots,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.4
+          ..strokeCap = StrokeCap.round
+          ..color = Kit.blaze);
+    // ledges: numbered belay circles
+    var n = 0;
+    final ledges = [for (final hd in r.holds) if (hd.t == HoldType.ledge && hd.y <= span) hd]..sort((a, b) => a.y.compareTo(b.y));
+    for (final hd in ledges) {
+      final c = Offset(x((hd.x + hd.x2!) / 2), y(hd.y));
+      canvas.drawCircle(c, 8.5, Paint()..color = Kit.card);
+      canvas.drawCircle(
+          c,
+          8.5,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..color = Kit.blaze);
+      final tp = TextPainter(
+        text: TextSpan(text: '${++n}', style: FbTxt.typed(10, bold: true, color: Kit.ink, height: 1)),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, c - Offset(tp.width / 2, tp.height / 2));
+      tp.dispose();
+    }
+    // a flag on the top
+    if (!r.endless) {
+      final f = Offset(peak.dx, peak.dy + 2);
+      canvas.drawLine(f, f - const Offset(0, 18), ink..strokeWidth = 1.6);
+      canvas.drawPath(
+          Path()
+            ..moveTo(f.dx, f.dy - 18)
+            ..lineTo(f.dx + 13, f.dy - 14)
+            ..lineTo(f.dx, f.dy - 10)
+            ..close(),
+          Paint()..color = Kit.blaze);
+    }
+    // the height scale
+    final tick = Paint()
+      ..strokeWidth = 1.2
+      ..color = Kit.ink;
+    final every = span / unitsPerMetre > 12 ? 5 : 2;
+    for (var m = 0; m * unitsPerMetre <= span; m += every) {
+      final yy = y(m * unitsPerMetre.toDouble());
+      canvas.drawLine(Offset(w - 12, yy), Offset(w, yy), tick);
+      final tp = TextPainter(
+        text: TextSpan(text: '$m', style: FbTxt.typed(10.5, bold: true, color: Kit.ink, height: 1)),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(w - 15 - tp.width, yy - tp.height / 2));
+      tp.dispose();
+    }
   }
 
   @override
@@ -587,43 +556,4 @@ class _LampPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _LampPainter old) => false;
-}
-
-/// The coloured rings shown in "How to play".
-class RingChip extends StatelessWidget {
-  const RingChip({super.key, required this.color, required this.label, this.dashed = false});
-  final Color color;
-  final String label;
-  final bool dashed;
-  @override
-  Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
-        SizedBox(width: 16, height: 16, child: CustomPaint(painter: _RingPainter(color, dashed))),
-        const SizedBox(width: 7),
-        Text(label, style: Txt.body(14, color: Pal.chalkDim, height: 1.2)),
-      ]);
-}
-
-class _RingPainter extends CustomPainter {
-  _RingPainter(this.color, this.dashed);
-  final Color color;
-  final bool dashed;
-  @override
-  void paint(Canvas canvas, Size size) {
-    final p = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..color = color.withAlpha(204);
-    final r = size.width / 2 - 1;
-    final c = Offset(size.width / 2, size.height / 2);
-    if (!dashed) {
-      canvas.drawCircle(c, r, p);
-      return;
-    }
-    for (var k = 0; k < 8; k++) {
-      canvas.drawArc(Rect.fromCircle(center: c, radius: r), k * math.pi / 4, math.pi / 7, false, p);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _RingPainter old) => old.color != color || old.dashed != dashed;
 }

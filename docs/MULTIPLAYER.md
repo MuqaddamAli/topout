@@ -9,7 +9,7 @@ The commands are for PowerShell on Windows. They work the same in other terminal
 ## How it works
 
 - **Joining.** One player taps **Play online**, enters a name, picks a route and a mode and taps **Create**. The game shows a 4-letter code (never I, L or O) with a **Copy** button. Others tap **Play online**, enter a name and the code, and join the lobby.
-- **The lobby.** It shows everyone, their climber and the lane they will get ("Rio · Lane 2, left"), and how many lanes the wall will have. Everyone can pick a climber (two players may pick the same one) and tap **Ready**; the rows say who is ready.
+- **The lobby.** It shows everyone, their climber and the lane they will get ("Rio · Lane 2, left"), and how many lanes the wall will have. Everyone can pick a climber (two players may pick the same one) and tap **I'm ready**; the rows get a pencil tick.
 - **Starting.** Only the creator has **Start**, which shows how many are ready ("Start · 4/6 ready"); they can start any time. When they tap it, every lobby counts down from 3 and everyone starts the same route in the same mode. On the Daily Wall it is the wall of the creator's day, so players in other time zones get the same wall.
 - **Errors.** A 9th player gets "Room is full (8/8)", a wrong code gets "Room not found", and a code for a room that already started gets "This climb has already started".
 - **Leaving.** Anyone can leave at any time. If the creator leaves, the next player becomes the creator. A player whose connection drops keeps their place for 20 seconds and rejoins quietly, right where they were: the game kept going while it was offline (position, grip, time, topped out), and a top-out that happened offline is sent again. (A page reload is a new player: it cannot rejoin.)
@@ -55,7 +55,7 @@ All of this is only online (and alone with `?lanes`, for testing); a climb alone
 | --- | --- | --- |
 | Walk | hold a finger beside your climber (they walk to it; a quick swipe up or down still pans) | A / D or the arrow keys |
 | Climb | drag a hand to a hold | (mouse drag) |
-| Cheer, Taunt, Aura | the buttons on the right while standing | 1, 2, 3 |
+| Cheer, Taunt, Aura | the paper tags on the right while standing | 1, 2, 3 |
 | Quick chat | **Chat** at the top right, then a phrase | Q, W, E, R |
 | Watch (after the top) | **Watch** at the top right | Tab |
 
@@ -120,9 +120,9 @@ To see a wide wall without the server, open the game with `?lanes=N` (1 to 4), f
 
 **Try being together.** With 2 windows and `npm run bots -- ABCD 4 --top`:
 
-1. In the lobby, tap **Ready** in each window: the rows say so, and the creator's Start counts them.
+1. In the lobby, tap **I'm ready** in each window: the rows get a pencil tick, and the creator's Start counts them.
 2. After the start, walk with A/D (or hold a finger beside the climber) and walk into the bots' lane.
-3. Press 1, 2, 3 (or the buttons on the right) in one window and watch and listen in the other; press Q W E R (or **Chat**) for a bubble.
+3. Press 1, 2, 3 (or the tags on the right) in one window and watch and listen in the other; press Q W E R (or **Chat**) for a bubble.
 4. Walk far from the others: arrows with their names and heights show at the edges.
 5. Climb to a ledge: both feet on it and you stand; walk to its ends. Climb on to the top: you stand there and can walk along it.
 6. At the top, **Watch** (or Tab) follows the bots one by one; walk to come back.

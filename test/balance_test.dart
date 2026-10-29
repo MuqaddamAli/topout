@@ -4,13 +4,16 @@
 // prints how many moves and jumps each one needed.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:topout/game/core.dart';
+import 'package:topout/game/game.dart' show Game;
+import 'package:topout/game/mountain.dart';
 
 class _Node {
-  _Node(this.limbs, this.c, this.moves, this.jumps, this.hanging);
+  _Node(this.limbs, this.c, this.moves, this.jumps, this.hanging, [this.parent]);
   final List<Limb> limbs;
   final Pt c;
   final int moves, jumps;
   final bool hanging;
+  final _Node? parent;
   double f = 0;
 }
 
@@ -54,9 +57,12 @@ class _Heap {
 }
 
 class ClimbResult {
-  ClimbResult(this.ok, this.moves, this.jumps, this.expanded);
+  ClimbResult(this.ok, this.moves, this.jumps, this.expanded, [this.stances = const []]);
   final bool ok;
   final int moves, jumps, expanded;
+
+  /// The limbs after each move, from the start to the end.
+  final List<List<Limb>> stances;
 }
 
 /// Best-first search from the start of [r] until both hands are on the top,
@@ -82,7 +88,13 @@ ClimbResult botClimb(ClimbRoute r, Climber k, {double? goalY, int budget = 60000
     final n = open.pop();
     final key = '${n.limbs.map((l) => l.h ?? -1).join(',')}${n.hanging ? 'h' : ''}';
     if (!seen.add(key)) continue;
-    if (done(n)) return ClimbResult(true, n.moves, n.jumps, expanded);
+    if (done(n)) {
+      final stances = <List<Limb>>[];
+      for (_Node? p = n; p != null; p = p.parent) {
+        stances.insert(0, p.limbs);
+      }
+      return ClimbResult(true, n.moves, n.jumps, expanded, stances);
+    }
     expanded++;
     for (var i = 0; i < 4; i++) {
       final l = n.limbs[i];
@@ -101,12 +113,12 @@ ClimbResult botClimb(ClimbRoute r, Climber k, {double? goalY, int budget = 60000
         _Node? next;
         if (f != null) {
           final limbs = [for (var m = 0; m < 4; m++) m == i ? Limb(hk, pt.x, pt.y) : n.limbs[m].copy()];
-          next = _Node(limbs, Pt(f.x, f.y), n.moves + 1, n.jumps, false);
+          next = _Node(limbs, Pt(f.x, f.y), n.moves + 1, n.jumps, false, n);
         } else if (jumps && isHand[i]) {
           final d = dynoCheck(rest, i, pt, n.c, k);
           if (d.ok) {
             final limbs = [for (var m = 0; m < 4; m++) m == i ? Limb(hk, pt.x, pt.y) : Limb(null, n.limbs[m].x, n.limbs[m].y)];
-            next = _Node(limbs, d.end!, n.moves + 1, n.jumps + 1, true);
+            next = _Node(limbs, d.end!, n.moves + 1, n.jumps + 1, true, n);
           }
         }
         if (next == null) continue;
@@ -117,6 +129,33 @@ ClimbResult botClimb(ClimbRoute r, Climber k, {double? goalY, int budget = 60000
     }
   }
   return ClimbResult(false, 0, 0, expanded);
+}
+
+/// How much grip the hands spend climbing [stances] on [r], holding each
+/// stance [hold] seconds with the real grip rules (what they get back while
+/// resting is not counted). With [snow], the holds start under snow as in
+/// the game and each limb brushes its hold off as it does there.
+double gripSpent(ClimbRoute r, Climber k, List<List<Limb>> stances, {required bool snow, double hold = 2.5}) {
+  final covered = snow ? {for (var i = 0; i < r.holds.length; i++) if (Mountain.snowCovered(r, i)) i} : <int>{};
+  final wear = <int, double>{};
+  var spent = 0.0;
+  const dt = 0.05;
+  for (final limbs in stances) {
+    for (var t = 0.0; t < hold; t += dt) {
+      final slick = <int>{};
+      for (var i = 0; i < 4; i++) {
+        final h = limbs[i].h;
+        if (h == null || !covered.contains(h) || (wear[h] ?? 0) >= 1) continue;
+        wear[h] = (wear[h] ?? 0) + dt / (isHand[i] ? Game.brushHand : Game.brushFoot);
+        if (wear[h]! < 1) slick.add(h);
+      }
+      final g = gripRates(limbs, r.holds, Mode.normal, k, slick);
+      for (final rate in g.rates) {
+        if (rate < 0) spent -= rate * dt;
+      }
+    }
+  }
+  return spent;
 }
 
 void main() {
@@ -167,6 +206,27 @@ void main() {
       final lo = m.reduce((a, b) => a < b ? a : b), hi = m.reduce((a, b) => a > b ? a : b);
       expect(hi, lessThanOrEqualTo((lo * 1.4).ceil() + 1));
     }
+  });
+
+  test('snow on the upper part of a route costs the hands a little more grip, about the same for everyone', () {
+    final table = StringBuffer('grip spent, dry / with snow');
+    for (final r in buildRoutes()) {
+      final extra = <double>[];
+      for (final k in Climber.all) {
+        final res = botClimb(r, k, step: 60);
+        expect(res.ok, isTrue);
+        final dry = gripSpent(r, k, res.stances, snow: false), wet = gripSpent(r, k, res.stances, snow: true);
+        extra.add(wet / dry - 1);
+        table.write('\n${r.name.padRight(16)} ${k.name.padRight(5)} ${dry.toStringAsFixed(0).padLeft(4)} / ${wet.toStringAsFixed(0)}'
+            ' (+${((wet / dry - 1) * 100).toStringAsFixed(0)}%)');
+        expect(wet, greaterThan(dry), reason: '${k.name} on ${r.name}: the snow is felt');
+        expect(wet / dry, lessThan(1.25), reason: '${k.name} on ${r.name}: but it costs only a little');
+      }
+      final lo = extra.reduce((a, b) => a < b ? a : b), hi = extra.reduce((a, b) => a > b ? a : b);
+      expect(hi - lo, lessThan(0.12), reason: '${r.name}: nobody is hit much harder than the others');
+    }
+    // ignore: avoid_print
+    print(table);
   });
 
   test('every climber can do the lesson wall without jumping', () {

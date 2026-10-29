@@ -132,7 +132,7 @@ void main() {
   testWidgets('the HUD buttons: only while standing, and they emote', (tester) async {
     final g = await open(tester);
     await frames(tester, 0.4);
-    await tester.tap(hudButton('CHEER'));
+    await tester.tap(hudButton('Cheer'));
     await frames(tester, 0.1);
     expect(g.emote, Emote.cheer);
     await tester.pumpWidget(const SizedBox());
