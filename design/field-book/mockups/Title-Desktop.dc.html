@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Title poster, desktop</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&amp;family=Courier+Prime:wght@400;700&amp;family=Reenie+Beanie&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#F4F1E8}a:hover{color:#FF5B1F}
+@keyframes td-mist{0%{transform:translateX(0)}50%{transform:translateX(-120px)}100%{transform:translateX(0)}}
+@keyframes td-snow{0%{transform:translate(0,0)}100%{transform:translate(-80px,220px)}}
+@keyframes td-lamp{0%,100%{opacity:.85}50%{opacity:1}}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; overflow: hidden; background: {{c.bot}}; font-family: 'Courier Prime', 'Courier New', monospace; color: #F4F1E8">
+  <svg viewBox="0 0 1440 900" width="1440" height="900" style="position: absolute; inset: 0; display: block" aria-hidden="true">
+    <defs>
+      <linearGradient id="td-sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="{{c.top}}"></stop>
+        <stop offset="0.72" stop-color="{{c.bot}}"></stop>
+      </linearGradient>
+    </defs>
+    <rect width="1440" height="900" fill="url(#td-sky)"></rect>
+    <g fill="#FFFFFF" opacity="{{c.stars}}">
+      <circle cx="620" cy="60" r="1.6"></circle><circle cx="760" cy="130" r="1.2"></circle><circle cx="880" cy="50" r="1.8"></circle><circle cx="1040" cy="100" r="1.2"></circle><circle cx="1200" cy="60" r="1.6"></circle><circle cx="1330" cy="150" r="1.2"></circle><circle cx="1390" cy="40" r="1.4"></circle><circle cx="700" cy="220" r="1.1"></circle><circle cx="1120" cy="200" r="1"></circle><circle cx="560" cy="180" r="1.2"></circle><circle cx="90" cy="40" r="1.2"></circle><circle cx="300" cy="30" r="1.4"></circle>
+    </g>
+    <circle cx="1200" cy="250" r="52" fill="{{c.orb}}" opacity="{{c.orbOp}}"></circle>
+    <path d="M0 590 L120 540 L240 570 L360 500 L480 550 L600 490 L760 540 L900 480 L1060 520 L1200 460 L1440 510 V900 H0Z" fill="{{c.far}}"></path>
+  </svg>
+
+  <h1 style="position: absolute; left: 72px; top: 60px; margin: 0; font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 290px; line-height: 0.82; letter-spacing: -0.012em; text-transform: uppercase; color: {{c.titleInk}}">[Game<br>title]</h1>
+
+  <svg viewBox="0 0 1440 900" width="1440" height="900" style="position: absolute; inset: 0; display: block" aria-hidden="true">
+    <defs>
+      <filter id="td-rock" x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.01 0.026" numOctaves="4" seed="5" result="n"></feTurbulence>
+        <feDiffuseLighting in="n" lighting-color="#ffffff" surfaceScale="4" result="light"><feDistantLight azimuth="235" elevation="48"></feDistantLight></feDiffuseLighting>
+        <feComposite in="light" in2="SourceGraphic" operator="arithmetic" k1="1.25" k2="0" k3="0" k4="0" result="lit"></feComposite>
+        <feComposite in="lit" in2="SourceGraphic" operator="in"></feComposite>
+      </filter>
+      <filter id="td-chalk" x="-10%" y="-10%" width="120%" height="120%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="2" result="w"></feTurbulence>
+        <feDisplacementMap in="SourceGraphic" in2="w" scale="3" xChannelSelector="R" yChannelSelector="G" result="d"></feDisplacementMap>
+        <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="1" seed="7" result="s"></feTurbulence>
+        <feColorMatrix in="s" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.8" result="m"></feColorMatrix>
+        <feComposite in="d" in2="m" operator="in"></feComposite>
+      </filter>
+      <linearGradient id="td-mistg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="{{c.bot}}" stop-opacity="0"></stop>
+        <stop offset="0.5" stop-color="{{c.bot}}" stop-opacity="0.6"></stop>
+        <stop offset="1" stop-color="{{c.bot}}" stop-opacity="0"></stop>
+      </linearGradient>
+      <radialGradient id="td-lampg">
+        <stop offset="0" stop-color="#FFE7A8" stop-opacity="0.9"></stop>
+        <stop offset="1" stop-color="#FFE7A8" stop-opacity="0"></stop>
+      </radialGradient>
+    </defs>
+    <path d="M300 900 L460 700 L580 590 L700 440 L820 330 L900 230 L930 270 L980 200 L1060 360 L1160 470 L1300 560 L1520 720 V900Z" fill="{{c.mid}}" filter="url(#td-rock)"></path>
+    <path d="M860 290 L900 230 L930 270 L980 200 L1030 300 L1004 290 L986 330 L960 310 L930 344 L904 324 L880 340Z" fill="#F1F4F8" opacity="{{c.snowOp}}"></path>
+    <path d="M900 230 L820 420 L760 560 M980 200 L1010 380 L1090 500" stroke="#000000" stroke-opacity="0.2" stroke-width="3" fill="none"></path>
+    <g style="animation: td-mist 26s ease-in-out infinite">
+      <rect x="-200" y="520" width="1900" height="150" fill="url(#td-mistg)"></rect>
+    </g>
+    <path d="M610 690 C 680 610, 740 520, 790 400 S 930 260, 980 206" stroke="#F4F1EA" stroke-width="3.5" stroke-dasharray="1 11" stroke-linecap="round" fill="none" filter="url(#td-chalk)"></path>
+    <circle cx="790" cy="396" r="70" fill="url(#td-lampg)" opacity="{{c.lamp}}" style="animation: td-lamp 3s ease-in-out infinite"></circle>
+    <rect x="784" y="386" width="12" height="19" rx="3" fill="#FF5B1F"></rect>
+    <circle cx="790" cy="381" r="5" fill="#EDE7DA"></circle>
+    <path d="M0 900 L0 650 L140 620 L300 660 L460 628 L640 672 L820 640 L1000 684 L1200 652 L1440 680 V900Z" fill="{{c.rock}}" filter="url(#td-rock)"></path>
+    <g transform="rotate(-6 1330 720)">
+      <rect x="1310" y="704" width="40" height="11" fill="#C42A1C"></rect><rect x="1310" y="715" width="40" height="11" fill="#F4F1E8"></rect><rect x="1310" y="726" width="40" height="11" fill="#C42A1C"></rect>
+    </g>
+    <g fill="#FFFFFF" opacity="{{c.snow}}" style="animation: td-snow 9s linear infinite">
+      <circle cx="80" cy="-100" r="2"></circle><circle cx="260" cy="-40" r="1.6"></circle><circle cx="460" cy="-120" r="2.2"></circle><circle cx="680" cy="-60" r="1.7"></circle><circle cx="900" cy="-110" r="2"></circle><circle cx="1120" cy="-30" r="1.6"></circle><circle cx="1340" cy="-90" r="2"></circle><circle cx="1500" cy="-50" r="1.8"></circle>
+      <circle cx="140" cy="160" r="1.8"></circle><circle cx="360" cy="220" r="2"></circle><circle cx="560" cy="140" r="1.6"></circle><circle cx="800" cy="200" r="2.1"></circle><circle cx="1020" cy="150" r="1.7"></circle><circle cx="1240" cy="230" r="2"></circle><circle cx="1460" cy="170" r="1.6"></circle>
+      <circle cx="60" cy="420" r="1.7"></circle><circle cx="300" cy="460" r="2"></circle><circle cx="520" cy="400" r="1.6"></circle><circle cx="760" cy="470" r="1.9"></circle><circle cx="980" cy="410" r="1.6"></circle><circle cx="1200" cy="450" r="2"></circle><circle cx="1420" cy="400" r="1.7"></circle>
+      <circle cx="180" cy="660" r="1.8"></circle><circle cx="420" cy="720" r="1.6"></circle><circle cx="660" cy="680" r="2"></circle><circle cx="900" cy="740" r="1.7"></circle><circle cx="1140" cy="690" r="1.9"></circle><circle cx="1380" cy="760" r="1.6"></circle>
+    </g>
+  </svg>
+
+  <div style="position: absolute; right: 28px; top: 180px; height: 420px; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; padding-right: 8px; border-right: 2px solid {{c.titleInk}}; font-size: 13px; font-weight: 700; color: {{c.titleInk}}; opacity: 0.85">
+    <span>4,180 m —</span><span>3,200 —</span><span>2,000 —</span><span>800 —</span>
+  </div>
+
+  <div style="position: absolute; left: 72px; bottom: 56px; display: flex; flex-direction: column; gap: 14px; width: 560px">
+    <div style="filter: drop-shadow(0 12px 14px rgba(0,0,0,0.4))">
+      <a href="HUD-Desktop.dc.html" style="display: flex; align-items: center; gap: 16px; min-height: 76px; padding: 0 30px 0 16px; background-color: #FF5B1F; background-image: repeating-linear-gradient(0deg, rgba(90,20,0,0.12) 0 1px, transparent 1px 3px), repeating-linear-gradient(90deg, rgba(255,255,255,0.08) 0 2px, transparent 2px 5px); box-shadow: inset 0 6px 0 rgba(120,30,0,0.28), inset 0 -6px 0 rgba(120,30,0,0.28); clip-path: polygon(0 0, 100% 0, calc(100% - 16px) 100%, 0 100%); color: #1B2230; text-decoration: none">
+        <svg width="26" height="46" viewBox="0 0 26 46" aria-hidden="true"><path d="M3 4 L7 42 L11 4 L15 42 L19 4 L23 42" stroke="#2A140A" stroke-width="1.8" fill="none" stroke-linejoin="round"></path></svg>
+        <span style="flex: 1; font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 46px; line-height: 1; text-transform: uppercase">Continue</span>
+        <span style="font-size: 15px; font-weight: 700">north gully · pitch 7</span>
+        <span style="min-width: 54px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 2px solid #1B2230; font-size: 13px; font-weight: 700">ENTER</span>
+      </a>
+    </div>
+    <nav style="display: flex; gap: 44px; padding-top: 10px; border-top: 1.5px solid rgba(244,241,232,0.45)">
+      <a href="Map-Desktop.dc.html" style="display: flex; align-items: baseline; gap: 12px; min-height: 48px; padding-top: 8px; color: #F4F1E8; text-decoration: none">
+        <span style="font-size: 14px; font-weight: 700">02</span>
+        <span style="font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 34px; line-height: 1; text-transform: uppercase">New ascent</span>
+      </a>
+      <button style="display: flex; align-items: baseline; gap: 12px; min-height: 48px; padding: 8px 0 0; background: transparent; border: 0; color: #F4F1E8; cursor: pointer">
+        <span style="font-family: 'Courier Prime', 'Courier New', monospace; font-size: 14px; font-weight: 700">03</span>
+        <span style="font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 34px; line-height: 1; text-transform: uppercase">Settings</span>
+      </button>
+      <button style="display: flex; align-items: baseline; gap: 12px; min-height: 48px; padding: 8px 0 0; background: transparent; border: 0; color: #F4F1E8; cursor: pointer">
+        <span style="font-family: 'Courier Prime', 'Courier New', monospace; font-size: 14px; font-weight: 700">04</span>
+        <span style="font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 34px; line-height: 1; text-transform: uppercase">Quit</span>
+      </button>
+    </nav>
+  </div>
+
+  <div style="position: absolute; right: 72px; bottom: 64px; width: 330px; transform: rotate(2deg); box-sizing: border-box; padding: 18px 20px 14px; background-color: #EFE6CC; background-image: linear-gradient(rgba(110,140,160,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(110,140,160,0.3) 1px, transparent 1px); background-size: 12px 12px; box-shadow: 0 14px 24px rgba(0,0,0,0.4); color: #1B2230; display: flex; flex-direction: column; gap: 4px">
+    <span style="position: absolute; top: -10px; left: 120px; width: 90px; height: 22px; background: rgba(217,164,65,0.78); transform: rotate(-3deg)"></span>
+    <span style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em">LAST ENTRY · DAY 2 · 13:40</span>
+    <span style="font-size: 16px">stopped at 1,240 m, pitch 7.</span>
+    <span style="font-family: 'Reenie Beanie', 'Comic Sans MS', cursive; font-size: 32px; line-height: 1; color: #5A5A58">wind turning. bivy before dark.</span>
+  </div>
+
+  <span style="position: absolute; left: 72px; bottom: 22px; font-size: 12px; opacity: 0.75">[version]</span>
+
+  <svg aria-hidden="true" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; mix-blend-mode: multiply">
+    <filter id="td-grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3" stitchTiles="stitch"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.3  0 0 0 0 0.24  0 0 0 0 0.14  0 0 0 0.3 0"></feColorMatrix></filter>
+    <rect width="100%" height="100%" filter="url(#td-grain)"></rect>
+  </svg>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"zone":{"editor":"enum","options":["valley","cliff","ice","summit"],"default":"ice","section":"Environment"},"time":{"editor":"enum","options":["dawn","day","dusk","night"],"default":"dusk","section":"Environment"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const ENV = {
+      valley: { dawn: ['#9FA8C7','#F2C9A8','#8C93A8','#5E7466','#3B4A3E','#B9C48A'], day: ['#A8CFE0','#EEF0DC','#9DB5B2','#6F8F68','#445A45','#C7D38E'], dusk: ['#5E5A86','#F09A6E','#7D6E86','#4F5A55','#2F3A33','#D8A86A'], night: ['#10182B','#2B3A5A','#2A3550','#1E2B33','#141E22','#6F8A7A'] },
+      cliff: { dawn: ['#A7A6C4','#F3CBA6','#9C95A3','#7A6E66','#4E4640','#D8B27A'], day: ['#B6CFDC','#F1E8D6','#ABA79C','#8A8072','#5B524A','#D9BC7C'], dusk: ['#594F7D','#EE8D5E','#806878','#5F4E4E','#3A3030','#E0A060'], night: ['#0F1629','#2A3456','#2B3148','#242733','#17191F','#7D7A6E'] },
+      ice: { dawn: ['#97A9D1','#F2D2C2','#9DAFC9','#7F98B3','#3F5468','#D6EAF4'], day: ['#8FC0E0','#E9F3F7','#A9C3D6','#86A7C0','#3E5568','#DDF0FA'], dusk: ['#4C5288','#E79A86','#6F7AA0','#53648A','#2C3550','#B9C8E6'], night: ['#0A1226','#1F3158','#22345A','#1B2944','#101A2C','#7FA3C8'] },
+      summit: { dawn: ['#7E8DC4','#F4C7C9','#8F95B8','#9AA2C0','#2F3448','#F6F1F4'], day: ['#6F9ACB','#DCE6F2','#9AA8C6','#B5C0D6','#2C3246','#F5F7FB'], dusk: ['#3E3A78','#E0889A','#5C5A8C','#6E6E96','#22223A','#E9D6E6'], night: ['#060B1E','#18224A','#1A2244','#2A3358','#0C1020','#C9D4EE'] }
+    };
+    const ORB = { dawn: ['#F7C38E', 1, 0.25], day: ['#FFF6DA', 0.9, 0], dusk: ['#F4A46A', 1, 0.15], night: ['#E8EEF7', 1, 1] };
+    const z = ENV[this.props.zone] ? this.props.zone : 'ice';
+    const t = ORB[this.props.time] ? this.props.time : 'dusk';
+    const p = ENV[z][t];
+    const dark = t === 'dusk' || t === 'night';
+    return { c: {
+      top: p[0], bot: p[1], far: p[2], mid: p[3], rock: p[4], hold: p[5],
+      orb: ORB[t][0], orbOp: ORB[t][1], stars: ORB[t][2],
+      snowOp: t === 'night' ? 0.55 : 0.95,
+      snow: (z === 'ice' || z === 'summit') ? 0.9 : 0,
+      lamp: t === 'night' ? 1 : (t === 'dusk' ? 0.45 : 0),
+      titleInk: dark ? '#F4F1E8' : '#1B2230'
+    } };
+  }
+}
+</script>
+</body>
+</html>

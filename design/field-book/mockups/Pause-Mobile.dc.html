@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The log, pause menu, mobile</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&amp;family=Courier+Prime:wght@400;700&amp;family=Reenie+Beanie&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#1B2230}a:hover{color:#C42A1C}
+@keyframes pm-blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: {{c.bot}}; font-family: 'Courier Prime', 'Courier New', monospace; color: #1B2230">
+  <svg viewBox="0 0 390 844" width="390" height="844" style="position: absolute; inset: 0; display: block" aria-hidden="true">
+    <defs>
+      <linearGradient id="pm-sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="{{c.top}}"></stop>
+        <stop offset="0.5" stop-color="{{c.bot}}"></stop>
+      </linearGradient>
+      <filter id="pm-rock" x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.016 0.04" numOctaves="4" seed="11" result="n"></feTurbulence>
+        <feDiffuseLighting in="n" lighting-color="#ffffff" surfaceScale="4" result="light"><feDistantLight azimuth="235" elevation="48"></feDistantLight></feDiffuseLighting>
+        <feComposite in="light" in2="SourceGraphic" operator="arithmetic" k1="1.25" k2="0" k3="0" k4="0" result="lit"></feComposite>
+        <feComposite in="lit" in2="SourceGraphic" operator="in"></feComposite>
+      </filter>
+    </defs>
+    <rect width="390" height="844" fill="url(#pm-sky)"></rect>
+    <circle cx="70" cy="150" r="17" fill="{{c.orb}}" opacity="{{c.orbOp}}"></circle>
+    <path d="M0 220 L40 190 L80 212 L130 162 L180 200 V844 H0Z" fill="{{c.far}}"></path>
+    <path d="M40 844 L28 600 L62 460 L44 330 L92 200 L132 100 L178 50 L232 72 L300 18 L390 -8 V844Z" fill="{{c.rock}}" filter="url(#pm-rock)"></path>
+    <g fill="{{c.hold}}">
+      <ellipse cx="156" cy="288" rx="9" ry="4.5"></ellipse><ellipse cx="252" cy="268" rx="9" ry="4.5"></ellipse><ellipse cx="272" cy="200" rx="11" ry="5"></ellipse><ellipse cx="205" cy="162" rx="9" ry="4.5"></ellipse>
+    </g>
+    <path d="M188 336 L164 324 L156 288 M214 336 L244 310 L252 268" stroke="#FF5B1F" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+    <path d="M185 330 Q201 322 218 330 L215 394 Q202 402 189 394 Z" fill="#FF5B1F"></path>
+    <rect x="186" y="338" width="30" height="48" rx="7" fill="#5E5240"></rect>
+    <ellipse cx="201" cy="331" rx="15" ry="5" fill="none" stroke="#D9A441" stroke-width="3.5"></ellipse>
+    <circle cx="201" cy="314" r="12" fill="#EDE7DA"></circle>
+    <rect width="390" height="844" fill="#05070D" opacity="0.5"></rect>
+  </svg>
+
+  <div style="position: absolute; left: 10px; right: 10px; top: 236px; bottom: -6px; transform: rotate(-1deg); transform-origin: 50% 0; filter: drop-shadow(0 -6px 24px rgba(0,0,0,0.45))">
+    <div style="position: absolute; inset: 0; box-sizing: border-box; padding: 34px 20px 40px 22px; display: flex; flex-direction: column; gap: 14px; background-color: #EFE6CC; background-image: linear-gradient(90deg, transparent 0 66px, rgba(196,42,28,0.55) 66px 67.5px, transparent 67.5px), repeating-linear-gradient(180deg, transparent 0 25px, rgba(70,120,170,0.28) 25px 26px); background-position: 0 0, 0 92px">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; height: 58px">
+        <h1 style="margin: 0; font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 64px; line-height: 0.82; text-transform: uppercase">Day 2</h1>
+        <span style="font-size: 12.5px; font-weight: 700; text-align: right; line-height: 1.35">NORTH GULLY<br>PITCH 7 · {{c.alt}}</span>
+      </div>
+      <ol aria-label="Today's log" style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; font-size: 15px; line-height: 26px">
+        <li style="display: grid; grid-template-columns: 58px 1fr"><span style="font-weight: 700">05:40</span><span>left bivy 1. −6°C, clear.</span></li>
+        <li style="display: grid; grid-template-columns: 58px 1fr"><span style="font-weight: 700">08:15</span><span>crux, pitch 5. fell once.<br>the piton held.</span></li>
+        <li style="display: grid; grid-template-columns: 58px 1fr"><span style="font-weight: 700">11:02</span><span>ate a ration. 2 left.</span></li>
+        <li style="display: grid; grid-template-columns: 58px 1fr"><span style="font-weight: 700">{{c.clock}}</span><span>stopped at {{c.alt}}<span style="display: inline-block; width: 9px; height: 17px; margin-left: 3px; vertical-align: -3px; background: #1B2230; animation: pm-blink 1.1s steps(1) infinite"></span></span></li>
+      </ol>
+      <span style="position: absolute; right: 22px; top: 150px; font-family: 'Reenie Beanie', 'Comic Sans MS', cursive; font-size: 30px; color: #5A5A58; transform: rotate(-8deg)">← lucky</span>
+
+      <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 8px">
+        <div style="filter: drop-shadow(0 8px 10px rgba(0,0,0,0.28))">
+          <a href="HUD-Mobile.dc.html" style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 0 24px 0 12px; background-color: #FF5B1F; background-image: repeating-linear-gradient(0deg, rgba(90,20,0,0.12) 0 1px, transparent 1px 3px), repeating-linear-gradient(90deg, rgba(255,255,255,0.08) 0 2px, transparent 2px 5px); box-shadow: inset 0 5px 0 rgba(120,30,0,0.28), inset 0 -5px 0 rgba(120,30,0,0.28); clip-path: polygon(0 0, 100% 0, calc(100% - 12px) 100%, 0 100%); color: #1B2230; text-decoration: none">
+            <svg width="24" height="40" viewBox="0 0 26 40" aria-hidden="true"><path d="M3 4 L7 36 L11 4 L15 36 L19 4 L23 36" stroke="#2A140A" stroke-width="1.7" fill="none" stroke-linejoin="round"></path></svg>
+            <span style="flex: 1; font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 36px; line-height: 1; text-transform: uppercase">Back on the wall</span>
+          </a>
+        </div>
+        <nav style="display: flex; flex-direction: column; padding-top: 6px">
+          <button style="display: flex; align-items: baseline; gap: 16px; min-height: 48px; padding: 10px 0 0; background: transparent; border: 0; color: #1B2230; cursor: pointer; text-align: left">
+            <span style="font-family: 'Courier Prime', 'Courier New', monospace; font-size: 14px; font-weight: 700; width: 30px">02</span>
+            <span style="font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 30px; line-height: 1; text-transform: uppercase">Settings</span>
+          </button>
+          <button style="display: flex; align-items: baseline; gap: 16px; min-height: 48px; padding: 10px 0 0; background: transparent; border: 0; color: #1B2230; cursor: pointer; text-align: left">
+            <span style="font-family: 'Courier Prime', 'Courier New', monospace; font-size: 14px; font-weight: 700; width: 30px">03</span>
+            <span style="font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 30px; line-height: 1; text-transform: uppercase">Controls</span>
+          </button>
+          <a href="Title-Mobile.dc.html" style="display: flex; align-items: baseline; gap: 16px; min-height: 48px; padding-top: 10px; color: #1B2230; text-decoration: none">
+            <span style="font-size: 14px; font-weight: 700; width: 30px">04</span>
+            <span style="font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 30px; line-height: 1; text-transform: uppercase">Save &amp; descend</span>
+          </a>
+        </nav>
+      </div>
+    </div>
+    <svg viewBox="0 0 370 30" width="100%" height="30" style="position: absolute; left: 0; top: -14px; display: block" aria-hidden="true">
+      <g fill="none" stroke="#7D8288" stroke-width="3">
+        <path d="M24 26 C 24 4, 36 4, 36 18"></path><path d="M60 26 C 60 4, 72 4, 72 18"></path><path d="M96 26 C 96 4, 108 4, 108 18"></path><path d="M132 26 C 132 4, 144 4, 144 18"></path><path d="M168 26 C 168 4, 180 4, 180 18"></path><path d="M204 26 C 204 4, 216 4, 216 18"></path><path d="M240 26 C 240 4, 252 4, 252 18"></path><path d="M276 26 C 276 4, 288 4, 288 18"></path><path d="M312 26 C 312 4, 324 4, 324 18"></path><path d="M348 26 C 348 4, 360 4, 360 18"></path>
+      </g>
+      <g fill="#2A2D31"><circle cx="30" cy="22" r="3"></circle><circle cx="66" cy="22" r="3"></circle><circle cx="102" cy="22" r="3"></circle><circle cx="138" cy="22" r="3"></circle><circle cx="174" cy="22" r="3"></circle><circle cx="210" cy="22" r="3"></circle><circle cx="246" cy="22" r="3"></circle><circle cx="282" cy="22" r="3"></circle><circle cx="318" cy="22" r="3"></circle><circle cx="354" cy="22" r="3"></circle></g>
+    </svg>
+  </div>
+
+  <svg aria-hidden="true" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; mix-blend-mode: multiply">
+    <filter id="pm-grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" stitchTiles="stitch"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.3  0 0 0 0 0.24  0 0 0 0 0.14  0 0 0 0.28 0"></feColorMatrix></filter>
+    <rect width="100%" height="100%" filter="url(#pm-grain)"></rect>
+  </svg>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"zone":{"editor":"enum","options":["valley","cliff","ice","summit"],"default":"cliff","section":"Environment"},"time":{"editor":"enum","options":["dawn","day","dusk","night"],"default":"day","section":"Environment"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const ENV = {
+      valley: { dawn: ['#9FA8C7','#F2C9A8','#8C93A8','#5E7466','#3B4A3E','#B9C48A'], day: ['#A8CFE0','#EEF0DC','#9DB5B2','#6F8F68','#445A45','#C7D38E'], dusk: ['#5E5A86','#F09A6E','#7D6E86','#4F5A55','#2F3A33','#D8A86A'], night: ['#10182B','#2B3A5A','#2A3550','#1E2B33','#141E22','#6F8A7A'] },
+      cliff: { dawn: ['#A7A6C4','#F3CBA6','#9C95A3','#7A6E66','#4E4640','#D8B27A'], day: ['#B6CFDC','#F1E8D6','#ABA79C','#8A8072','#5B524A','#D9BC7C'], dusk: ['#594F7D','#EE8D5E','#806878','#5F4E4E','#3A3030','#E0A060'], night: ['#0F1629','#2A3456','#2B3148','#242733','#17191F','#7D7A6E'] },
+      ice: { dawn: ['#97A9D1','#F2D2C2','#9DAFC9','#7F98B3','#3F5468','#D6EAF4'], day: ['#8FC0E0','#E9F3F7','#A9C3D6','#86A7C0','#3E5568','#DDF0FA'], dusk: ['#4C5288','#E79A86','#6F7AA0','#53648A','#2C3550','#B9C8E6'], night: ['#0A1226','#1F3158','#22345A','#1B2944','#101A2C','#7FA3C8'] },
+      summit: { dawn: ['#7E8DC4','#F4C7C9','#8F95B8','#9AA2C0','#2F3448','#F6F1F4'], day: ['#6F9ACB','#DCE6F2','#9AA8C6','#B5C0D6','#2C3246','#F5F7FB'], dusk: ['#3E3A78','#E0889A','#5C5A8C','#6E6E96','#22223A','#E9D6E6'], night: ['#060B1E','#18224A','#1A2244','#2A3358','#0C1020','#C9D4EE'] }
+    };
+    const ALT = { valley: '620 m', cliff: '1,240 m', ice: '2,610 m', summit: '3,480 m' };
+    const ORB = { dawn: ['#F7C38E', 1], day: ['#FFF6DA', 0.9], dusk: ['#F4A46A', 1], night: ['#E8EEF7', 1] };
+    const CLOCK = { dawn: '06:10', day: '13:40', dusk: '18:55', night: '23:20' };
+    const z = ENV[this.props.zone] ? this.props.zone : 'cliff';
+    const t = ORB[this.props.time] ? this.props.time : 'day';
+    const p = ENV[z][t];
+    return { c: { top: p[0], bot: p[1], far: p[2], mid: p[3], rock: p[4], hold: p[5], orb: ORB[t][0], orbOp: ORB[t][1], alt: ALT[z], clock: CLOCK[t] } };
+  }
+}
+</script>
+</body>
+</html>

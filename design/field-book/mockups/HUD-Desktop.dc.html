@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>On the wall, desktop HUD</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&amp;family=Courier+Prime:wght@400;700&amp;family=Reenie+Beanie&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#1B2230}a:hover{color:#C42A1C}
+@keyframes hd-pulse{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes hd-dash{to{stroke-dashoffset:-20}}
+@keyframes hd-mist{0%{transform:translateX(0)}50%{transform:translateX(-120px)}100%{transform:translateX(0)}}
+@keyframes hd-snow{0%{transform:translate(0,0)}100%{transform:translate(-80px,240px)}}
+@keyframes hd-sway{0%,100%{transform:rotate(5deg)}50%{transform:rotate(2deg)}}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; overflow: hidden; background: {{c.bot}}; font-family: 'Courier Prime', 'Courier New', monospace; color: #1B2230">
+
+  <svg viewBox="0 0 1440 900" width="1440" height="900" style="position: absolute; inset: 0; display: block" role="img" aria-label="Your climber on the rock face">
+    <defs>
+      <linearGradient id="hd-sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="{{c.top}}"></stop>
+        <stop offset="0.65" stop-color="{{c.bot}}"></stop>
+      </linearGradient>
+      <linearGradient id="hd-mistg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="{{c.bot}}" stop-opacity="0"></stop>
+        <stop offset="0.5" stop-color="{{c.bot}}" stop-opacity="0.6"></stop>
+        <stop offset="1" stop-color="{{c.bot}}" stop-opacity="0"></stop>
+      </linearGradient>
+      <linearGradient id="hd-edge" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#000000" stop-opacity="0.35"></stop>
+        <stop offset="0.28" stop-color="#000000" stop-opacity="0"></stop>
+        <stop offset="0.8" stop-color="#000000" stop-opacity="0"></stop>
+        <stop offset="1" stop-color="#000000" stop-opacity="0.28"></stop>
+      </linearGradient>
+      <filter id="hd-rock" x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.011 0.028" numOctaves="4" seed="11" result="n"></feTurbulence>
+        <feDiffuseLighting in="n" lighting-color="#ffffff" surfaceScale="4" result="light"><feDistantLight azimuth="235" elevation="48"></feDistantLight></feDiffuseLighting>
+        <feComposite in="light" in2="SourceGraphic" operator="arithmetic" k1="1.25" k2="0" k3="0" k4="0" result="lit"></feComposite>
+        <feComposite in="lit" in2="SourceGraphic" operator="in"></feComposite>
+      </filter>
+      <filter id="hd-chalk" x="-30%" y="-30%" width="160%" height="160%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="2" result="w"></feTurbulence>
+        <feDisplacementMap in="SourceGraphic" in2="w" scale="4" xChannelSelector="R" yChannelSelector="G" result="d"></feDisplacementMap>
+        <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="1" seed="7" result="s"></feTurbulence>
+        <feColorMatrix in="s" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.8" result="m"></feColorMatrix>
+        <feComposite in="d" in2="m" operator="in"></feComposite>
+      </filter>
+      <filter id="hd-rough" x="-20%" y="-20%" width="140%" height="140%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.08" numOctaves="2" seed="4" result="w"></feTurbulence>
+        <feDisplacementMap in="SourceGraphic" in2="w" scale="3" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+      </filter>
+      <filter id="hd-shadow" x="-20%" y="-20%" width="140%" height="140%">
+        <feFlood flood-color="#000000" flood-opacity="0.32" result="f"></feFlood>
+        <feComposite in="f" in2="SourceAlpha" operator="in" result="s"></feComposite>
+        <feGaussianBlur in="s" stdDeviation="2.5"></feGaussianBlur>
+      </filter>
+      <g id="hd-climber">
+        <path d="{{L.lf.path}}" stroke="#2B2F36" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+        <path d="{{L.rf.path}}" stroke="#2B2F36" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+        <path d="M160 575 l16 -2 l3 9 l-18 3 z" fill="#15171A"></path>
+        <path d="M237 585 l16 -1 l2 9 l-18 2 z" fill="#15171A"></path>
+        <path d="M185 430 Q201 422 218 430 L215 494 Q202 502 189 494 Z" fill="#FF5B1F"></path>
+        <path d="M201 425 Q211 425 218 430 L215 494 Q208 499 201 500 Z" fill="#C8461A" opacity="0.55"></path>
+        <path d="M188 492 Q202 500 216 492" stroke="#15171A" stroke-width="4" fill="none"></path>
+        <path d="M213 496 q4 0 4 4 v6 q0 4 -4 4 q-3 0 -3 -4 v-6 q0 -4 3 -4z" fill="none" stroke="#1F6F8B" stroke-width="1.8"></path>
+        <rect x="196" y="497" width="11" height="12" rx="3" fill="#1F6F8B"></rect>
+        <path d="M196 499 H207" stroke="#F4F1EA" stroke-width="2"></path>
+        <rect x="186" y="438" width="30" height="48" rx="7" fill="#5E5240"></rect>
+        <rect x="186" y="433" width="30" height="13" rx="5" fill="#4E4436"></rect>
+        <path d="M191 452 H211 M191 468 H211" stroke="#3F372C" stroke-width="1.5"></path>
+        <ellipse cx="201" cy="431" rx="15" ry="5" fill="none" stroke="#D9A441" stroke-width="3.5"></ellipse>
+        <ellipse cx="201" cy="430" rx="9" ry="2.8" fill="none" stroke="#B8862E" stroke-width="2.5"></ellipse>
+        <path d="{{L.lh.path}}" stroke="#FF5B1F" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+        <path d="{{L.rh.path}}" stroke="#FF5B1F" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+        <circle cx="156" cy="387" r="5.5" fill="#C9B79B"></circle>
+        <circle cx="252" cy="367" r="5.5" fill="#C9B79B"></circle>
+        <circle cx="201" cy="414" r="12" fill="#EDE7DA"></circle>
+        <path d="M190 410 Q201 404 212 410" stroke="#C9BFA9" stroke-width="2" fill="none"></path>
+        <path d="M189.5 417 Q201 421 212.5 417" stroke="#15171A" stroke-width="2.5" fill="none"></path>
+        <rect x="197" y="416" width="8" height="5" rx="1.5" fill="#15171A"></rect>
+      </g>
+    </defs>
+
+    <rect width="1440" height="900" fill="url(#hd-sky)"></rect>
+    <g fill="#FFFFFF" opacity="{{c.stars}}">
+      <circle cx="80" cy="120" r="1.5"></circle><circle cx="200" cy="200" r="1.2"></circle><circle cx="300" cy="90" r="1.6"></circle><circle cx="140" cy="320" r="1.1"></circle><circle cx="1180" cy="120" r="1.5"></circle><circle cx="1300" cy="200" r="1.2"></circle><circle cx="1380" cy="90" r="1.6"></circle><circle cx="1240" cy="340" r="1.1"></circle><circle cx="640" cy="40" r="1.3"></circle><circle cx="900" cy="60" r="1.2"></circle>
+    </g>
+    <circle cx="1250" cy="250" r="34" fill="{{c.orb}}" opacity="{{c.orbOp}}"></circle>
+    <path d="M0 520 L120 470 L240 500 L380 430 V900 H0Z" fill="{{c.far}}"></path>
+    <path d="M1060 460 L1200 420 L1320 470 L1440 430 V900 H1060Z" fill="{{c.far}}"></path>
+    <g style="animation: hd-mist 24s ease-in-out infinite">
+      <rect x="-200" y="520" width="1900" height="120" fill="url(#hd-mistg)"></rect>
+    </g>
+    <path d="M0 640 L100 600 L220 630 L360 580 V900 H0Z" fill="{{c.mid}}"></path>
+    <path d="M1090 600 L1220 570 L1340 610 L1440 580 V900 H1090Z" fill="{{c.mid}}"></path>
+
+    <path d="M360 900 L340 760 L400 600 L380 450 L450 320 L520 220 L620 150 L740 180 L860 110 L980 140 L1060 250 L1040 420 L1100 560 L1080 720 L1110 900Z" fill="{{c.rock}}" filter="url(#hd-rock)"></path>
+    <path d="M360 900 L340 760 L400 600 L380 450 L450 320 L520 220 L620 150 L740 180 L860 110 L980 140 L1060 250 L1040 420 L1100 560 L1080 720 L1110 900Z" fill="url(#hd-edge)"></path>
+    <path d="M360 900 L340 760 L400 600 L380 450 L450 320 L520 220 L620 150 L740 180 L860 110 L980 140 L1060 250 L1040 420 L1100 560 L1080 720 L1110 900" stroke="{{c.hold}}" stroke-opacity="0.3" stroke-width="2.5" fill="none"></path>
+    <path d="M420 380 L1050 250 M400 620 L1090 480 M370 820 L1100 690" stroke="#000000" stroke-opacity="0.15" stroke-width="10" stroke-linecap="round"></path>
+    <path d="M520 240 L540 340 L520 460 L536 560 M960 160 L948 280 L972 380 L950 500 L980 620 L960 740 M700 760 L720 840 M440 620 L470 700" stroke="#000000" stroke-opacity="0.32" stroke-width="3" fill="none" stroke-linecap="round"></path>
+    <g filter="url(#hd-rough)" transform="rotate(-8 930 230)">
+      <rect x="912" y="212" width="36" height="10" fill="#C42A1C"></rect><rect x="912" y="222" width="36" height="10" fill="#F4F1E8"></rect><rect x="912" y="232" width="36" height="10" fill="#C42A1C"></rect>
+    </g>
+    <g filter="url(#hd-rough)" transform="rotate(5 470 760)">
+      <rect x="452" y="742" width="36" height="10" fill="#C42A1C"></rect><rect x="452" y="752" width="36" height="10" fill="#F4F1E8"></rect><rect x="452" y="762" width="36" height="10" fill="#C42A1C"></rect>
+    </g>
+    <g fill="#000000" opacity="0.35">
+      <ellipse cx="500" cy="424" rx="12" ry="5"></ellipse><ellipse cx="560" cy="304" rx="11" ry="5"></ellipse><ellipse cx="900" cy="304" rx="12" ry="5"></ellipse><ellipse cx="980" cy="454" rx="12" ry="5"></ellipse><ellipse cx="620" cy="764" rx="13" ry="5"></ellipse><ellipse cx="880" cy="784" rx="13" ry="5"></ellipse><ellipse cx="470" cy="654" rx="11" ry="5"></ellipse><ellipse cx="1010" cy="644" rx="12" ry="5"></ellipse><ellipse cx="780" cy="234" rx="11" ry="5"></ellipse>
+    </g>
+    <g fill="{{c.hold}}">
+      <ellipse cx="500" cy="420" rx="12" ry="6"></ellipse><ellipse cx="560" cy="300" rx="11" ry="5.5"></ellipse><ellipse cx="900" cy="300" rx="12" ry="6"></ellipse><ellipse cx="980" cy="450" rx="12" ry="6"></ellipse><ellipse cx="620" cy="760" rx="13" ry="6"></ellipse><ellipse cx="880" cy="780" rx="13" ry="6"></ellipse><ellipse cx="470" cy="650" rx="11" ry="5.5"></ellipse><ellipse cx="1010" cy="640" rx="12" ry="6"></ellipse><ellipse cx="780" cy="230" rx="11" ry="5.5"></ellipse>
+    </g>
+    <g filter="url(#hd-chalk)" stroke="#F4F1EA" stroke-width="4" stroke-linecap="round" opacity="0.8">
+      <path d="M490 434 H510 M770 244 H790 M970 464 H990"></path>
+    </g>
+
+    <g transform="translate(412 -220) scale(1.5)">
+      <g fill="#000000" opacity="0.35">
+        <ellipse cx="156" cy="392" rx="9" ry="4"></ellipse><ellipse cx="252" cy="372" rx="9" ry="4"></ellipse><ellipse cx="168" cy="584" rx="10" ry="4"></ellipse><ellipse cx="244" cy="594" rx="10" ry="4"></ellipse><ellipse cx="136" cy="332" rx="6" ry="3"></ellipse><ellipse cx="272" cy="304" rx="11" ry="4.5"></ellipse><ellipse cx="146" cy="524" rx="9" ry="4"></ellipse><ellipse cx="268" cy="530" rx="5" ry="2.5"></ellipse>
+      </g>
+      <g fill="{{c.hold}}">
+        <ellipse cx="156" cy="388" rx="9" ry="4.5"></ellipse><ellipse cx="252" cy="368" rx="9" ry="4.5"></ellipse><ellipse cx="168" cy="580" rx="10" ry="4.5"></ellipse><ellipse cx="244" cy="590" rx="10" ry="4.5"></ellipse><ellipse cx="136" cy="328" rx="6" ry="3"></ellipse><ellipse cx="272" cy="300" rx="11" ry="5"></ellipse><ellipse cx="146" cy="520" rx="9" ry="4.5"></ellipse><ellipse cx="268" cy="526" rx="5" ry="2.5"></ellipse>
+      </g>
+      <use href="#hd-climber" transform="translate(6 6)" filter="url(#hd-shadow)"></use>
+      <use href="#hd-climber"></use>
+      <g filter="url(#hd-chalk)">
+        <path d="{{drag.d}}" stroke="#F4F1EA" stroke-width="3" stroke-dasharray="2 8" stroke-linecap="round" fill="none" style="animation: hd-dash 0.9s linear infinite"></path>
+        <g transform="{{drag.tr}}" fill="none" stroke="#F4F1EA" stroke-width="3.2" stroke-linecap="round">
+          <ellipse cx="0" cy="-2" rx="22" ry="18" opacity="{{drag.q.solidOp}}"></ellipse>
+          <ellipse cx="0" cy="-2" rx="22" ry="18" stroke-dasharray="10 7" opacity="{{drag.q.riskyOp}}"></ellipse>
+          <path d="M-15 -17 L15 13 M15 -17 L-15 13" opacity="{{drag.q.badOp}}"></path>
+        </g>
+        <text x="{{drag.wx}}" y="{{drag.wy}}" font-family="Reenie Beanie, cursive" font-size="30" fill="#F4F1EA" transform="{{drag.wr}}">{{drag.q.word}}</text>
+      </g>
+      <g filter="url(#hd-rough)">
+        <circle cx="156" cy="388" r="{{L.lh.r}}" fill="none" stroke="{{L.lh.stroke}}" stroke-width="{{L.lh.w}}" stroke-dasharray="{{L.lh.dash}}" opacity="{{L.lh.op}}"></circle>
+        <circle cx="252" cy="368" r="{{L.rh.r}}" fill="none" stroke="{{L.rh.stroke}}" stroke-width="{{L.rh.w}}" stroke-dasharray="{{L.rh.dash}}" opacity="{{L.rh.op}}"></circle>
+        <circle cx="168" cy="580" r="{{L.lf.r}}" fill="none" stroke="{{L.lf.stroke}}" stroke-width="{{L.lf.w}}" stroke-dasharray="{{L.lf.dash}}" opacity="{{L.lf.op}}"></circle>
+        <circle cx="244" cy="590" r="{{L.rf.r}}" fill="none" stroke="{{L.rf.stroke}}" stroke-width="{{L.rf.w}}" stroke-dasharray="{{L.rf.dash}}" opacity="{{L.rf.op}}"></circle>
+        <circle cx="{{drag.lx}}" cy="{{drag.ly}}" r="25" fill="none" stroke="#FF5B1F" stroke-width="1.2" opacity="0.6"></circle>
+      </g>
+      <path d="{{halo.on}}" stroke="{{halo.color}}" stroke-width="4.5" fill="none" style="animation: {{halo.anim}}"></path>
+      <path d="{{halo.off}}" stroke="#F4F1EA" stroke-opacity="0.32" stroke-width="4.5" fill="none"></path>
+    </g>
+
+    <g fill="#FFFFFF" opacity="{{c.snow}}" style="animation: hd-snow 8s linear infinite">
+      <circle cx="80" cy="-100" r="2"></circle><circle cx="260" cy="-40" r="1.6"></circle><circle cx="460" cy="-120" r="2.2"></circle><circle cx="680" cy="-60" r="1.7"></circle><circle cx="900" cy="-110" r="2"></circle><circle cx="1120" cy="-30" r="1.6"></circle><circle cx="1340" cy="-90" r="2"></circle><circle cx="1500" cy="-50" r="1.8"></circle>
+      <circle cx="140" cy="160" r="1.8"></circle><circle cx="360" cy="220" r="2"></circle><circle cx="560" cy="140" r="1.6"></circle><circle cx="800" cy="200" r="2.1"></circle><circle cx="1020" cy="150" r="1.7"></circle><circle cx="1240" cy="230" r="2"></circle><circle cx="1460" cy="170" r="1.6"></circle>
+      <circle cx="60" cy="420" r="1.7"></circle><circle cx="300" cy="460" r="2"></circle><circle cx="520" cy="400" r="1.6"></circle><circle cx="1200" cy="450" r="2"></circle><circle cx="1420" cy="400" r="1.7"></circle>
+      <circle cx="180" cy="660" r="1.8"></circle><circle cx="420" cy="720" r="1.6"></circle><circle cx="1140" cy="690" r="1.9"></circle><circle cx="1380" cy="760" r="1.6"></circle>
+    </g>
+  </svg>
+
+  <div aria-hidden="true" style="position: absolute; inset: 0; pointer-events: none; opacity: {{c.night}}; background: radial-gradient(circle at 745px 356px, rgba(6,9,22,0) 0, rgba(6,9,22,0) 130px, rgba(6,9,22,0.8) 440px)"></div>
+  <div aria-hidden="true" style="position: absolute; inset: 0; pointer-events: none; opacity: {{c.night}}; mix-blend-mode: screen; background: radial-gradient(circle at 745px 356px, rgba(255,214,140,0.22) 0, rgba(255,214,140,0) 230px)"></div>
+  <div aria-hidden="true" style="position: absolute; inset: 0; pointer-events: none; opacity: {{c.frost}}; background: radial-gradient(ellipse 72% 66% at 50% 46%, rgba(232,242,250,0) 64%, rgba(232,242,250,0.5) 86%, rgba(244,250,255,0.9) 100%)"></div>
+
+  <sc-for list="{{btns}}" as="b" hint-placeholder-count="4">
+    <button aria-label="{{b.label}}" aria-pressed="{{b.pressed}}" onClick="{{b.pick}}" style="position: absolute; left: {{b.left}}px; top: {{b.top}}px; width: 72px; height: 72px; border-radius: 50%; border: 0; background: transparent; cursor: pointer; padding: 0"></button>
+  </sc-for>
+
+  <div style="position: absolute; left: 92px; top: 34px; width: 250px; box-sizing: border-box; padding: 18px 18px 14px; transform: rotate(-2deg); background-color: #EFE6CC; background-image: linear-gradient(rgba(110,140,160,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(110,140,160,0.3) 1px, transparent 1px); background-size: 12px 12px; box-shadow: 0 12px 22px rgba(0,0,0,0.35); clip-path: polygon(0 0, 100% 0, 100% 92%, 90% 96%, 78% 93%, 64% 98%, 50% 94%, 36% 99%, 22% 94%, 10% 97%, 0 93%); display: flex; flex-direction: column; gap: 6px; filter: brightness({{c.paperLight}})">
+    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 15px; font-weight: 700">
+      <span>DAY 2 · {{c.clock}}</span>
+      <span style="display: flex; align-items: center; gap: 4px">
+        <svg width="9" height="20" viewBox="0 0 8 18" aria-hidden="true"><rect x="2" y="1" width="4" height="12" rx="2" fill="none" stroke="#1B2230" stroke-width="1.3"></rect><rect x="3" y="{{c.mercY}}" width="2" height="{{c.mercH}}" fill="#C42A1C"></rect><circle cx="4" cy="14.5" r="3" fill="#C42A1C"></circle></svg>
+        {{c.temp}}
+      </span>
+    </div>
+    <div style="display: grid; grid-template-columns: 64px 1fr; align-items: center; column-gap: 8px">
+      <span style="font-size: 14px; font-weight: 700">FOOD</span>
+      <svg width="130" height="30" viewBox="0 0 120 28" role="img" aria-label="Food: 3 rations"><path d="{{tallyFood}}" stroke="#1B2230" stroke-width="2.6" stroke-linecap="round" fill="none"></path></svg>
+      <span style="font-size: 14px; font-weight: 700">WATER</span>
+      <svg width="130" height="30" viewBox="0 0 120 28" role="img" aria-label="Water: 6 sips"><path d="{{tallyWater}}" stroke="#1F6F8B" stroke-width="2.6" stroke-linecap="round" fill="none"></path></svg>
+    </div>
+  </div>
+  <span aria-hidden="true" style="position: absolute; left: 180px; top: 24px; width: 84px; height: 22px; background: rgba(217,164,65,0.78); transform: rotate(3deg)"></span>
+
+  <div style="position: absolute; right: 44px; top: 0; width: 64px; height: 170px; transform-origin: 50% 0; animation: hd-sway 5s ease-in-out infinite">
+    <span aria-hidden="true" style="position: absolute; left: 31px; top: 0; width: 1.5px; height: 80px; background: #F4F1E8; opacity: 0.85"></span>
+    <a href="Pause-Desktop.dc.html" aria-label="Pause (Esc)" style="position: absolute; left: 0; top: 72px; width: 64px; height: 92px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; padding-bottom: 12px; box-sizing: border-box; background: #EFE6CC; clip-path: polygon(24% 0, 76% 0, 100% 18%, 100% 100%, 0 100%, 0 18%); filter: brightness({{c.paperLight}}); text-decoration: none; color: #1B2230">
+      <span aria-hidden="true" style="position: absolute; top: 8px; left: 25px; width: 14px; height: 14px; border-radius: 50%; background: {{c.bot}}; box-shadow: inset 0 0 0 3px #B8AE98"></span>
+      <svg width="22" height="24" viewBox="0 0 22 24" aria-hidden="true"><path d="M6 2v20M16 2v20" stroke="#1B2230" stroke-width="4.5" stroke-linecap="square"></path></svg>
+      <span style="font-size: 12px; font-weight: 700">ESC</span>
+    </a>
+  </div>
+
+  <div aria-label="Altimeter: {{c.altText}} metres" role="img" style="position: absolute; left: 0; top: 120px; width: 62px; height: 660px; background: rgba(15,17,20,0.5); border-right: 1.5px solid rgba(244,241,232,0.55); overflow: hidden">
+    <div style="position: absolute; right: 0; top: 0; bottom: 0; width: 12px; background: repeating-linear-gradient(180deg, rgba(244,241,232,0.7) 0 1.5px, transparent 1.5px 10px); background-position: 0 {{alt.minorOff}}px"></div>
+    <sc-for list="{{alt.labels}}" as="l" hint-placeholder-count="13">
+      <div style="position: absolute; right: 0; top: {{l.y}}px; display: flex; align-items: center; gap: 4px; transform: translateY(-50%)">
+        <span style="font-size: 12px; font-weight: 700; color: #F4F1E8">{{l.v}}</span>
+        <span style="width: 20px; height: 2px; background: #F4F1E8"></span>
+      </div>
+    </sc-for>
+  </div>
+  <div aria-hidden="true" style="position: absolute; left: 0; top: 432px; height: 36px; padding: 0 20px 0 10px; display: flex; align-items: center; gap: 4px; background-color: #FF5B1F; background-image: repeating-linear-gradient(0deg, rgba(90,20,0,0.12) 0 1px, transparent 1px 3px); box-shadow: inset 0 3px 0 rgba(120,30,0,0.28), inset 0 -3px 0 rgba(120,30,0,0.28); clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%); filter: drop-shadow(0 4px 6px rgba(0,0,0,0.35))">
+    <span style="font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 30px; line-height: 1; color: #1B2230">{{c.altText}}</span>
+    <span style="font-size: 12px; font-weight: 700; color: #1B2230">m</span>
+  </div>
+
+  <svg viewBox="0 0 760 160" width="760" height="160" style="position: absolute; left: 340px; top: 732px; display: block; overflow: visible" aria-hidden="true">
+    <path d="M0 22 Q380 60 760 22" stroke="#D9A441" stroke-width="7" fill="none" stroke-linecap="round"></path>
+    <path d="M0 22 Q380 60 760 22" stroke="#7A5418" stroke-width="2.5" stroke-dasharray="3 7" fill="none"></path>
+    <g transform="translate(80 29)">
+      <path d="M-8 2 Q-8 -4 -2 -4 H2 Q8 -4 8 4 V17 Q8 25 0 25 H-2 Q-8 25 -8 19 Z" fill="none" stroke="#1F6F8B" stroke-width="3.4"></path>
+      <g transform="translate(0 28)">
+        <path d="M-20 6 Q-20 -2 0 -2 Q20 -2 20 6 V46 Q20 52 14 52 H-14 Q-20 52 -20 46 Z" fill="#5E5240"></path>
+        <path d="M-20 6 Q-20 -2 0 -2 Q20 -2 20 6 V17 H-20 Z" fill="#4E4436"></path>
+        <path d="M-13 28 H13 V42 H-13 Z" fill="none" stroke="#3F372C" stroke-width="2"></path>
+        <ellipse cx="0" cy="-2" rx="16" ry="4.5" fill="none" stroke="#D9A441" stroke-width="3"></ellipse>
+      </g>
+    </g>
+    <g transform="translate(230 38)">
+      <path d="M-8 2 Q-8 -4 -2 -4 H2 Q8 -4 8 4 V17 Q8 25 0 25 H-2 Q-8 25 -8 19 Z" fill="none" stroke="#1F6F8B" stroke-width="3.4"></path>
+      <g transform="translate(0 27)" fill="#A5AEB5" stroke="#2B2F36" stroke-width="1.3">
+        <g transform="rotate(-13)"><circle cx="0" cy="5" r="4.5" fill="none" stroke-width="2.4"></circle><path d="M-4 11 L4 11 L1 52 L-1 52 Z"></path></g>
+        <g><circle cx="0" cy="5" r="4.5" fill="none" stroke-width="2.4"></circle><path d="M-4 11 L4 11 L1 52 L-1 52 Z"></path></g>
+        <g transform="rotate(13)"><circle cx="0" cy="5" r="4.5" fill="none" stroke-width="2.4"></circle><path d="M-4 11 L4 11 L1 52 L-1 52 Z"></path></g>
+      </g>
+    </g>
+    <g transform="translate(380 41)">
+      <path d="M-8 2 Q-8 -4 -2 -4 H2 Q8 -4 8 4 V17 Q8 25 0 25 H-2 Q-8 25 -8 19 Z" fill="none" stroke="#1F6F8B" stroke-width="3.4"></path>
+      <g transform="translate(0 28)">
+        <path d="M-20 6 H20 L18 46 Q0 55 -18 46 Z" fill="#1F6F8B"></path>
+        <rect x="-22" y="0" width="44" height="12" rx="5" fill="#F4F1EA"></rect>
+      </g>
+    </g>
+    <g transform="translate(530 38)">
+      <path d="M-8 2 Q-8 -4 -2 -4 H2 Q8 -4 8 4 V17 Q8 25 0 25 H-2 Q-8 25 -8 19 Z" fill="none" stroke="#1F6F8B" stroke-width="3.4"></path>
+      <g transform="translate(0 29)">
+        <rect x="-18" y="0" width="36" height="42" rx="4" fill="#B8A88A"></rect>
+        <rect x="-18" y="14" width="36" height="14" fill="#C42A1C"></rect>
+        <path d="M-18 6 H18" stroke="#6E6450" stroke-width="2"></path>
+      </g>
+    </g>
+    <g transform="translate(680 29)">
+      <path d="M-8 2 Q-8 -4 -2 -4 H2 Q8 -4 8 4 V17 Q8 25 0 25 H-2 Q-8 25 -8 19 Z" fill="none" stroke="#1F6F8B" stroke-width="3.4"></path>
+    </g>
+    <g font-family="Courier Prime, monospace" font-size="15" font-weight="700" fill="#1B2230">
+      <g transform="rotate(-3 80 124)"><rect x="34" y="112" width="92" height="24" fill="#EFE6CC"></rect><text x="80" y="129" text-anchor="middle">TAB · PACK</text></g>
+      <g transform="rotate(3 230 128)"><rect x="196" y="116" width="68" height="24" fill="#EFE6CC"></rect><text x="230" y="133" text-anchor="middle">1 · ×6</text></g>
+      <g transform="rotate(-2 380 128)"><rect x="346" y="116" width="68" height="24" fill="#EFE6CC"></rect><text x="380" y="133" text-anchor="middle">2 · ×3</text></g>
+      <g transform="rotate(4 530 126)"><rect x="496" y="114" width="68" height="24" fill="#EFE6CC"></rect><text x="530" y="131" text-anchor="middle">3 · ×2</text></g>
+    </g>
+  </svg>
+
+  <div style="position: absolute; left: 340px; top: 732px; width: 760px; height: 160px; pointer-events: none">
+    <button aria-label="Open backpack (Tab)" style="pointer-events: auto; position: absolute; left: 40px; top: 20px; width: 80px; height: 120px; background: transparent; border: 0; cursor: pointer"></button>
+    <button aria-label="Place a piton (1), 6 left" style="pointer-events: auto; position: absolute; left: 196px; top: 28px; width: 68px; height: 114px; background: transparent; border: 0; cursor: pointer"></button>
+    <button aria-label="Chalk up (2), 3 left" style="pointer-events: auto; position: absolute; left: 346px; top: 28px; width: 68px; height: 114px; background: transparent; border: 0; cursor: pointer"></button>
+    <button aria-label="Eat a ration (3), 2 left" style="pointer-events: auto; position: absolute; left: 496px; top: 28px; width: 68px; height: 114px; background: transparent; border: 0; cursor: pointer"></button>
+    <div style="pointer-events: auto; position: absolute; left: 656px; top: 50px; filter: drop-shadow(0 6px 8px rgba(0,0,0,0.4))">
+      <button aria-label="Rest: hold Space to recover stamina" style="width: 48px; height: 96px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 8px 0 12px; box-sizing: border-box; border: 0; cursor: pointer; background-color: #FF5B1F; background-image: repeating-linear-gradient(90deg, rgba(90,20,0,0.12) 0 1px, transparent 1px 3px); box-shadow: inset 3px 0 0 rgba(120,30,0,0.28), inset -3px 0 0 rgba(120,30,0,0.28); clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 90%, 0 100%)">
+        <svg width="28" height="14" viewBox="0 0 24 14" aria-hidden="true"><path d="M2 2 L6 12 L10 2 L14 12 L18 2 L22 12" stroke="#2A140A" stroke-width="1.5" fill="none"></path></svg>
+        <span style="font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 20px; line-height: 1; color: #1B2230; writing-mode: vertical-rl; transform: rotate(180deg)">REST</span>
+      </button>
+    </div>
+    <span style="position: absolute; left: 640px; top: 150px; width: 80px; text-align: center; font-size: 12px; font-weight: 700; color: #F4F1E8">SPACE</span>
+  </div>
+
+  <div style="position: absolute; right: 44px; bottom: 44px; width: 250px; transform: rotate(1.8deg); box-sizing: border-box; padding: 16px 18px 12px; background-color: #EFE6CC; background-image: linear-gradient(rgba(110,140,160,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(110,140,160,0.3) 1px, transparent 1px); background-size: 12px 12px; box-shadow: 0 12px 22px rgba(0,0,0,0.35); display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; line-height: 1.45; filter: brightness({{c.paperLight}})">
+    <span style="position: absolute; top: -9px; left: 84px; width: 80px; height: 20px; background: rgba(217,164,65,0.78); transform: rotate(-3deg)"></span>
+    <span><strong>CLICK</strong> a hand or foot</span>
+    <span><strong>DRAG</strong> it onto a hold</span>
+    <span><strong>RIGHT-CLICK</strong> to let go</span>
+    <span style="font-family: 'Reenie Beanie', 'Comic Sans MS', cursive; font-size: 28px; line-height: 1; color: #5A5A58">{{drag.name}} → {{drag.q.word}}</span>
+  </div>
+
+  <svg aria-hidden="true" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; mix-blend-mode: multiply">
+    <filter id="hd-grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3" stitchTiles="stitch"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.3  0 0 0 0 0.24  0 0 0 0 0.14  0 0 0 0.3 0"></feColorMatrix></filter>
+    <rect width="100%" height="100%" filter="url(#hd-grain)"></rect>
+  </svg>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"zone":{"editor":"enum","options":["valley","cliff","ice","summit"],"default":"ice","section":"Environment"},"time":{"editor":"enum","options":["dawn","day","dusk","night"],"default":"night","section":"Environment"},"stamina":{"editor":"range","min":0,"max":100,"step":1,"default":64,"section":"Vitals"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { sel: 'rh' };
+  }
+  renderVals() {
+    const ENV = {
+      valley: { dawn: ['#9FA8C7','#F2C9A8','#8C93A8','#5E7466','#3B4A3E','#B9C48A'], day: ['#A8CFE0','#EEF0DC','#9DB5B2','#6F8F68','#445A45','#C7D38E'], dusk: ['#5E5A86','#F09A6E','#7D6E86','#4F5A55','#2F3A33','#D8A86A'], night: ['#10182B','#2B3A5A','#2A3550','#1E2B33','#141E22','#6F8A7A'] },
+      cliff: { dawn: ['#A7A6C4','#F3CBA6','#9C95A3','#7A6E66','#4E4640','#D8B27A'], day: ['#B6CFDC','#F1E8D6','#ABA79C','#8A8072','#5B524A','#D9BC7C'], dusk: ['#594F7D','#EE8D5E','#806878','#5F4E4E','#3A3030','#E0A060'], night: ['#0F1629','#2A3456','#2B3148','#242733','#17191F','#7D7A6E'] },
+      ice: { dawn: ['#97A9D1','#F2D2C2','#9DAFC9','#7F98B3','#3F5468','#D6EAF4'], day: ['#8FC0E0','#E9F3F7','#A9C3D6','#86A7C0','#3E5568','#DDF0FA'], dusk: ['#4C5288','#E79A86','#6F7AA0','#53648A','#2C3550','#B9C8E6'], night: ['#0A1226','#1F3158','#22345A','#1B2944','#101A2C','#7FA3C8'] },
+      summit: { dawn: ['#7E8DC4','#F4C7C9','#8F95B8','#9AA2C0','#2F3448','#F6F1F4'], day: ['#6F9ACB','#DCE6F2','#9AA8C6','#B5C0D6','#2C3246','#F5F7FB'], dusk: ['#3E3A78','#E0889A','#5C5A8C','#6E6E96','#22223A','#E9D6E6'], night: ['#060B1E','#18224A','#1A2244','#2A3358','#0C1020','#C9D4EE'] }
+    };
+    const ORB = { dawn: ['#F7C38E', 1, 0.25], day: ['#FFF6DA', 0.9, 0], dusk: ['#F4A46A', 1, 0.15], night: ['#E8EEF7', 1, 1] };
+    const TI = { dawn: 0, day: 1, dusk: 2, night: 3 };
+    const TEMP = { valley: [12, 18, 10, 4], cliff: [4, 9, 3, -3], ice: [-6, -2, -7, -14], summit: [-14, -9, -15, -24] };
+    const FROST = { valley: [0, 0, 0, 0.2], cliff: [0.1, 0, 0.05, 0.35], ice: [0.45, 0.3, 0.4, 0.65], summit: [0.6, 0.5, 0.6, 0.85] };
+    const ALT = { valley: 620, cliff: 1240, ice: 2610, summit: 3480 };
+    const CLOCK = ['06:10', '13:40', '18:55', '23:20'];
+    const z = ENV[this.props.zone] ? this.props.zone : 'ice';
+    const t = ORB[this.props.time] ? this.props.time : 'night';
+    const ti = TI[t];
+    const p = ENV[z][t];
+    const temp = TEMP[z][ti];
+    const merc = Math.max(1, Math.min(11, Math.round((temp + 25) / 45 * 11)));
+    const altM = ALT[z];
+    const c = {
+      top: p[0], bot: p[1], far: p[2], mid: p[3], rock: p[4], hold: p[5],
+      orb: ORB[t][0], orbOp: ORB[t][1], stars: ORB[t][2],
+      snow: (z === 'ice' || z === 'summit') ? 0.9 : 0,
+      night: t === 'night' ? 1 : (t === 'dusk' ? 0.3 : 0),
+      frost: FROST[z][ti],
+      paperLight: t === 'night' ? 0.82 : 1,
+      clock: CLOCK[ti],
+      temp: (temp < 0 ? '−' + Math.abs(temp) : String(temp)) + '°C',
+      mercY: 13 - merc, mercH: merc,
+      altText: altM.toLocaleString('en-US')
+    };
+    const base = Math.round(altM / 50) * 50;
+    const labels = [];
+    for (let i = -6; i <= 6; i++) {
+      const v = base + i * 50;
+      labels.push({ v: v.toLocaleString('en-US'), y: 330 - (v - altM) });
+    }
+    const alt = { labels: labels, minorOff: (330 + (altM % 10)) % 10 };
+
+    const s = Math.max(0, Math.min(100, this.props.stamina ?? 64));
+    const filled = Math.round(s / 10);
+    const low = s < 25;
+    const rad = Math.PI / 180;
+    const arc = (cx, cy, r, a0, a1) => 'M' + (cx + r * Math.cos(a0 * rad)).toFixed(1) + ' ' + (cy + r * Math.sin(a0 * rad)).toFixed(1) + ' A' + r + ' ' + r + ' 0 0 1 ' + (cx + r * Math.cos(a1 * rad)).toFixed(1) + ' ' + (cy + r * Math.sin(a1 * rad)).toFixed(1) + ' ';
+    let on = '', off = '';
+    const seg = (140 - 3 * 9) / 10;
+    for (let i = 0; i < 10; i++) {
+      const a0 = -160 + i * (seg + 3);
+      const dd = arc(201, 414, 34, a0, a0 + seg);
+      if (i < filled) on += dd; else off += dd;
+    }
+    const halo = { on: on || 'M0 0', off: off || 'M0 0', color: low ? '#E0412F' : '#FF5B1F', anim: low ? 'hd-pulse 0.8s ease-in-out infinite' : 'none' };
+
+    const tally = (n) => {
+      let d = '', x = 6;
+      for (let i = 1; i <= n; i++) {
+        if (i % 5 === 0) { d += 'M' + (x - 34) + ' 20 L' + (x - 2) + ' 6 '; x += 10; }
+        else { d += 'M' + x + ' 4 L' + (x - 1.5) + ' 24 '; x += 8; }
+      }
+      return d || 'M0 0';
+    };
+
+    const Q = {
+      solid: { solidOp: 1, riskyOp: 0, badOp: 0, word: 'jug!' },
+      risky: { solidOp: 0, riskyOp: 1, badOp: 0, word: 'sloper?' },
+      bad: { solidOp: 0, riskyOp: 0, badOp: 1, word: 'loose' }
+    };
+    const LIMBS = {
+      lh: { name: 'left hand', x: 156, y: 388, sx: 188, sy: 436, ex: 164, ey: 424, tx: 136, ty: 328, q: 'risky' },
+      rh: { name: 'right hand', x: 252, y: 368, sx: 214, sy: 436, ex: 244, ey: 410, tx: 272, ty: 300, q: 'solid' },
+      lf: { name: 'left foot', x: 168, y: 580, sx: 194, sy: 496, ex: 172, ey: 538, tx: 146, ty: 520, q: 'solid' },
+      rf: { name: 'right foot', x: 244, y: 590, sx: 210, sy: 496, ex: 240, ey: 548, tx: 268, ty: 526, q: 'bad' }
+    };
+    const sel = LIMBS[this.state.sel] ? this.state.sel : 'rh';
+    const L = {};
+    Object.keys(LIMBS).forEach((k) => {
+      const l = LIMBS[k];
+      const isOn = k === sel;
+      L[k] = {
+        path: 'M' + l.sx + ' ' + l.sy + ' L' + l.ex + ' ' + l.ey + ' L' + l.x + ' ' + l.y,
+        r: isOn ? 20 : 16, w: isOn ? 3.2 : 2,
+        stroke: isOn ? '#FF5B1F' : '#F4F1EA',
+        dash: isOn ? 'none' : '2 6',
+        op: isOn ? 1 : 0.6
+      };
+    });
+    const d = LIMBS[sel];
+    const dx = d.tx - d.x, dy = d.ty - d.y;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const mx = (d.x + d.tx) / 2 - uy * 20, my = (d.y + d.ty) / 2 + ux * 20;
+    const sx = d.x + ux * 24, sy = d.y + uy * 24;
+    const ex = d.tx - ux * 24, ey = d.ty - uy * 24;
+    const right = d.tx > 200;
+    const wx = right ? d.tx + 22 : d.tx - 64;
+    const wy = d.ty - 22;
+    const drag = {
+      name: d.name,
+      d: 'M' + sx.toFixed(1) + ' ' + sy.toFixed(1) + ' Q' + mx.toFixed(1) + ' ' + my.toFixed(1) + ' ' + ex.toFixed(1) + ' ' + ey.toFixed(1),
+      tr: 'translate(' + d.tx + ' ' + d.ty + ')',
+      q: Q[d.q], wx: wx, wy: wy, wr: 'rotate(-7 ' + wx + ' ' + wy + ')',
+      lx: d.x, ly: d.y
+    };
+    const btns = Object.keys(LIMBS).map((k) => ({
+      label: 'Select ' + LIMBS[k].name,
+      left: Math.round(LIMBS[k].x * 1.5 + 412 - 36), top: Math.round(LIMBS[k].y * 1.5 - 220 - 36),
+      pressed: k === sel,
+      pick: () => this.setState({ sel: k })
+    }));
+    return { c: c, alt: alt, halo: halo, L: L, drag: drag, btns: btns, tallyFood: tally(3), tallyWater: tally(6) };
+  }
+}
+</script>
+</body>
+</html>

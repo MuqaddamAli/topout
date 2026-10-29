@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Route topo, desktop</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&amp;family=Courier+Prime:wght@400;700&amp;family=Reenie+Beanie&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#1B2230}a:hover{color:#C42A1C}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; box-sizing: border-box; padding: 40px 56px; display: flex; overflow: hidden; background-color: #26302A; background-image: radial-gradient(ellipse 900px 620px at 50% 46%, rgba(255,214,140,0.22), transparent 70%), repeating-linear-gradient(0deg, rgba(0,0,0,0.18) 0 1px, transparent 1px 7px), repeating-linear-gradient(90deg, rgba(0,0,0,0.18) 0 1px, transparent 1px 7px); font-family: 'Courier Prime', 'Courier New', monospace; color: #1B2230">
+
+  <div style="position: relative; flex: 1; display: grid; grid-template-columns: 1.12fr 1fr; transform: rotate(-0.6deg); box-shadow: 0 30px 60px rgba(0,0,0,0.55); background-color: #EFE6CC; background-image: linear-gradient(90deg, transparent 0 calc(53% - 26px), rgba(29,32,30,0.18) 53%, transparent calc(53% + 26px)), linear-gradient(rgba(110,140,160,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(110,140,160,0.15) 1px, transparent 1px); background-size: 100% 100%, 16px 16px, 16px 16px">
+
+    <div style="display: flex; flex-direction: column; gap: 10px; padding: 30px 30px 20px 40px">
+      <div style="display: flex; align-items: flex-end; gap: 18px">
+        <a href="Title-Desktop.dc.html" aria-label="Back to title" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; flex: none; border: 2px solid #1B2230; border-radius: 50%">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1B2230" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>
+        </a>
+        <h1 style="margin: 0; font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 72px; line-height: 0.82; text-transform: uppercase">East face</h1>
+        <span style="font-size: 14px; font-weight: 700; letter-spacing: 0.04em; padding-bottom: 4px">[MOUNTAIN NAME] · 4,180 M · TOPO 1/1</span>
+      </div>
+      <div style="position: relative; width: 609px; height: 646px; align-self: center">
+        <svg viewBox="0 0 358 380" width="609" height="646" style="position: absolute; inset: 0; display: block; overflow: visible" role="img" aria-label="Topo of the east face with three routes">
+          <defs>
+            <clipPath id="md-face"><path d="M6 378 L24 304 L16 246 L52 184 L72 128 L110 82 L140 38 L162 12 L180 28 L198 6 L220 46 L244 92 L280 138 L300 200 L326 262 L320 326 L334 378 Z"></path></clipPath>
+            <filter id="md-wash" x="-5%" y="-5%" width="110%" height="110%">
+              <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="3" seed="8" result="w"></feTurbulence>
+              <feDisplacementMap in="SourceGraphic" in2="w" scale="14" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+            </filter>
+            <filter id="md-rough" x="-20%" y="-20%" width="140%" height="140%">
+              <feTurbulence type="fractalNoise" baseFrequency="0.06" numOctaves="2" seed="4" result="w"></feTurbulence>
+              <feDisplacementMap in="SourceGraphic" in2="w" scale="4" xChannelSelector="R" yChannelSelector="G" result="d"></feDisplacementMap>
+              <feTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves="1" seed="9" result="s"></feTurbulence>
+              <feColorMatrix in="s" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.5 1.7" result="m"></feColorMatrix>
+              <feComposite in="d" in2="m" operator="in"></feComposite>
+            </filter>
+            <marker id="md-dot" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5"><circle cx="5" cy="5" r="3.2" fill="#EFE6CC" stroke="#1B2230" stroke-width="1.6"></circle></marker>
+          </defs>
+          <g clip-path="url(#md-face)">
+            <g filter="url(#md-wash)">
+              <rect x="-20" y="-20" width="400" height="100" fill="#C9D3E6" opacity="0.7"></rect>
+              <rect x="-20" y="80" width="400" height="82" fill="#BFD9E8" opacity="0.7"></rect>
+              <rect x="-20" y="162" width="400" height="100" fill="#DCC9A0" opacity="0.7"></rect>
+              <rect x="-20" y="262" width="400" height="140" fill="#BCCB9A" opacity="0.7"></rect>
+            </g>
+            <path d="M150 30 L162 12 L180 28 L198 6 L214 32 L200 44 L186 56 L170 46 Z M94 112 L110 82 L122 96 L108 126 Z M262 150 L280 138 L292 168 L276 176 Z" fill="#F7F4EC"></path>
+            <g stroke="#1B2230" stroke-width="0.8" stroke-linecap="round" opacity="0.55">
+              <path d="M206 40 l8 14 M212 54 l8 14 M218 68 l8 14 M226 82 l8 14 M234 96 l8 14 M244 110 l8 14 M256 124 l8 14 M268 138 l8 14 M282 156 l8 14 M292 176 l8 14 M300 198 l8 14 M308 220 l8 14 M316 242 l8 14"></path>
+              <path d="M86 116 l-6 12 M78 132 l-6 12 M70 148 l-6 12 M62 164 l-6 12 M52 186 l-6 12 M44 204 l-6 12 M34 226 l-6 12 M26 250 l-6 12 M28 276 l-6 12 M24 300 l-6 12"></path>
+              <path d="M150 60 l-5 10 M144 74 l-5 10 M138 88 l-5 10 M176 66 l5 10 M182 80 l5 10"></path>
+            </g>
+            <path d="M120 300 Q126 220 140 150 M134 300 Q140 222 152 152" stroke="#1B2230" stroke-width="0.8" fill="none" opacity="0.5"></path>
+            <path d="M40 270 Q90 260 140 272 M190 212 Q240 202 290 216 M60 330 Q160 318 300 334" stroke="#1B2230" stroke-width="0.9" fill="none" stroke-dasharray="1 3" opacity="0.6"></path>
+          </g>
+          <path d="M6 378 L24 304 L16 246 L52 184 L72 128 L110 82 L140 38 L162 12 L180 28 L198 6 L220 46 L244 92 L280 138 L300 200 L326 262 L320 326 L334 378" stroke="#1B2230" stroke-width="1.5" fill="none" stroke-linejoin="round"></path>
+          <g font-family="Courier Prime, monospace" font-size="7.5" font-weight="700" fill="#1B2230">
+            <path d="M346 8 H358 M346 80 H358 M346 162 H358 M346 262 H358" stroke="#1B2230" stroke-width="0.9"></path>
+            <text x="344" y="11" text-anchor="end">4180</text>
+            <text x="344" y="83" text-anchor="end">3200</text>
+            <text x="344" y="165" text-anchor="end">2000</text>
+            <text x="344" y="265" text-anchor="end">800</text>
+          </g>
+          <path d="{{r.0.d}}" stroke="#EFE6CC" stroke-width="{{r.0.halo}}" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+          <path d="{{r.1.d}}" stroke="#EFE6CC" stroke-width="{{r.1.halo}}" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+          <path d="{{r.2.d}}" stroke="#EFE6CC" stroke-width="{{r.2.halo}}" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+          <path d="{{r.0.d}}" stroke="{{r.0.stroke}}" stroke-width="{{r.0.w}}" stroke-dasharray="{{r.0.dash}}" fill="none" stroke-linecap="round" stroke-linejoin="round" marker-mid="{{r.0.mk}}"></path>
+          <path d="{{r.1.d}}" stroke="{{r.1.stroke}}" stroke-width="{{r.1.w}}" stroke-dasharray="{{r.1.dash}}" fill="none" stroke-linecap="round" stroke-linejoin="round" marker-mid="{{r.1.mk}}"></path>
+          <path d="{{r.2.d}}" stroke="{{r.2.stroke}}" stroke-width="{{r.2.w}}" stroke-dasharray="{{r.2.dash}}" fill="none" stroke-linecap="round" stroke-linejoin="round" marker-mid="{{r.2.mk}}"></path>
+          <g transform="translate(150 300)"><path d="M0 -8 C 4 -2, 6 1, 6 3.5 A6 6 0 0 1 -6 3.5 C -6 1, -4 -2, 0 -8 Z" fill="#1F6F8B"></path></g>
+          <g transform="translate(258 138)" filter="url(#md-rough)"><path d="M0 -8 L8 6 H-8 Z" fill="#EFE6CC" stroke="#C42A1C" stroke-width="1.5"></path><path d="M0 -3 V1.5 M0 3.5 V4.5" stroke="#C42A1C" stroke-width="1.5"></path></g>
+          <path d="M198 6 V-12 M198 -12 h12 l-3 4 l3 4 h-12" stroke="#1B2230" stroke-width="1.3" fill="#C42A1C" stroke-linejoin="round" transform="translate(0 2)"></path>
+          <g font-family="Courier Prime, monospace" font-size="8" fill="#1B2230">
+            <circle cx="10" cy="10" r="3.6" fill="#EFE6CC" stroke="#1B2230" stroke-width="1.2"></circle><text x="18" y="13">belay</text>
+            <path d="M6 28 l4 -7 l4 7z" fill="#EFE6CC" stroke="#1B2230" stroke-width="1"></path><text x="18" y="28">bivy</text>
+            <path d="M10 34 C 12 38, 13 40, 13 41.5 A3 3 0 0 1 7 41.5 C 7 40, 8 38, 10 34 Z" fill="#1F6F8B"></path><text x="18" y="42">water</text>
+            <path d="M10 48 L14 55 H6 Z" fill="none" stroke="#C42A1C" stroke-width="1.2"></path><text x="18" y="56">rockfall</text>
+          </g>
+        </svg>
+        <sc-for list="{{belays}}" as="b" hint-placeholder-count="7">
+          <div style="position: absolute; left: {{b.left}}px; top: {{b.top}}px; width: 28px; height: 28px; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center">
+            <sc-if value="{{b.bivy}}" hint-placeholder-val="{{ false }}">
+              <svg width="30" height="26" viewBox="0 0 22 20" aria-label="Bivy" role="img"><path d="M2 18 L11 2 L20 18 Z" fill="#EFE6CC" stroke="#C42A1C" stroke-width="2" stroke-linejoin="round"></path><path d="M8 18 L11 12 L14 18" fill="none" stroke="#C42A1C" stroke-width="1.5"></path></svg>
+            </sc-if>
+            <sc-if value="{{b.belay}}" hint-placeholder-val="{{ true }}">
+              <span style="width: 26px; height: 26px; border-radius: 50%; background: #EFE6CC; border: 2.5px solid #C42A1C; box-sizing: border-box; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #1B2230">{{b.n}}</span>
+            </sc-if>
+          </div>
+        </sc-for>
+        <sc-for list="{{grades}}" as="g" hint-placeholder-count="7">
+          <span style="position: absolute; left: {{g.left}}px; top: {{g.top}}px; transform: translateY(-50%); padding: 0 4px; background: rgba(239,230,204,0.9); font-size: 14px; font-weight: 700; color: #C42A1C; white-space: nowrap">{{g.v}}</span>
+        </sc-for>
+        <span style="position: absolute; left: 356px; top: 196px; font-family: 'Reenie Beanie', 'Comic Sans MS', cursive; font-size: 30px; color: #5A5A58; transform: rotate(-10deg); white-space: nowrap">rockfall after noon</span>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 16px; padding: 36px 44px 30px 60px">
+      <span style="font-size: 14px; font-weight: 700; letter-spacing: 0.14em">ROUTES ON THIS FACE</span>
+      <div role="tablist" aria-label="Routes" style="display: flex; flex-direction: column; border-top: 2px solid #1B2230">
+        <sc-for list="{{tabs}}" as="tb" hint-placeholder-count="3">
+          <button role="tab" aria-selected="{{tb.on}}" onClick="{{tb.pick}}" style="position: relative; display: grid; grid-template-columns: 48px 1fr auto; align-items: center; gap: 16px; min-height: 72px; padding: 8px 6px 8px 18px; text-align: left; background: {{tb.bg}}; border: 0; border-bottom: 1.5px solid rgba(27,34,48,0.35); color: #1B2230; cursor: pointer; font-family: 'Courier Prime', 'Courier New', monospace">
+            <span aria-hidden="true" style="position: absolute; left: -10px; top: 6px; bottom: 6px; width: 10px; background-color: #FF5B1F; background-image: repeating-linear-gradient(90deg, rgba(90,20,0,0.15) 0 1px, transparent 1px 3px); opacity: {{tb.ribbon}}"></span>
+            <svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true"><g filter="url(#md-rough)"><rect x="3" y="3" width="38" height="38" fill="none" stroke="#1B2230" stroke-width="3"></rect><text x="22" y="31" text-anchor="middle" font-family="Archivo, sans-serif" font-stretch="62%" font-weight="900" font-size="26" fill="#1B2230">{{tb.letter}}</text></g></svg>
+            <span style="display: flex; flex-direction: column; gap: 2px">
+              <span style="font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 36px; line-height: 0.95; text-transform: uppercase">{{tb.name}}</span>
+              <span style="font-size: 14px">{{tb.meta}}</span>
+            </span>
+            <span style="font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 30px; padding-right: 8px">{{tb.grade}}</span>
+          </button>
+        </sc-for>
+      </div>
+
+      <div style="position: relative; display: flex; flex-direction: column; gap: 12px; padding: 20px 22px 18px; transform: rotate(0.8deg); box-shadow: 0 10px 20px rgba(40,30,10,0.25); background-color: #F7F1DE; background-image: linear-gradient(#C42A1C, #C42A1C), repeating-linear-gradient(180deg, transparent 0 25px, rgba(70,120,170,0.28) 25px 26px); background-size: 100% 1.5px, 100% 100%; background-position: 0 66px, 0 66px; background-repeat: no-repeat, repeat">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; height: 48px">
+          <span style="font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 50px; line-height: 0.9; text-transform: uppercase">{{sel.name}}</span>
+          <svg width="72" height="72" viewBox="0 0 60 60" style="flex: none; margin-top: -14px" role="img" aria-label="Grade {{sel.grade}}">
+            <g filter="url(#md-rough)" transform="rotate(8 30 30)">
+              <rect x="5" y="5" width="50" height="50" fill="none" stroke="#C42A1C" stroke-width="3.5"></rect>
+              <text x="30" y="41" text-anchor="middle" font-family="Archivo, sans-serif" font-stretch="62%" font-weight="900" font-size="30" fill="#C42A1C">{{sel.grade}}</text>
+            </g>
+          </svg>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 28px; font-size: 15px; line-height: 26px">
+          <div style="display: flex; gap: 6px"><span style="font-weight: 700">LENGTH</span><span style="flex: 1; border-bottom: 1.5px dotted #1B2230; margin-bottom: 7px"></span><span>{{sel.length}}</span></div>
+          <div style="display: flex; gap: 6px"><span style="font-weight: 700">PITCHES</span><span style="flex: 1; border-bottom: 1.5px dotted #1B2230; margin-bottom: 7px"></span><span>{{sel.pitches}}</span></div>
+          <div style="display: flex; gap: 6px"><span style="font-weight: 700">BIVY</span><span style="flex: 1; border-bottom: 1.5px dotted #1B2230; margin-bottom: 7px"></span><span>{{sel.bivy}}</span></div>
+          <div style="display: flex; gap: 6px"><span style="font-weight: 700">DAYS</span><span style="flex: 1; border-bottom: 1.5px dotted #1B2230; margin-bottom: 7px"></span><span>{{sel.days}}</span></div>
+        </div>
+        <span style="font-family: 'Reenie Beanie', 'Comic Sans MS', cursive; font-size: 36px; line-height: 0.9; color: #5A5A58; transform: rotate(-1.5deg); transform-origin: left">{{sel.note}}</span>
+      </div>
+
+      <div style="margin-top: auto; filter: drop-shadow(0 8px 10px rgba(0,0,0,0.28))">
+        <a href="HUD-Desktop.dc.html" style="display: flex; align-items: center; gap: 14px; min-height: 70px; padding: 0 28px 0 14px; background-color: #FF5B1F; background-image: repeating-linear-gradient(0deg, rgba(90,20,0,0.12) 0 1px, transparent 1px 3px), repeating-linear-gradient(90deg, rgba(255,255,255,0.08) 0 2px, transparent 2px 5px); box-shadow: inset 0 5px 0 rgba(120,30,0,0.28), inset 0 -5px 0 rgba(120,30,0,0.28); clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%); color: #1B2230; text-decoration: none">
+          <svg width="26" height="44" viewBox="0 0 26 44" aria-hidden="true"><path d="M3 4 L7 40 L11 4 L15 40 L19 4 L23 40" stroke="#2A140A" stroke-width="1.8" fill="none" stroke-linejoin="round"></path></svg>
+          <span style="flex: 1; font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 42px; line-height: 1; text-transform: uppercase">Rope up · route {{sel.letter}}</span>
+          <span style="min-width: 54px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 2px solid #1B2230; font-size: 13px; font-weight: 700">ENTER</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <svg aria-hidden="true" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; mix-blend-mode: multiply">
+    <filter id="md-grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3" stitchTiles="stitch"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.3  0 0 0 0 0.24  0 0 0 0 0.14  0 0 0 0.28 0"></feColorMatrix></filter>
+    <rect width="100%" height="100%" filter="url(#md-grain)"></rect>
+  </svg>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { picked: 1 };
+  }
+  renderVals() {
+    const S = 1.7;
+    const R = [
+      { letter: 'A', name: 'North gully', grade: 'IV', length: '1,900 m', pitches: '7', bivy: '1', days: '2', note: 'loose after rain. go early.',
+        pts: [[72,376],[82,326],[98,280],[112,236],[128,190],[144,128],[154,70],[162,14]], bivyAt: [3], grades: ['III','III+','IV','III','IV−','III','II'] },
+      { letter: 'B', name: 'Ridge of teeth', grade: 'V', length: '2,300 m', pitches: '7', bivy: '2', days: '3', note: 'wind on the teeth after 4pm',
+        pts: [[204,376],[230,326],[256,280],[278,224],[268,166],[248,110],[230,58],[198,8]], bivyAt: [3,6], grades: ['IV','V−','V','IV+','V','IV','III'] },
+      { letter: 'C', name: 'Long traverse', grade: 'III', length: '3,100 m', pitches: '8', bivy: '3', days: '4', note: 'easy, but carry extra food',
+        pts: [[20,376],[110,350],[200,332],[288,304],[314,244],[296,178],[262,118],[236,62],[198,8]], bivyAt: [2,4,6], grades: ['I','I','II','II','III','II','II','I'] }
+    ];
+    const pick = this.state.picked;
+    const r = R.map((rt, i) => {
+      const on = i === pick;
+      return {
+        d: 'M' + rt.pts.map((p) => p[0] + ' ' + p[1]).join(' L'),
+        stroke: on ? '#C42A1C' : '#1B2230', w: on ? 2.6 : 1, dash: on ? 'none' : '4 3',
+        halo: on ? 6 : 0, mk: on ? 'none' : 'url(#md-dot)'
+      };
+    });
+    const s = R[pick];
+    const belays = [];
+    for (let i = 1; i < s.pts.length - 1; i++) {
+      const isB = s.bivyAt.indexOf(i) >= 0;
+      belays.push({ left: Math.round(s.pts[i][0] * S), top: Math.round(s.pts[i][1] * S), n: String(i), bivy: isB, belay: !isB });
+    }
+    const grades = [];
+    for (let i = 0; i < s.pts.length - 1; i++) {
+      const a = s.pts[i], b = s.pts[i + 1];
+      grades.push({ v: s.grades[i], left: Math.round((a[0] + b[0]) / 2 * S + 16), top: Math.round((a[1] + b[1]) / 2 * S) });
+    }
+    const tabs = R.map((rt, i) => ({
+      letter: rt.letter, name: rt.name, grade: rt.grade,
+      meta: rt.length + ' · ' + rt.pitches + ' pitches · ' + rt.days + ' days',
+      on: i === pick, bg: i === pick ? 'rgba(255,91,31,0.10)' : 'transparent', ribbon: i === pick ? 1 : 0,
+      pick: () => this.setState({ picked: i })
+    }));
+    return { r: r, belays: belays, grades: grades, tabs: tabs, sel: s };
+  }
+}
+</script>
+</body>
+</html>

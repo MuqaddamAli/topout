@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The log, pause menu, desktop</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&amp;family=Courier+Prime:wght@400;700&amp;family=Reenie+Beanie&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#1B2230}a:hover{color:#C42A1C}
+@keyframes pd-blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; overflow: hidden; background: {{c.bot}}; font-family: 'Courier Prime', 'Courier New', monospace; color: #1B2230">
+  <svg viewBox="0 0 1440 900" width="1440" height="900" style="position: absolute; inset: 0; display: block" aria-hidden="true">
+    <defs>
+      <linearGradient id="pd-sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="{{c.top}}"></stop>
+        <stop offset="0.65" stop-color="{{c.bot}}"></stop>
+      </linearGradient>
+      <filter id="pd-rock" x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.011 0.028" numOctaves="4" seed="11" result="n"></feTurbulence>
+        <feDiffuseLighting in="n" lighting-color="#ffffff" surfaceScale="4" result="light"><feDistantLight azimuth="235" elevation="48"></feDistantLight></feDiffuseLighting>
+        <feComposite in="light" in2="SourceGraphic" operator="arithmetic" k1="1.25" k2="0" k3="0" k4="0" result="lit"></feComposite>
+        <feComposite in="lit" in2="SourceGraphic" operator="in"></feComposite>
+      </filter>
+    </defs>
+    <rect width="1440" height="900" fill="url(#pd-sky)"></rect>
+    <circle cx="1250" cy="250" r="34" fill="{{c.orb}}" opacity="{{c.orbOp}}"></circle>
+    <path d="M0 520 L120 470 L240 500 L380 430 V900 H0Z" fill="{{c.far}}"></path>
+    <path d="M1060 460 L1200 420 L1320 470 L1440 430 V900 H1060Z" fill="{{c.far}}"></path>
+    <path d="M360 900 L340 760 L400 600 L380 450 L450 320 L520 220 L620 150 L740 180 L860 110 L980 140 L1060 250 L1040 420 L1100 560 L1080 720 L1110 900Z" fill="{{c.rock}}" filter="url(#pd-rock)"></path>
+    <g transform="translate(412 -220) scale(1.5)">
+      <path d="M194 496 L172 538 L168 580 M210 496 L240 548 L244 590" stroke="#2B2F36" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+      <path d="M185 430 Q201 422 218 430 L215 494 Q202 502 189 494 Z" fill="#FF5B1F"></path>
+      <rect x="186" y="438" width="30" height="48" rx="7" fill="#5E5240"></rect>
+      <ellipse cx="201" cy="431" rx="15" ry="5" fill="none" stroke="#D9A441" stroke-width="3.5"></ellipse>
+      <path d="M188 436 L164 424 L156 388 M214 436 L244 410 L252 368" stroke="#FF5B1F" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+      <circle cx="201" cy="414" r="12" fill="#EDE7DA"></circle>
+    </g>
+    <rect width="1440" height="900" fill="#05070D" opacity="0.58"></rect>
+  </svg>
+
+  <div style="position: absolute; left: 50%; top: 50%; width: 1080px; height: 660px; transform: translate(-50%, -50%) rotate(-0.8deg); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); filter: drop-shadow(0 30px 50px rgba(0,0,0,0.55))">
+    <div style="position: relative; box-sizing: border-box; padding: 44px 56px 40px 48px; display: flex; flex-direction: column; gap: 18px; background-color: #EFE6CC; background-image: linear-gradient(90deg, transparent 0 112px, rgba(196,42,28,0.5) 112px 113.5px, transparent 113.5px), repeating-linear-gradient(180deg, transparent 0 29px, rgba(70,120,170,0.26) 29px 30px), linear-gradient(90deg, transparent 85%, rgba(0,0,0,0.14)); background-position: 0 0, 0 128px, 0 0">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; height: 66px">
+        <h1 style="margin: 0; font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 84px; line-height: 0.8; text-transform: uppercase">Day 2</h1>
+        <span style="font-size: 14px; font-weight: 700; text-align: right; line-height: 1.35">NORTH GULLY · ROUTE A<br>PITCH 7 · {{c.alt}}</span>
+      </div>
+      <ol aria-label="Today's log" style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; font-size: 18px; line-height: 30px">
+        <li style="display: grid; grid-template-columns: 64px 1fr"><span style="font-weight: 700">05:40</span><span>left bivy 1. −6°C, clear sky.</span></li>
+        <li style="display: grid; grid-template-columns: 64px 1fr"><span style="font-weight: 700">07:10</span><span>pitches 2–4 went fast. dry rock.</span></li>
+        <li style="display: grid; grid-template-columns: 64px 1fr"><span style="font-weight: 700">08:15</span><span>crux, pitch 5. fell once.<br>the piton held.</span></li>
+        <li style="display: grid; grid-template-columns: 64px 1fr"><span style="font-weight: 700">11:02</span><span>ate a ration. 2 left.</span></li>
+        <li style="display: grid; grid-template-columns: 64px 1fr"><span style="font-weight: 700">12:30</span><span>refilled water at the spring.</span></li>
+        <li style="display: grid; grid-template-columns: 64px 1fr"><span style="font-weight: 700">{{c.clock}}</span><span>stopped at {{c.alt}}<span style="display: inline-block; width: 11px; height: 20px; margin-left: 4px; vertical-align: -4px; background: #1B2230; animation: pd-blink 1.1s steps(1) infinite"></span></span></li>
+      </ol>
+      <span style="position: absolute; right: 46px; top: 212px; font-family: 'Reenie Beanie', 'Comic Sans MS', cursive; font-size: 36px; color: #5A5A58; transform: rotate(-8deg)">← lucky</span>
+      <svg width="130" height="90" viewBox="0 0 130 90" style="position: absolute; right: 40px; bottom: 34px" aria-hidden="true">
+        <path d="M6 84 L30 62 L44 66 L66 34 L80 12 L92 26 L104 8 L124 46" stroke="#5A5A58" stroke-width="1.6" fill="none" stroke-linejoin="round"></path>
+        <path d="M30 84 C 40 70, 52 56, 62 44" stroke="#C42A1C" stroke-width="2.5" fill="none" stroke-dasharray="1 5" stroke-linecap="round"></path>
+        <circle cx="62" cy="44" r="4" fill="#FF5B1F" stroke="#1B2230" stroke-width="1.2"></circle>
+        <text x="70" y="62" font-family="Reenie Beanie, cursive" font-size="22" fill="#5A5A58">me</text>
+      </svg>
+    </div>
+
+    <div style="position: relative; box-sizing: border-box; padding: 44px 48px 40px 60px; display: flex; flex-direction: column; gap: 18px; background-color: #EFE6CC; background-image: repeating-linear-gradient(180deg, transparent 0 29px, rgba(70,120,170,0.26) 29px 30px), linear-gradient(90deg, rgba(0,0,0,0.14), transparent 15%); background-position: 0 128px, 0 0">
+      <span style="font-size: 14px; font-weight: 700; letter-spacing: 0.14em; height: 66px; display: flex; align-items: flex-end">CARRYING</span>
+      <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; font-size: 16px; line-height: 30px">
+        <li style="display: flex; gap: 8px"><span style="font-weight: 700">PITONS</span><span style="flex: 1; border-bottom: 1.5px dotted #1B2230; margin-bottom: 9px"></span><span>6</span></li>
+        <li style="display: flex; gap: 8px"><span style="font-weight: 700">CHALK</span><span style="flex: 1; border-bottom: 1.5px dotted #1B2230; margin-bottom: 9px"></span><span>3 handfuls</span></li>
+        <li style="display: flex; gap: 8px"><span style="font-weight: 700">RATIONS</span><span style="flex: 1; border-bottom: 1.5px dotted #1B2230; margin-bottom: 9px"></span><span>2</span></li>
+        <li style="display: flex; gap: 8px"><span style="font-weight: 700">WATER</span><span style="flex: 1; border-bottom: 1.5px dotted #1B2230; margin-bottom: 9px"></span><span>6 sips</span></li>
+      </ul>
+      <div style="filter: drop-shadow(0 8px 10px rgba(0,0,0,0.28)); margin-top: 12px">
+        <a href="HUD-Desktop.dc.html" style="display: flex; align-items: center; gap: 14px; min-height: 70px; padding: 0 26px 0 14px; background-color: #FF5B1F; background-image: repeating-linear-gradient(0deg, rgba(90,20,0,0.12) 0 1px, transparent 1px 3px), repeating-linear-gradient(90deg, rgba(255,255,255,0.08) 0 2px, transparent 2px 5px); box-shadow: inset 0 5px 0 rgba(120,30,0,0.28), inset 0 -5px 0 rgba(120,30,0,0.28); clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%); color: #1B2230; text-decoration: none">
+          <svg width="26" height="44" viewBox="0 0 26 44" aria-hidden="true"><path d="M3 4 L7 40 L11 4 L15 40 L19 4 L23 40" stroke="#2A140A" stroke-width="1.8" fill="none" stroke-linejoin="round"></path></svg>
+          <span style="flex: 1; font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 40px; line-height: 1; text-transform: uppercase">Back on the wall</span>
+          <span style="min-width: 44px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 2px solid #1B2230; font-size: 13px; font-weight: 700">ESC</span>
+        </a>
+      </div>
+      <nav style="display: flex; flex-direction: column">
+        <button style="display: flex; align-items: baseline; gap: 18px; min-height: 52px; padding: 12px 0 0; background: transparent; border: 0; color: #1B2230; cursor: pointer; text-align: left">
+          <span style="font-family: 'Courier Prime', 'Courier New', monospace; font-size: 15px; font-weight: 700; width: 30px">02</span>
+          <span style="font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 34px; line-height: 1; text-transform: uppercase">Settings</span>
+        </button>
+        <button style="display: flex; align-items: baseline; gap: 18px; min-height: 52px; padding: 12px 0 0; background: transparent; border: 0; color: #1B2230; cursor: pointer; text-align: left">
+          <span style="font-family: 'Courier Prime', 'Courier New', monospace; font-size: 15px; font-weight: 700; width: 30px">03</span>
+          <span style="font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 34px; line-height: 1; text-transform: uppercase">Controls</span>
+        </button>
+        <a href="Title-Desktop.dc.html" style="display: flex; align-items: baseline; gap: 18px; min-height: 52px; padding-top: 12px; color: #1B2230; text-decoration: none">
+          <span style="font-size: 15px; font-weight: 700; width: 30px">04</span>
+          <span style="font-family: Archivo, 'Arial Narrow', sans-serif; font-stretch: 62%; font-weight: 900; font-size: 34px; line-height: 1; text-transform: uppercase">Save &amp; descend</span>
+        </a>
+      </nav>
+    </div>
+
+    <svg viewBox="0 0 40 660" width="40" height="660" style="position: absolute; left: 520px; top: 0" aria-hidden="true">
+      <g fill="none" stroke="#7D8288" stroke-width="3.2">
+        <path d="M6 30 C -6 30, -6 46, 20 46 C 46 46, 46 30, 34 30"></path><path d="M6 90 C -6 90, -6 106, 20 106 C 46 106, 46 90, 34 90"></path><path d="M6 150 C -6 150, -6 166, 20 166 C 46 166, 46 150, 34 150"></path><path d="M6 210 C -6 210, -6 226, 20 226 C 46 226, 46 210, 34 210"></path><path d="M6 270 C -6 270, -6 286, 20 286 C 46 286, 46 270, 34 270"></path><path d="M6 330 C -6 330, -6 346, 20 346 C 46 346, 46 330, 34 330"></path><path d="M6 390 C -6 390, -6 406, 20 406 C 46 406, 46 390, 34 390"></path><path d="M6 450 C -6 450, -6 466, 20 466 C 46 466, 46 450, 34 450"></path><path d="M6 510 C -6 510, -6 526, 20 526 C 46 526, 46 510, 34 510"></path><path d="M6 570 C -6 570, -6 586, 20 586 C 46 586, 46 570, 34 570"></path><path d="M6 630 C -6 630, -6 646, 20 646 C 46 646, 46 630, 34 630"></path>
+      </g>
+    </svg>
+  </div>
+
+  <svg aria-hidden="true" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; mix-blend-mode: multiply">
+    <filter id="pd-grain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3" stitchTiles="stitch"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.3  0 0 0 0 0.24  0 0 0 0 0.14  0 0 0 0.28 0"></feColorMatrix></filter>
+    <rect width="100%" height="100%" filter="url(#pd-grain)"></rect>
+  </svg>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"zone":{"editor":"enum","options":["valley","cliff","ice","summit"],"default":"cliff","section":"Environment"},"time":{"editor":"enum","options":["dawn","day","dusk","night"],"default":"day","section":"Environment"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const ENV = {
+      valley: { dawn: ['#9FA8C7','#F2C9A8','#8C93A8','#5E7466','#3B4A3E','#B9C48A'], day: ['#A8CFE0','#EEF0DC','#9DB5B2','#6F8F68','#445A45','#C7D38E'], dusk: ['#5E5A86','#F09A6E','#7D6E86','#4F5A55','#2F3A33','#D8A86A'], night: ['#10182B','#2B3A5A','#2A3550','#1E2B33','#141E22','#6F8A7A'] },
+      cliff: { dawn: ['#A7A6C4','#F3CBA6','#9C95A3','#7A6E66','#4E4640','#D8B27A'], day: ['#B6CFDC','#F1E8D6','#ABA79C','#8A8072','#5B524A','#D9BC7C'], dusk: ['#594F7D','#EE8D5E','#806878','#5F4E4E','#3A3030','#E0A060'], night: ['#0F1629','#2A3456','#2B3148','#242733','#17191F','#7D7A6E'] },
+      ice: { dawn: ['#97A9D1','#F2D2C2','#9DAFC9','#7F98B3','#3F5468','#D6EAF4'], day: ['#8FC0E0','#E9F3F7','#A9C3D6','#86A7C0','#3E5568','#DDF0FA'], dusk: ['#4C5288','#E79A86','#6F7AA0','#53648A','#2C3550','#B9C8E6'], night: ['#0A1226','#1F3158','#22345A','#1B2944','#101A2C','#7FA3C8'] },
+      summit: { dawn: ['#7E8DC4','#F4C7C9','#8F95B8','#9AA2C0','#2F3448','#F6F1F4'], day: ['#6F9ACB','#DCE6F2','#9AA8C6','#B5C0D6','#2C3246','#F5F7FB'], dusk: ['#3E3A78','#E0889A','#5C5A8C','#6E6E96','#22223A','#E9D6E6'], night: ['#060B1E','#18224A','#1A2244','#2A3358','#0C1020','#C9D4EE'] }
+    };
+    const ALT = { valley: '620 m', cliff: '1,240 m', ice: '2,610 m', summit: '3,480 m' };
+    const ORB = { dawn: ['#F7C38E', 1], day: ['#FFF6DA', 0.9], dusk: ['#F4A46A', 1], night: ['#E8EEF7', 1] };
+    const CLOCK = { dawn: '06:10', day: '13:40', dusk: '18:55', night: '23:20' };
+    const z = ENV[this.props.zone] ? this.props.zone : 'cliff';
+    const t = ORB[this.props.time] ? this.props.time : 'day';
+    const p = ENV[z][t];
+    return { c: { top: p[0], bot: p[1], far: p[2], mid: p[3], rock: p[4], hold: p[5], orb: ORB[t][0], orbOp: ORB[t][1], alt: ALT[z], clock: CLOCK[t] } };
+  }
+}
+</script>
+</body>
+</html>
