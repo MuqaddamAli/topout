@@ -42,3 +42,15 @@ flutter:
       fonts:
         - asset: assets/fonts/IBMPlexMono-Medium.ttf
           weight: 500
+    - family: ArchivoXC
+      fonts:
+        - asset: assets/fonts/Archivo-ExtraCondensedBlack.ttf
+          weight: 900
+    - family: CourierPrime
+      fonts:
+        - asset: assets/fonts/CourierPrime-Regular.ttf
+        - asset: assets/fonts/CourierPrime-Bold.ttf
+          weight: 700
+    - family: Reenie
+      fonts:
+        - asset: assets/fonts/ReenieBeanie-Regular.ttf

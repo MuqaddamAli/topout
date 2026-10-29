@@ -6,27 +6,38 @@ import '../game/art.dart';
 import '../game/core.dart';
 import '../game/palette.dart';
 
-/// Text styles (fonts are in assets/fonts).
+/// Text styles (fonts are in assets/fonts). The Field Book's three hands:
+/// Archivo for titles (write them in capitals), Courier for anything typed,
+/// Atkinson for sentences. See also [FbTxt].
 class Txt {
-  static TextStyle display(double size, {FontWeight weight = FontWeight.w800, Color? color, double spacing = 0.02}) =>
+  /// Archivo ExtraCondensed Black. It has one weight; [weight] is kept so
+  /// call sites keep working.
+  static TextStyle display(double size, {FontWeight weight = FontWeight.w900, Color? color, double spacing = 0.01}) =>
       TextStyle(
-        fontFamily: 'BigShoulders',
-        fontWeight: weight,
+        fontFamily: 'ArchivoXC',
+        fontWeight: FontWeight.w900,
         fontSize: size,
-        height: 0.95,
+        height: 0.9,
         letterSpacing: size * spacing,
         color: color ?? Pal.chalk,
       );
   static TextStyle body(double size, {FontWeight weight = FontWeight.w400, Color? color, double height = 1.38}) =>
       TextStyle(fontFamily: 'Atkinson', fontSize: size, fontWeight: weight, color: color ?? Pal.chalk, height: height);
-  static TextStyle mono(double size, {Color? color}) =>
-      TextStyle(fontFamily: 'PlexMono', fontSize: size, fontWeight: FontWeight.w500, color: color ?? Pal.chalk, height: 1.1);
 
-  /// Small capitals label, like "ROUTES".
-  static TextStyle eyebrow({double size = 11, double spacing = 0.16, Color? color}) => TextStyle(
-        fontFamily: 'Atkinson',
+  /// Courier Prime: numbers, times and typed lines.
+  static TextStyle mono(double size, {Color? color, bool bold = true}) => TextStyle(
+      fontFamily: 'CourierPrime',
+      fontSize: size,
+      fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+      color: color ?? Pal.chalk,
+      height: 1.1);
+
+  /// Small typed capitals, like "ROUTES".
+  static TextStyle eyebrow({double size = 11, double spacing = 0.12, Color? color}) => TextStyle(
+        fontFamily: 'CourierPrime',
+        fontWeight: FontWeight.w700,
         fontSize: size,
-        letterSpacing: size * spacing,
+        letterSpacing: size * spacing.clamp(0.08, 0.14),
         color: color ?? Pal.chalkDim,
         height: 1.2,
       );

@@ -2,7 +2,6 @@
 // The numbers come from the mockups in design/field-book/mockups/ and are
 // explained in design/field-book/HANDOFF.md. Nothing here changes the rules.
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:flutter/painting.dart';
 
