@@ -4,9 +4,11 @@
 //
 //   npm run bots -- ABCD 7                          # 7 bots into room ABCD
 //   npm run bots -- ABCD 7 http://192.168.1.5:3000  # another server
+//   npm run bots -- ABCD 7 --top                    # straight up, no falls
 //
-// On a route with a top they stop there and stand, so the top-out messages
-// and the finishing order can be tried; on the Daily Wall they keep going.
+// On a route with a top they tell the room their time there and walk to
+// and fro on the top, so the top-out messages and the results can be tried;
+// on the Daily Wall they keep going. After Play again they climb again.
 //
 // A climber state is one array (the server passes it on without reading it):
 //   [t, climber, cx, cy, tilt, lookX, lookUp,
@@ -17,14 +19,22 @@
 // bits packs: 0-1 left hand style (0 grip, 1 fist, 2 open), 2-3 right hand
 // style, 4-6 left hand hold kind (0 jug, 1 crimp, 2 sloper, 3 chip, 4 ledge,
 // 5 ground, 6 top), 7-9 right hand hold kind, 10 left foot free, 11 right
-// foot free, 12 falling, 13 topped out.
+// foot free, 12 falling, 13 topped out, 14 standing on a flat hold (the
+// others play the steps back from how the body moves), 15 facing left.
+// While an emote plays, two more numbers follow secs: the emote (1 Cheer,
+// 2 Taunt, 3 Aura) and when it started (ms, the same clock as t). While a
+// quick chat phrase shows, two more: the phrase (1 "Wait for me!", 2 "Come
+// on!", 3 "Nice!", 4 "Over here!") and when it was said (0 0 for no emote).
 const { io } = require('socket.io-client');
 
-const [code, countArg, urlArg] = process.argv.slice(2);
+const args = process.argv.slice(2);
+// --top: climb straight up without falling, so the room reaches its results fast
+const straightUp = args.includes('--top');
+const [code, countArg, urlArg] = args.filter((a) => !a.startsWith('--'));
 const url = urlArg || process.env.MP_SERVER || 'http://localhost:3000';
 const count = Math.max(1, Math.min(7, Number(countArg) || 1));
 if (!code) {
-  console.log('Usage: npm run bots -- ROOMCODE [count] [server url]');
+  console.log('Usage: npm run bots -- ROOMCODE [count] [server url] [--top]');
   process.exit(1);
 }
 
@@ -37,6 +47,12 @@ const TOPS = { first: 610, steps: 912, crimps: 1192 };
 // where the spawns are (lib/game/core.dart, laneWall): a lane is 360 wide,
 // every other lane is mirrored; [left, right] spawn in a lane and in a mirrored one
 const LANE_WIDTH = 360;
+// walking speed (cm/s) and the body's height when standing (lib/game/walk.dart)
+const WALK_SPEED = 55, STAND_Y = 107.5;
+// how long each emote plays (s); a bot's Aura (lying down) lasts a while too
+const EMOTE_LENGTH = [0, 1.6, 2.2, 4];
+// a phrase shows this long (s), and a bot says one every so often
+const CHAT_SHOW = 3;
 const SPAWN_X = [[95, 267], [93, 265]];
 
 /// Where a player of [lane] and [side] (0 left, 1 right) starts.
@@ -46,7 +62,7 @@ const spawnX = (lane, side) => lane * LANE_WIDTH + SPAWN_X[lane % 2][side];
 class Climb {
   constructor(n) {
     this.x0 = spawnX(0, n % 2); // until the start says which lane
-    this.speed = 12 + Math.random() * 10; // cm per second
+    this.speed = straightUp ? 30 + Math.random() * 15 : 12 + Math.random() * 10; // cm per second
     this.climber = CLIMBERS[n % CLIMBERS.length];
     this.top = null; // set from the room's route
     this.topped = false;
@@ -54,6 +70,13 @@ class Climb {
   }
 
   reset() {
+    // first a short walk along the ground, like a player choosing where to start
+    this.walkLeft = 2 + Math.random() * 4;
+    this.emote = 0;
+    this.nextEmote = 1 + Math.random() * 3;
+    this.chat = 0;
+    this.nextChat = 4 + Math.random() * 10;
+    this.walkDir = Math.random() < 0.5 ? -1 : 1;
     this.y = 100;
     this.fallV = null;
     this.limbs = [0, 1, 2, 3].map((i) => ({ ...this.ideal(i, 0), from: null, t: 1 }));
@@ -71,8 +94,46 @@ class Climb {
     return { x, y: this.y + ahead + (hand ? 62 : -78) };
   }
 
+  /// Now and then, while standing: Cheer, Taunt or Aura. Returns true while
+  /// one plays (the bot stands still).
+  emoting(t) {
+    if (this.emote && t > this.emoteUntil) this.emote = 0;
+    if (!this.emote && t > this.nextEmote) {
+      this.emote = 1 + Math.floor(Math.random() * 3);
+      this.emoteStart = Date.now();
+      this.emoteUntil = t + EMOTE_LENGTH[this.emote];
+      this.nextEmote = this.emoteUntil + 6 + Math.random() * 8;
+    }
+    return this.emote > 0;
+  }
+
+  /// The emote and quick chat numbers that follow secs in a state (none if neither).
+  extras(t) {
+    if (this.chat && t > this.chatUntil) this.chat = 0;
+    if (!this.chat && t > this.nextChat) {
+      this.chat = 1 + Math.floor(Math.random() * 4);
+      this.chatStart = Date.now();
+      this.chatUntil = t + CHAT_SHOW;
+      this.nextChat = this.chatUntil + 7 + Math.random() * 15;
+    }
+    const emote = this.walkLeft > 0 || this.topped ? this.emote : 0;
+    if (this.chat) return [emote, emote ? this.emoteStart : 0, this.chat, this.chatStart];
+    return emote ? [emote, this.emoteStart] : [];
+  }
+
   update(dt, t) {
-    if (this.topped) return;
+    if ((this.walkLeft > 0 || this.topped) && this.emoting(t)) return;
+    if (this.topped) {
+      // to and fro, up to a metre either way
+      this.x0 += this.walkDir * WALK_SPEED * dt;
+      if (Math.abs(this.x0 - this.walkHome) > 100) this.walkDir = -Math.sign(this.x0 - this.walkHome);
+      return;
+    }
+    if (this.walkLeft > 0) {
+      this.walkLeft -= dt;
+      this.x0 += this.walkDir * WALK_SPEED * dt;
+      return;
+    }
     if (this.fallV != null) {
       this.fallV -= 980 * dt;
       this.y = Math.max(100, this.y + this.fallV * dt);
@@ -83,13 +144,11 @@ class Climb {
     }
     this.y += this.speed * dt;
     if (this.top != null && this.y + 62 >= this.top) {
-      // stand on the top, fists on the hips
+      // on the top: the time goes to the room, then a stroll along the top
       this.topped = true;
-      this.y = this.top + 105;
-      this.limbs = [0, 1, 2, 3].map((i) => {
-        const x = this.x0 + SIDE[i] * (i < 2 ? 21 : 13);
-        return { x, y: i < 2 ? this.y - 23 : this.top, from: null, t: 1 };
-      });
+      this.toppedAt = t;
+      this.walkHome = this.x0;
+      this.onTop?.(t);
       return;
     }
     // every limb moves in turn, a little ahead of the body
@@ -99,7 +158,7 @@ class Climb {
       Object.assign(l, this.ideal(i, 30, t), { from: { x: l.x, y: l.y }, t: 0 });
     }
     for (const l of this.limbs) l.t = Math.min(1, l.t + dt / 0.35);
-    if ((this.top == null && this.y > 2200) || Math.random() < dt / 45) {
+    if ((this.top == null && this.y > 2200) || (!straightUp && Math.random() < dt / 45)) {
       this.fallV = 0;
       this.fallT = 0;
     }
@@ -113,10 +172,13 @@ class Climb {
   }
 
   state(t) {
-    if (this.topped) {
-      const s = [Date.now(), this.climber, this.x0, round(this.y), 0, -1.2, 0.6];
-      for (const l of this.limbs) s.push(round(l.x), round(l.y));
-      return [...s, 1 | (1 << 2) | (1 << 13), round((this.y - 100) / 100), round(t)];
+    if (this.walkLeft > 0 || this.topped) {
+      // standing, walking: the hands hang, the feet are on the ground or the top
+      const x = this.x0, y = this.topped ? this.top : 0, s = [Date.now(), this.climber, round(x), y + STAND_Y, 0, 0, 0.5];
+      s.push(round(x - 31), y + 80, round(x + 31), y + 80, round(x - 12), y, round(x + 12), y);
+      let bits = 2 | (2 << 2) | (5 << 4) | (5 << 7) | (1 << 14) | (this.walkDir < 0 ? 1 << 15 : 0);
+      if (this.topped) bits |= 1 << 13;
+      return [...s, bits, round(y / 100), round(this.topped ? this.toppedAt : t), ...this.extras(t)];
     }
     const falling = this.fallV != null;
     const moving = (i) => falling || (this.limbs[i].t < 1 && this.limbs[i].from);
@@ -131,7 +193,7 @@ class Climb {
       const p = this.limbAt(i);
       s.push(round(p.x), round(p.y));
     }
-    s.push(bits, round((this.y - 100) / 100), round(t));
+    s.push(bits, round((this.y - 100) / 100), round(t), ...this.extras(t));
     return s;
   }
 }
@@ -142,6 +204,10 @@ function bot(n) {
   let timer = null;
   const name = `Bot ${n + 1}`;
   let you = null;
+  climb.onTop = (secs) => {
+    console.log(`${name}: topped out after ${Math.round(secs)} s`);
+    socket.emit('topped', secs);
+  };
 
   const go = (startsIn) =>
     setTimeout(() => {
@@ -175,8 +241,12 @@ function bot(n) {
     climb.reset();
     console.log(`${name}: lane ${me.lane + 1} ${me.side === 0 ? 'left' : 'right'} of ${room.lanes}`);
   });
-  socket.on('started', ({ startsIn }) => {
-    console.log(`${name}: climbing`);
+  socket.on('started', ({ startsIn, round }) => {
+    // a new climb (the first, or after Play again): from the ground again
+    clearInterval(timer);
+    timer = null;
+    climb.topped = false;
+    console.log(`${name}: climbing${round > 1 ? ` (climb ${round})` : ''}`);
     go(startsIn);
   });
   socket.on('connect_error', (e) => console.log(`${name}: cannot reach ${url} (${e.message})`));

@@ -4,7 +4,7 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { io } = require('socket.io-client');
 const { createServer, originAllowed } = require('../index');
-const { CODE_LETTERS } = require('../rooms');
+const { CODE_LETTERS, Rooms, GATE_MS } = require('../rooms');
 
 let server, url;
 const sockets = [];
@@ -230,6 +230,169 @@ test('a player who drops out and comes back keeps their lane', async () => {
   const back = await ask(await connect(), 'rejoin', { code: host.code, token: rc.token });
   assert.equal(back.room.lanes, 2);
   assert.deepEqual(back.room.players.map((p) => [p.name, p.lane, p.side]), [['Host', 0, 0], ['B', 0, 1], ['C', 1, 0]]);
+});
+
+test('topping out: each time counts once, and when everyone is up the climb ends', async () => {
+  const { all, room } = await startedRoom(3);
+  assert.equal(room.ended, false);
+  assert.equal(room.round, 1);
+  let update = roomWhen(all[0], (r) => r.players[1].finish != null);
+  all[1].emit('topped', 64.23);
+  assert.equal((await update).players[1].finish, 64.2);
+  // a second top-out, junk and a negative time change nothing
+  all[1].emit('topped', 10);
+  all[2].emit('topped', 'soon');
+  all[2].emit('topped', -5);
+  update = roomWhen(all[0], (r) => r.players[0].finish != null);
+  all[0].emit('topped', 70);
+  const two = await update;
+  assert.deepEqual(two.players.map((p) => p.finish), [70, 64.2, null]);
+  assert.equal(two.ended, false);
+  update = roomWhen(all[0], (r) => r.ended);
+  all[2].emit('topped', 99.9);
+  assert.deepEqual((await update).players.map((p) => p.finish), [70, 64.2, 99.9]);
+  for (const s of all) s.emit('leave');
+});
+
+test('End climb: only the creator, and then the climb is over (no more states)', async () => {
+  const { all } = await startedRoom(2);
+  assert.equal((await ask(all[1], 'end')).error, 'Only the creator can start');
+  const update = roomWhen(all[1], (r) => r.ended);
+  assert.deepEqual(await ask(all[0], 'end'), {});
+  assert.equal((await update).ended, true);
+  assert.equal((await ask(all[0], 'end')).error, 'Something went wrong. Try again.');
+  // after the end nothing is relayed
+  let got = false;
+  all[0].on('state', () => (got = true));
+  all[1].emit('state', [1, 'ada', 180, 100]);
+  await wait(80);
+  assert.equal(got, false);
+  for (const s of all) s.emit('leave');
+});
+
+test('Play again: only after the results and only the creator; a new round with fresh times', async () => {
+  const { all } = await startedRoom(3);
+  assert.equal((await ask(all[0], 'again')).error, 'The climb is still on');
+  all[1].emit('topped', 30);
+  await roomWhen(all[0], (r) => r.players[1].finish != null);
+  const over = roomWhen(all[0], (r) => r.ended);
+  await ask(all[0], 'end');
+  await over;
+  assert.equal((await ask(all[1], 'again')).error, 'Only the creator can start');
+  const started = next(all[2], 'started');
+  const fresh = roomWhen(all[2], (r) => r.round === 2);
+  assert.deepEqual(await ask(all[0], 'again'), {});
+  const st = await started;
+  assert.equal(st.round, 2);
+  assert.equal(st.lanes, 2);
+  const room = await fresh;
+  assert.equal(room.ended, false);
+  assert.equal(room.started, true);
+  assert.deepEqual(room.players.map((p) => [p.name, p.lane, p.side, p.finish]), [['P1', 0, 0, null], ['P2', 0, 1, null], ['P3', 1, 0, null]]);
+  // still no joining while the room climbs
+  assert.equal((await ask(await connect(), 'join', { code: room.code, name: 'Late' })).error, 'This climb has already started');
+  for (const s of all) s.emit('leave');
+});
+
+test('the last one still climbing leaves: everyone who stayed is up, so the climb ends', async () => {
+  const { all } = await startedRoom(3);
+  all[0].emit('topped', 50);
+  all[2].emit('topped', 60);
+  await roomWhen(all[0], (r) => r.players[2].finish != null);
+  const update = roomWhen(all[0], (r) => r.players.length === 2);
+  all[1].emit('leave');
+  const room = await update;
+  assert.equal(room.ended, true);
+  for (const s of all) s.emit('leave');
+});
+
+/// A climber state like the game's (18 numbers), with an emote: [id] and when it started.
+const withEmote = (id, start) => [1, 'ada', 180, 100, 0, 0, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 3.2, id, start];
+
+test('emotes: one may start every ~2 s; the same one keeps playing; spam is taken out', () => {
+  const rooms = new Rooms();
+  const p = {};
+  assert.equal(rooms.gate(p, withEmote(1, 1000), 0)[18], 1, 'the first one goes through');
+  assert.equal(rooms.gate(p, withEmote(1, 1000), 900)[18], 1, 'the same one, still playing');
+  assert.equal(rooms.gate(p, withEmote(2, 1500), 1000)[18], 0, 'a new one too soon is taken out');
+  assert.equal(rooms.gate(p, withEmote(2, 1500), 1100)[18], 0, 'and stays out');
+  assert.equal(rooms.gate(p, withEmote(3, 2100), GATE_MS + 50)[18], 3, 'after the wait a new one goes through');
+  // states without an emote, and older 18-number states, pass as they are
+  assert.deepEqual(rooms.gate(p, withEmote(0, 0), GATE_MS + 60), withEmote(0, 0));
+  assert.deepEqual(rooms.gate(p, [1, 'ada', 180, 100], GATE_MS + 70), [1, 'ada', 180, 100]);
+});
+
+test('emotes go out with the states, and a burst of them is cut down', async () => {
+  const { all } = await startedRoom(2);
+  const got = [];
+  all[0].on('state', ([, st]) => got.push(st[18]));
+  // spaced out a little: states go out volatile, and a burst in one moment is dropped anyway
+  for (let k = 0; k < 6; k++) {
+    all[1].emit('state', withEmote((k % 3) + 1, 1000 + k * 100));
+    await wait(20);
+  }
+  await wait(100);
+  assert.deepEqual(got, [1, 0, 0, 0, 0, 0]);
+  for (const s of all) s.emit('leave');
+});
+
+test('the ready check: each player taps Ready (and can untap), everyone sees it; only in the lobby', async () => {
+  const host = await makeRoom();
+  assert.equal(host.r.room.players[0].ready, false);
+  const b = await connect();
+  await ask(b, 'join', { code: host.code, name: 'B' });
+  let update = roomWhen(host.s, (r) => r.players[1]?.ready === true);
+  b.emit('ready', true);
+  await update;
+  update = roomWhen(b, (r) => r.players[0].ready && r.players[1].ready);
+  host.s.emit('ready', true);
+  await update;
+  update = roomWhen(host.s, (r) => r.players[1].ready === false);
+  b.emit('ready', false);
+  await update;
+  // junk is ignored, and after the start Ready no longer changes
+  b.emit('ready', 'yes');
+  const started = roomWhen(host.s, (r) => r.started);
+  await ask(host.s, 'start');
+  await started;
+  b.emit('ready', true);
+  await wait(60);
+  assert.equal([...server.rooms.rooms.get(host.code).players.values()][1].ready, false);
+});
+
+test('quick chat: like emotes, one phrase may start every ~2 s', () => {
+  const rooms = new Rooms();
+  const p = {};
+  const say = (id, start) => [...withEmote(0, 0), id, start];
+  assert.equal(rooms.gate(p, say(2, 500), 0)[20], 2);
+  assert.equal(rooms.gate(p, say(3, 900), 400)[20], 0, 'too soon');
+  assert.equal(rooms.gate(p, say(4, 3000), GATE_MS + 10)[20], 4);
+  // chat and emotes have their own wait: an emote right after a phrase goes through
+  const both = [...withEmote(1, 3100), 4, 3000];
+  const out = rooms.gate(p, both, GATE_MS + 20);
+  assert.deepEqual([out[18], out[20]], [1, 4]);
+});
+
+test('a dropped player who comes back mid-climb keeps their lane, their time and Ready', async () => {
+  const host = await makeRoom();
+  const b = await connect();
+  const rb = await ask(b, 'join', { code: host.code, name: 'B' });
+  const readied = roomWhen(host.s, (r) => r.players[1]?.ready === true);
+  b.emit('ready', true);
+  await readied;
+  const started = roomWhen(host.s, (r) => r.started);
+  await ask(host.s, 'start');
+  await started;
+  const up = roomWhen(host.s, (r) => r.players[1].finish != null);
+  b.emit('topped', 42.5);
+  await up;
+  const dropped = roomWhen(host.s, (r) => r.players[1]?.connected === false);
+  b.close();
+  await dropped;
+  const back = await ask(await connect(), 'rejoin', { code: host.code, token: rb.token });
+  const me = back.room.players[1];
+  assert.deepEqual([me.name, me.connected, me.lane, me.side, me.finish, me.ready], ['B', true, 0, 1, 42.5, true]);
+  assert.equal(back.room.started, true);
 });
 
 test('origins: Vercel, localhost and the local network only', () => {

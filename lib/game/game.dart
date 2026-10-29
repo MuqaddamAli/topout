@@ -16,23 +16,28 @@ import 'online.dart';
 import 'palette.dart';
 import 'records.dart';
 import 'remote.dart';
+import 'walk.dart';
 import 'store.dart';
 
 export 'body.dart';
+export 'walk.dart';
 
 enum Phase { menu, climb, paused, falling, fallCard, top }
 
 /// Which overlay is on screen.
-enum Screen { menu, online, hud, fallCard, topCard, pause }
+enum Screen { menu, online, hud, fallCard, topCard, pause, results }
 
 enum HoldStatus { good, weak, no, dyno, far }
 
 enum ToastKind { plain, warn, ok }
 
 class Snapshot {
-  Snapshot(this.limbs, this.c);
+  Snapshot(this.limbs, this.c, [this.stand]);
   final List<Limb> limbs;
   final Pt c;
+
+  /// The flat hold the climber stood on (online only), or null while climbing.
+  final int? stand;
 }
 
 class Checkpoint {
@@ -156,9 +161,21 @@ class DynoState {
   final double dur = 0.45;
 }
 
+/// Pulling up over an edge: the hands hold it, the body rises over it in an
+/// arc and the feet come after. At the top it ends with a cheer; on a ledge
+/// (with others) you stand up there.
 class Cele {
-  Cele(this.c0, this.c1);
+  Cele(this.c0, this.c1, {required this.edge, this.cheer = true, this.feetOn = false});
   final Pt c0, c1;
+
+  /// The height of the edge the hands pull on.
+  final double edge;
+
+  /// At the top: the arms go up, sparks fly and the wind blows. Not on a ledge.
+  final bool cheer;
+
+  /// The feet stepped onto the ledge already, so they stay on it.
+  final bool feetOn;
   double t = 0;
   bool burst = false;
 }
@@ -293,6 +310,62 @@ class Game {
   /// Where you start online: your lane and side, given by the server at the
   /// start. Null when climbing alone (you start on the route's start holds).
   Spawn? spawn;
+
+  // ---- standing and walking (online, and alone with ?lanes; see walk.dart)
+
+  /// The flat hold (the ground, a ledge or the top) you stand on with both
+  /// hands free, or null while climbing.
+  int? standOn;
+
+  /// Which way you face (-1 left, 1 right), the step cycle and how much you
+  /// walk now (0 still, 1 full stride).
+  double facing = 1, walkPhase = 0, walkAmt = 0;
+  double _walkV = 0;
+
+  /// Where a finger held beside the climber wants to walk to.
+  double? walkTo;
+  ({double sy, double at})? _walkHold;
+
+  /// Walk keys held down: -1 left, 1 right.
+  final Set<int> _walkKeys = {};
+
+  /// The emote you show now (only while standing), and when it started on
+  /// the game clock and on the clock the state is sent with.
+  Emote? emote;
+  double emoteAt = 0;
+  int _emoteStartMs = 0;
+
+  /// When the next emote may start (a short cooldown), and when the last ended.
+  double nextEmoteAt = 0;
+  double _emoteEnd = -9;
+
+  /// The standing pose drawn this frame (null while climbing).
+  StandPose? _sp;
+
+  /// The quick chat phrase you said (an index into [quickChat]), when, and
+  /// when the next one may be said. [chatOpen]: the phrase menu is open.
+  int? chat;
+  double chatAt = 0, nextChatAt = 0;
+  int _chatStartMs = 0;
+  bool chatOpen = false;
+
+  /// The player your camera follows after you topped out (Watch), or null.
+  String? watching;
+
+  /// With others the climb goes on after the top: you reached it (your time
+  /// stopped).
+  bool toppedOut = false;
+
+  /// The flat hold you will stand on once the pull-up (and at the top the
+  /// cheer) is over.
+  int? _celeStand;
+
+  /// The room's climb you are in (Play again starts the next one).
+  int _roundPlayed = 0;
+
+  /// Standing and walking are for climbs with others: online, or on a wall
+  /// with lanes. A climb alone stays as it always was.
+  bool get social => onlineClimb || (route?.lanes.length ?? 1) > 1;
 
   /// Seconds until the room's climb starts (after the creator taps Start).
   double? countdown;
@@ -502,8 +575,12 @@ class Game {
     return Pt(p.x + jointOffset[i][0], p.y + jointOffset[i][1]);
   }
 
-  Snapshot snapshot() => Snapshot(limbs.map((l) => l.copy()).toList(), c.copy());
-  double climberHeight() => math.max(0, c.y - 100) / unitsPerMetre;
+  Snapshot snapshot() => Snapshot(limbs.map((l) => l.copy()).toList(), c.copy(), standOn);
+  double climberHeight() {
+    // standing, you are as high as what you stand on (the ground is 0 m)
+    if (standOn case final s?) return holds[s].y / unitsPerMetre;
+    return math.max(0, c.y - 100) / unitsPerMetre;
+  }
 
   void later(double secs, VoidCallback fn) => _later.add(_Later(clock + secs, fn));
 
@@ -562,12 +639,19 @@ class Game {
     commitSegment();
     route = r;
     keepsRecords = !onlineClimb && r.lanes.length == 1;
-    final h = r.holds, at = onlineClimb ? spawn : null;
+    final h = r.holds, at = onlineClimb ? spawn : (r.lanes.length > 1 ? r.lanes[0].spawns[0] : null);
+    standOn = null;
+    _walkV = walkAmt = walkPhase = 0;
+    _walkKeys.clear();
+    walkTo = null;
+    toppedOut = false;
+    _celeStand = null;
+    chat = null;
+    chatOpen = false;
+    watching = null;
     if (at != null) {
-      // online: standing on the ground at your spawn, one hand on a start jug
-      final p = spawnPose(r, at, climber);
-      limbs = p.limbs;
-      c = p.c;
+      // with others: standing on the ground at your spawn, free to walk
+      _standOn(0, at.x);
     } else {
       final p0 = attachPoint(h[r.startHands[0]], 0), p1 = attachPoint(h[r.startHands[1]], 1);
       limbs = [Limb(r.startHands[0], p0.x, p0.y), Limb(r.startHands[1], p1.x, p1.y), Limb(0, 164, 0), Limb(0, 198, 0)];
@@ -603,7 +687,7 @@ class Game {
     lit.clear();
     litAt.clear();
     _grabbedAt.clear();
-    chalked = at != null ? {at.hold} : {...r.startHands};
+    chalked = at != null ? {} : {...r.startHands};
     dyno = null;
     hangT = 0;
     _clearCatch();
@@ -627,6 +711,170 @@ class Game {
     curtain = 1;
     slipFlash = 0;
     _ui();
+  }
+
+  /// Stands up on flat hold [hold] with the body over [x]: both feet on it,
+  /// both hands free.
+  void _standOn(int hold, double x) {
+    final h = holds[hold], w = walkRange(route!, h);
+    final p = standAt(climber, clampD(x, w.lo, w.hi), h.y, facing: facing);
+    standOn = hold;
+    _walkV = walkAmt = 0;
+    _endEmote();
+    c = p.c.copy();
+    limbs = [
+      Limb(null, p.ends[0].x, p.ends[0].y),
+      Limb(null, p.ends[1].x, p.ends[1].y),
+      Limb(hold, c.x - 12, h.y),
+      Limb(hold, c.x + 12, h.y),
+    ];
+    hangT = 0;
+  }
+
+  /// Walks along the flat hold you stand on: keys, or toward a finger held
+  /// beside the climber. Stops at the ends of a ledge.
+  void _stepStand(double dt) {
+    final h = holds[standOn!], w = walkRange(route!, h);
+    var dir = 0.0;
+    if (walkTo case final to?) {
+      final d = to - c.x;
+      dir = d.abs() < 6 ? 0 : d.sign;
+    } else {
+      dir = (_walkKeys.contains(1) ? 1.0 : 0.0) - (_walkKeys.contains(-1) ? 1.0 : 0.0);
+    }
+    if (dir != 0) {
+      facing = dir;
+      _endEmote();
+      if (watching != null) {
+        watching = null;
+        _ui();
+      }
+    }
+    final em = emote;
+    if (em != null && clock - emoteAt > em.length) _endEmote();
+    _walkV += (dir * walkSpeed - _walkV) * math.min(1.0, dt * 8);
+    var x = c.x + _walkV * dt;
+    if (x <= w.lo || x >= w.hi) {
+      x = clampD(x, w.lo, w.hi);
+      _walkV = 0;
+    }
+    walkPhase = (walkPhase + _walkV.abs() * dt / strideLength * 2 * math.pi) % (math.pi * 200);
+    walkAmt = clampD(_walkV.abs() / walkSpeed, 0, 1);
+    final p = standAt(climber, x, h.y, facing: facing, phase: walkPhase, walk: walkAmt, emote: emote, emoteT: clock - emoteAt);
+    c
+      ..x = p.c.x
+      ..y = p.c.y;
+    for (var i = 0; i < 2; i++) {
+      limbs[i]
+        ..x = p.ends[i].x
+        ..y = p.ends[i].y;
+      limbs[i + 2]
+        ..x = x + sideOf[i + 2] * 12
+        ..y = h.y;
+    }
+    if (emote != null) return; // the body stays put while it plays
+    final g = gripRates(limbs, holds, mode, climber);
+    for (var i = 0; i < 2; i++) {
+      grip[i] = clampD(grip[i] + g.rates[i] * dt, 0, 100);
+    }
+    if (g.s.standing) _checkpointAt(g.s);
+  }
+
+  /// Emotes need you standing (on the ground, a ledge or the top), with others.
+  bool get canEmote => social && phase == Phase.climb && standOn != null && drag == null && cele == null;
+
+  /// Shows [e] to everyone, if you stand and the last one was long enough ago.
+  void doEmote(Emote e) {
+    if (!canEmote || clock < nextEmoteAt) return;
+    emote = e;
+    emoteAt = clock;
+    _emoteStartMs = _netMs.round();
+    watching = null;
+    nextEmoteAt = clock + emoteCooldown;
+    _walkV = walkAmt = 0;
+    walkTo = null;
+    _play(sfxFor(e), pan: panOf(c.x));
+    if (e == Emote.cheer) later(0.2, () => effects.burst(cd.x, cd.y + 90, PartKind.spark, 10));
+    if (e == Emote.aura) later(0.7, () => effects.burst(cd.x, cd.y + 10, PartKind.spark, 8));
+    _ui();
+  }
+
+  /// Quick chat works while climbing too, with others.
+  bool get canChat => social && phase == Phase.climb;
+
+  /// Says quick chat phrase [i] to everyone, if the last one was long enough ago.
+  void say(int i) {
+    chatOpen = false;
+    if (!canChat || i < 0 || i >= quickChat.length || clock < nextChatAt) return _ui();
+    chat = i;
+    chatAt = clock;
+    _chatStartMs = _netMs.round();
+    nextChatAt = clock + emoteCooldown;
+    watching = null;
+    _play(Sfx.tap, pan: panOf(c.x));
+    _ui();
+  }
+
+  /// The phrase showing above your climber now, if any.
+  String? get chatShown => chat != null && clock - chatAt < chatShow ? quickChat[chat!] : null;
+
+  void toggleChat() {
+    if (!canChat) return;
+    chatOpen = !chatOpen;
+    _ui();
+  }
+
+  /// After you topped out, the camera can follow the others.
+  bool get canWatch => onlineClimb && toppedOut && remotes.all.any((o) => o.shown != null);
+
+  /// Follows the next player (in the room's order), and after the last one
+  /// comes back to you.
+  void watchNext() {
+    if (!canWatch) return;
+    final ids = [for (final o in remotes.all) if (o.shown != null) o.id];
+    final k = watching == null ? -1 : ids.indexOf(watching!);
+    watching = k + 1 < ids.length ? ids[k + 1] : null;
+    camManual = null;
+    showRecenter = false;
+    _ui();
+  }
+
+  /// The name of the player you watch.
+  String? get watchingName => watching == null ? null : remotes.byId[watching]?.name;
+
+  static Sfx sfxFor(Emote e) => switch (e) { Emote.cheer => Sfx.emoteCheer, Emote.taunt => Sfx.emoteTaunt, Emote.aura => Sfx.emoteAura };
+
+  void _endEmote() {
+    if (emote == null) return;
+    emote = null;
+    _emoteEnd = clock;
+    _ui();
+  }
+
+  /// After a foot move: with both feet on the same flat hold (the ground or
+  /// a ledge), you stand up there and the hands let go.
+  void _maybeStand() {
+    final a = limbs[2].h, b = limbs[3].h;
+    if (!social || a == null || a != b) return;
+    if (holds[a].t == HoldType.top && !toppedOut) _reachedTop();
+    if (holds[a].t != HoldType.ground) return _mantle(a, feetOn: true);
+    _standOn(a, (limbs[2].x + limbs[3].x) / 2);
+    resetPoseState([HandStyle.open, HandStyle.open]);
+  }
+
+  /// Pulls up onto flat hold [hold] the way you pull over the top (hands on
+  /// its edge, the body over it, the feet after), then stands there.
+  /// [feetOn]: the feet stepped onto it already and stay there.
+  void _mantle(int hold, {bool feetOn = false}) {
+    final h = holds[hold], w = walkRange(route!, h);
+    final to = standAt(climber, clampD(c.x, w.lo, w.hi), h.y, facing: facing).c;
+    cele = Cele(c.copy(), to, edge: h.y, cheer: false, feetOn: feetOn);
+    _celeStand = hold;
+    drag = null;
+    hangT = 0;
+    for (final l in limbs) {
+      l.h = null;
+    }
   }
 
   void resetPoseState(List<HandStyle> styles) {
@@ -730,8 +978,11 @@ class Game {
     }
     if (online.starts != _startsSeen) {
       _startsSeen = online.starts;
-      if (r != null && phase == Phase.menu && screen == Screen.online) countdown = (online.startsInMs ?? 0) / 1000;
+      final next = r != null && onlineClimb && online.startedRound > _roundPlayed;
+      if (r != null && ((phase == Phase.menu && screen == Screen.online) || next)) countdown = (online.startsInMs ?? 0) / 1000;
     }
+    // the room's climb is over: everyone sees the results
+    if (r != null && r.ended && onlineClimb && screen != Screen.results && countdown == null) _showResults();
   }
 
   /// Messages for who joined, left, dropped out or came back. Several at
@@ -771,6 +1022,14 @@ class Game {
   double get onlineSecs => (_netMs - _onlineStart) / 1000;
 
   void _remoteEvent(RemoteClimber who, RemoteEvent e) {
+    if (e == RemoteEvent.emote) {
+      final s = who.shown, em = s?.emote;
+      if (s == null || em == null) return;
+      // quieter than your own, and fading with distance
+      final far = clampD(hypot(s.c.x - cd.x, s.c.y - cd.y) / 900, 0, 1);
+      audio.play(sfxFor(em), pan: panOf(s.c.x), volume: 0.45 * (1 - 0.7 * far));
+      return;
+    }
     if (e == RemoteEvent.fell) {
       toast('${who.name} fell', ToastKind.warn);
       return;
@@ -794,7 +1053,7 @@ class Game {
           list.add(Standing(p.id, p.name, metres: climberHeight(), finish: myFinish, you: true));
         } else {
           final o = remotes.byId[p.id];
-          list.add(Standing(p.id, p.name, metres: o?.shown?.metres ?? 0, finish: o?.finish, connected: p.connected));
+          list.add(Standing(p.id, p.name, metres: o?.shown?.metres ?? 0, finish: p.finish ?? o?.finish, connected: p.connected));
         }
       }
       list.sort((a, b) {
@@ -829,11 +1088,32 @@ class Game {
     return wall.lanes[math.min(at.lane, wall.lanes.length - 1)].spawns[at.side];
   }
 
+  /// The finishing order and times for everyone, when the room's climb ends.
+  void _showResults() {
+    if (drag != null) endDrag(true);
+    _ptr = null;
+    _pan = null;
+    _walkHold = null;
+    walkTo = null;
+    _walkKeys.clear();
+    look = false;
+    tipText = null;
+    _updateStandings();
+    screen = Screen.results;
+    _ui();
+  }
+
+  /// The creator ends the climb for everyone, or after the results starts
+  /// the next one (Play again).
+  void endClimb() => online.endClimb();
+  void playAgain() => online.again();
+
   /// Everyone in the room starts the same route in the same mode, each at
-  /// their own spawn on the same wall.
+  /// their own spawn on the same wall. Also the next climb after Play again.
   void _startOnline() {
     final r = online.room;
-    if (r == null || phase != Phase.menu) return;
+    if (r == null || (phase != Phase.menu && !onlineClimb)) return;
+    _roundPlayed = online.startedRound;
     _modeBefore ??= mode;
     mode = Mode.fromName(r.mode);
     onlineClimb = true;
@@ -858,7 +1138,13 @@ class Game {
         kinds: hKind,
         footFree: fFree,
         falling: phase == Phase.falling,
-        topped: phase == Phase.top,
+        topped: phase == Phase.top || toppedOut,
+        standing: standOn != null && drag == null,
+        facingLeft: facing < 0,
+        emote: emote,
+        emoteStart: _emoteStartMs,
+        chat: chatShown != null ? chat : null,
+        chatStart: _chatStartMs,
         metres: climberHeight(),
         secs: onlineSecs,
       );
@@ -897,6 +1183,8 @@ class Game {
     countdown = null;
     onlineClimb = false;
     spawn = null;
+    toppedOut = false;
+    _roundPlayed = 0;
     myFinish = null;
     _updateStandings();
     if (_modeBefore case final m?) {
@@ -980,6 +1268,11 @@ class Game {
       showTip('Blue holds are far. Let go there to jump. Then grab another hold fast.');
       return;
     }
+    if (standOn != null && social && !store.getBool('tip.walk', false)) {
+      store.set('tip.walk', true);
+      showTip('Hold beside your climber to walk (A and D on a keyboard). Grab a hold to climb. On a ledge you can stand and walk too.');
+      return;
+    }
     if (!route!.tutorial) return;
     final now = clock;
     _Tip? cur;
@@ -1046,7 +1339,7 @@ class Game {
       _tapCatch(pos);
       return;
     }
-    if (phase != Phase.climb || _ptr != null || dyno != null) return;
+    if (phase != Phase.climb || _ptr != null || dyno != null || cele != null) return;
     if (look) {
       setLook(false);
       return;
@@ -1057,11 +1350,32 @@ class Game {
       _beginDrag(i, pos, touch);
     } else {
       _pan = (sy: pos.dy, cam: camY);
+      // standing: a finger held beside the climber walks there
+      if (standOn != null && _besideClimber(pos)) {
+        _walkHold = (sy: pos.dy, at: clock);
+        walkTo = s2w(pos.dx, pos.dy).x;
+      }
     }
+  }
+
+  /// Is [pos] (on screen) beside the standing climber, about level with them?
+  bool _besideClimber(Offset pos) {
+    final w = s2w(pos.dx, pos.dy), y = holds[standOn!].y;
+    return w.y > y - 60 && w.y < y + 230 && (w.x - cd.x).abs() > 22;
   }
 
   void pointerMove(int id, Offset pos) {
     if (id != _ptr) return;
+    if (_walkHold case final wh?) {
+      // a quick move up or down is a pan after all; otherwise keep walking toward the finger
+      if ((pos.dy - wh.sy).abs() > 12 && clock - wh.at < 0.15) {
+        _walkHold = null;
+        walkTo = null;
+      } else {
+        walkTo = s2w(pos.dx, pos.dy).x;
+        return;
+      }
+    }
     if (drag != null) {
       _updateDrag(pos);
     } else if (_pan != null && route != null) {
@@ -1081,6 +1395,8 @@ class Game {
     _ptr = null;
     if (drag != null) endDrag(cancelled);
     _pan = null;
+    _walkHold = null;
+    walkTo = null;
   }
 
   void recenter() {
@@ -1091,6 +1407,15 @@ class Game {
 
   void _beginDrag(int i, Offset pos, bool touch) {
     final l = limbs[i];
+    if (standOn != null && !isHand[i]) {
+      shake = Shake(i, 0.45);
+      _play(Sfx.no);
+      toast('Grab a hold with a hand first.', ToastKind.warn);
+      return;
+    }
+    walkTo = null;
+    _walkV = 0;
+    _endEmote();
     if (l.h != null) {
       final test = [for (var k = 0; k < 4; k++) k == i ? Limb(null, limbs[k].x, limbs[k].y) : limbs[k]];
       if (!supportInfo(test, holds).supported) {
@@ -1200,6 +1525,16 @@ class Game {
   void endDrag(bool cancelled) {
     final d = drag!, l = limbs[d.i];
     drag = null;
+    if (!cancelled && d.candOk && standOn != null) {
+      // the first grab from standing (or a jump from it): now you climb. A
+      // fall from here brings you back to where you stood: on the ground
+      // until a ledge saves you, and on the ledge that saved you.
+      final at = standOn!, t = holds[at].t;
+      final saved = t == HoldType.ground ? (cpLedge ?? 0) == 0 : t == HoldType.ledge && mode.ledges && cpLedge == at;
+      if (saved && !route!.endless) checkpoint = Checkpoint(d.snap, at);
+      standOn = null;
+      walkAmt = 0;
+    }
     if (!cancelled && d.candOk && d.candDyno != null) {
       _startDyno(d);
       return;
@@ -1219,6 +1554,7 @@ class Game {
       final hand = isHand[d.i];
       effects.burst(l.x, l.y + (hand ? 3 : 0), hand ? PartKind.chalk : PartKind.dust, hand ? 8 : 6);
       _play(hand ? _grabSound(holds[d.cand].t) : Sfx.foot, pan: panOf(l.x));
+      if (!hand) _maybeStand();
       _ui();
     } else {
       l.h = d.from.h;
@@ -1244,13 +1580,15 @@ class Game {
     _ui();
   }
 
-  bool get canUndo => history.isNotEmpty;
+  bool get canUndo => history.isNotEmpty && cele == null;
 
   void undo() {
-    if (phase != Phase.climb || drag != null || dyno != null || history.isEmpty) return;
+    if (phase != Phase.climb || drag != null || dyno != null || cele != null || history.isEmpty) return;
     final s = history.removeLast();
     limbs = s.limbs.map((l) => l.copy()).toList();
     c = s.c.copy();
+    standOn = s.stand;
+    _walkV = walkAmt = 0;
     holdTime = [0, 0];
     hangT = 0;
     _play(Sfx.foot);
@@ -1268,6 +1606,9 @@ class Game {
     if (drag != null) endDrag(true);
     _ptr = null;
     _pan = null;
+    _walkHold = null;
+    walkTo = null;
+    _walkKeys.clear();
     phase = Phase.paused;
     screen = Screen.pause;
     audio.muffle(true);
@@ -1284,6 +1625,17 @@ class Game {
 
   /// Keyboard: U undo, L look, Esc pause or back, Space or Enter to try again or go on,
   /// Space while falling to catch the easiest hold in reach.
+  /// -1 for a walk-left key (A, left arrow), 1 for walk right (D, right arrow), else 0.
+  static int _walkKey(LogicalKeyboardKey k) => k == LogicalKeyboardKey.keyA || k == LogicalKeyboardKey.arrowLeft
+      ? -1
+      : (k == LogicalKeyboardKey.keyD || k == LogicalKeyboardKey.arrowRight ? 1 : 0);
+
+  /// A key was let go (only walking cares).
+  bool keyUp(LogicalKeyboardKey k) {
+    final dir = _walkKey(k);
+    return dir != 0 && _walkKeys.remove(dir);
+  }
+
   bool key(LogicalKeyboardKey k, {bool ctrl = false}) {
     final f = fall;
     if (phase == Phase.falling && f != null && f.window && k == LogicalKeyboardKey.space) {
@@ -1292,6 +1644,38 @@ class Game {
       return true;
     }
     if (phase == Phase.climb) {
+      final dir = _walkKey(k);
+      if (dir != 0 && social) {
+        _walkKeys.add(dir);
+        return true;
+      }
+      final em = switch (k) {
+        LogicalKeyboardKey.digit1 => Emote.cheer,
+        LogicalKeyboardKey.digit2 => Emote.taunt,
+        LogicalKeyboardKey.digit3 => Emote.aura,
+        _ => null,
+      };
+      if (em != null && social) {
+        doEmote(em);
+        return true;
+      }
+      final phrase = switch (k) {
+        LogicalKeyboardKey.keyQ => 0,
+        LogicalKeyboardKey.keyW => 1,
+        LogicalKeyboardKey.keyE => 2,
+        LogicalKeyboardKey.keyR => 3,
+        _ => -1,
+      };
+      if (phrase >= 0 && social) {
+        say(phrase);
+        return true;
+      }
+      // Tab is always the game's here: let go, it would move the keyboard
+      // focus away and the keys would stop working
+      if (k == LogicalKeyboardKey.tab && social) {
+        watchNext();
+        return true;
+      }
       if (k == LogicalKeyboardKey.keyU || (k == LogicalKeyboardKey.keyZ && ctrl)) {
         undo();
         return true;
@@ -1333,7 +1717,7 @@ class Game {
     final dt = math.min(0.1, rawDt);
     // Once a card fully covers the scene, nothing behind it needs to move or
     // be drawn again (it sits under an 86% dark backdrop).
-    final covered = screen == Screen.pause || screen == Screen.fallCard || screen == Screen.topCard;
+    final covered = screen == Screen.pause || screen == Screen.fallCard || screen == Screen.topCard || screen == Screen.results;
     _coveredFor = covered ? _coveredFor + dt : 0;
     if (_coveredFor > 0.5) return;
     _acc += dt;
@@ -1356,9 +1740,14 @@ class Game {
 
   void _step(double dt) {
     if (phase != Phase.climb) return;
-    time += dt;
+    if (!toppedOut) time += dt;
+    if (cele != null) return;
     if (dyno != null) {
       _stepDyno(dt);
+      return;
+    }
+    if (standOn != null && drag == null) {
+      _stepStand(dt);
       return;
     }
     final anc = anchors();
@@ -1418,7 +1807,11 @@ class Game {
     }
     if (s.standing) _checkpointAt(s);
     final h0 = limbs[0].h, h1 = limbs[1].h;
-    if (h0 != null && h1 != null && holds[h0].t == HoldType.top && holds[h1].t == HoldType.top) _topOut();
+    if (h0 != null && h1 != null && holds[h0].t == HoldType.top && holds[h1].t == HoldType.top) {
+      _topOut();
+    } else if (social && h0 != null && h0 == h1 && holds[h0].t == HoldType.ledge) {
+      _mantle(h0); // both hands on a ledge: pull up onto it, like over the top
+    }
   }
 
   void _stepDyno(double dt) {
@@ -1685,6 +2078,8 @@ class Game {
     final cp = checkpoint!;
     limbs = cp.snap.limbs.map((l) => l.copy()).toList();
     c = cp.snap.c.copy();
+    standOn = cp.snap.stand;
+    _walkV = walkAmt = 0;
     cd = c.copy();
     endDraw = limbs.map((l) => Pt(l.x, l.y)).toList();
     grip = [100, 100];
@@ -1772,7 +2167,35 @@ class Game {
     _ui();
   }
 
+  /// With others: your time stops and goes to the room for the results.
+  void _reachedTop() {
+    toppedOut = true;
+    myFinish ??= onlineClimb ? onlineSecs : time;
+    if (onlineClimb) {
+      online.topped(myFinish!);
+      _updateStandings();
+    }
+    _play(Sfx.top);
+    toast('You topped out! ${fmtTime(myFinish!)}', ToastKind.ok);
+    _ui();
+  }
+
+  /// With others the climb goes on at the top: the cheer, then you stand on
+  /// the top and can walk all along it. No top card; the results come when
+  /// the room's climb ends.
+  void _topOutTogether() {
+    final top = limbs[0].h!, h = holds[top], r = route!;
+    if (!toppedOut) _reachedTop();
+    cele = Cele(c.copy(), Pt(clampD(c.x, h.x + 30, h.x2! - 30), r.topY + standHeight(climber)), edge: r.topY);
+    _celeStand = top;
+    drag = null;
+    for (final l in limbs) {
+      l.h = null;
+    }
+  }
+
   void _topOut() {
+    if (social) return _topOutTogether();
     phase = Phase.top;
     if (onlineClimb) {
       myFinish ??= onlineSecs;
@@ -1802,7 +2225,7 @@ class Game {
     }
     if (isBest) records.newBestTime(r, mode, time: time, moves: moves, climber: climber);
     final top = holds[limbs[0].h!];
-    cele = Cele(c.copy(), Pt(clampD(c.x, top.x + 30, top.x2! - 30), r.topY + standHeight(climber)));
+    cele = Cele(c.copy(), Pt(clampD(c.x, top.x + 30, top.x2! - 30), r.topY + standHeight(climber)), edge: r.topY);
     for (final l in limbs) {
       l.h = null;
     }
@@ -1895,11 +2318,19 @@ class Game {
       final k = math.min(1.0, dt * 18);
       cd.x += (c.x - cd.x) * k;
       cd.y += (c.y - cd.y) * k;
-      if (ce.t > 0.9 && !ce.burst) {
+      if (ce.cheer && ce.t > 0.9 && !ce.burst) {
         ce.burst = true;
         for (var n = 0; n < 4; n++) {
           later(n * 0.14, () => effects.burst(cd.x + (_rand.nextDouble() - 0.5) * 60, cd.y + 60 + _rand.nextDouble() * 30, PartKind.spark, 12));
         }
+      }
+      final top = _celeStand;
+      if (ce.t > (ce.cheer ? 1.1 : 0.9) && top != null) {
+        // with others: up (and at the top the cheer is over), now stand there
+        cele = null;
+        _celeStand = null;
+        _standOn(top, c.x);
+        resetPoseState([HandStyle.open, HandStyle.open]);
       }
     } else if (_swing case final sw?) {
       // swinging under the hand that caught the fall, then settling
@@ -1915,11 +2346,15 @@ class Game {
     final cf = catchFlash;
     if (cf != null && (cf.t += dt) > 0.4) catchFlash = null;
     scale = lerpD(baseScale(), lookScale(), lookK);
+    // Watch: the camera follows another player (the one who left: back to you)
+    final w = watching == null ? null : remotes.byId[watching]?.shown?.c;
+    if (watching != null && w == null) watching = null;
+    final at = w ?? cd;
     if (drag == null) {
-      final normY = camManual ?? cd.y + 40, normX = camXFor(cd.x);
-      final lookY = r.endless ? cd.y + 320 : (r.topY + 50) / 2;
+      final normY = camManual ?? at.y + 40, normX = camXFor(at.x);
+      final lookY = r.endless ? at.y + 320 : (r.topY + 50) / 2;
       // Look shows the lane you are in now
-      final ty = lerpD(normY, lookY, lookK), tx = lerpD(normX, r.laneAt(cd.x).mid, lookK), e = reducedMotion ? 1.0 : math.min(1.0, dt * 6);
+      final ty = lerpD(normY, lookY, lookK), tx = lerpD(normX, r.laneAt(at.x).mid, lookK), e = reducedMotion ? 1.0 : math.min(1.0, dt * 6);
       camY += (ty - camY) * e;
       camX += (tx - camX) * e;
     }
@@ -1939,7 +2374,10 @@ class Game {
     _limbTargets(dt);
     // body lean: hands over feet
     final e = endDraw;
-    final tl = clampD(((e[2].x + e[3].x) - (e[0].x + e[1].x)) * 0.5 * 0.0035, -0.16, 0.16) +
+    final sp = _sp;
+    final tl = standOn != null && drag == null && sp != null
+        ? sp.tilt
+        : clampD(((e[2].x + e[3].x) - (e[0].x + e[1].x)) * 0.5 * 0.0035, -0.16, 0.16) +
         (phase == Phase.falling && !reducedMotion ? math.sin((fall?.t ?? 0) * 7 + 1) * 0.25 : 0);
     tilt += (tl - tilt) * math.min(1.0, dt * 8);
     // where the head looks
@@ -1950,21 +2388,30 @@ class Game {
       tgt = dyno!.pt;
     } else if (fall?.best case final b?) {
       tgt = b.pt;
-    } else if (cele != null) {
-      tgt = Pt(cd.x - 120, cd.y + 160);
+    } else if (cele case final ce?) {
+      tgt = ce.cheer ? Pt(cd.x - 120, cd.y + 160) : Pt(cd.x + facing * 40, ce.edge + 20);
     }
     final hx = cd.x, hy = cd.y + 38;
-    final lkX = tgt != null ? clampD((tgt.x - hx) * 0.045, -3, 3) : math.sin(clock * 0.35) * 1.2;
+    final lkX = tgt != null
+        ? clampD((tgt.x - hx) * 0.045, -3, 3)
+        : (standOn != null && walkAmt > 0.05 ? facing * 2.2 : math.sin(clock * 0.35) * 1.2);
     final lkUp = tgt != null ? clampD((tgt.y - hy) * 0.008, -0.6, 1) : 0.5;
-    lookX += (lkX - lookX) * math.min(1.0, dt * 6);
-    lookUp += (lkUp - lookUp) * math.min(1.0, dt * 6);
+    final emoting = emote != null && sp != null;
+    lookX += ((emoting ? sp.lookX : lkX) - lookX) * math.min(1.0, dt * 6);
+    lookUp += ((emoting ? sp.lookUp : lkUp) - lookUp) * math.min(1.0, dt * 6);
     pose = buildPose();
     _gearUpdate(dt);
   }
 
   void _limbTargets(double dt) {
     if (limbs.length != 4) return;
-    final ph = phase, bag = gear?.bag, r = route!;
+    final ph = phase, bag = gear?.bag;
+    final at = standOn;
+    final sp = _sp = at != null && ph == Phase.climb
+        ? standAt(climber, cd.x, holds[at].y, facing: facing, phase: walkPhase, walk: walkAmt, emote: emote, emoteT: clock - emoteAt)
+        : null;
+    // into and out of an emote the hands and feet ease; walking, the feet step exactly
+    final exact = emote == null && clock - _emoteEnd > 0.4;
     for (var i = 0; i < 4; i++) {
       final l = limbs[i], j = jointAt(i, cd), hand = isHand[i];
       double tx, ty;
@@ -1976,21 +2423,33 @@ class Game {
         if (hand) {
           if (u < 0.55) {
             tx = cd.x + sideOf[i] * 30;
-            ty = r.topY;
+            ty = ce.edge;
             style = HandStyle.grip;
-          } else {
+          } else if (ce.cheer) {
             tx = cd.x + sideOf[i] * 36;
             ty = cd.y + 84 + math.sin(clock * 6 + i) * 2;
+          } else {
+            // up on a ledge: the hands let go and hang, as when you stand
+            final e = standAt(climber, cd.x, ce.edge, facing: facing).ends[i];
+            tx = e.x;
+            ty = e.y;
           }
         } else {
-          tx = cd.x + sideOf[i] * 14;
-          ty = u > 0.5 ? r.topY : j.y - 60;
-          free = u <= 0.5;
+          tx = cd.x + sideOf[i] * (ce.feetOn ? 12 : 14);
+          ty = ce.feetOn || u > 0.5 ? ce.edge : j.y - 60;
+          free = !ce.feetOn && u <= 0.5;
         }
       } else if (dy != null && dy.i == i) {
         (tx, ty) = _toward(i, j, dy.pt);
       } else if (d != null && d.i == i) {
         (tx, ty) = _toward(i, j, d.candOk ? d.candPt! : Pt(d.px, d.py));
+      } else if (sp != null) {
+        // standing: feet step along the hold, hands hang loose (or emote)
+        tx = sp.ends[i].x;
+        ty = sp.ends[i].y;
+        snap = exact;
+        free = !hand && ty > holds[standOn!].y + 0.5;
+        if (emote == Emote.aura || (emote == Emote.taunt && i == (facing > 0 ? 0 : 1))) style = HandStyle.fist;
       } else if (l.h != null) {
         tx = l.x;
         ty = l.y;
@@ -2101,7 +2560,7 @@ class Game {
 
   void _gearUpdate(double dt) {
     if (gear == null) _gearInit();
-    final windy = phase == Phase.menu || cele != null;
+    final windy = phase == Phase.menu || (cele?.cheer ?? false);
     final wind = (windy ? 360.0 : 25.0) * (0.6 + 0.4 * math.sin(clock * 0.9)) + (windy ? 90 * math.sin(clock * 3.1) : 0.0);
     gear!.update(pose!, dt, wind);
   }
@@ -2146,6 +2605,7 @@ class Game {
 
   String get pillText {
     if (phase == Phase.climb && hangT > 0) return 'Grab a hold!';
+    if (phase == Phase.climb && toppedOut && myFinish != null) return 'Topped out · ${fmtTime(myFinish!)}';
     if (phase == Phase.climb && route != null && supportInfo(limbs, holds).standing && c.y > 120) return 'Resting';
     return '';
   }

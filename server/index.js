@@ -6,12 +6,18 @@
 //   join   {code, name, climber}                  -> same
 //   rejoin {code, token}                          -> same (after a dropped connection)
 //   pick   climber
+//   ready  true or false   (in the lobby: ready to climb)
 //   start                                         -> {} or {error} (host only)
-//   state  [...]      relayed as-is to the others in the room
+//   topped secs       you reached the top, secs after the start
+//   end                                           -> {} or {error} (host only: the results show)
+//   again                                         -> {} or {error} (host only, after the results: a new climb)
+//   state  [...]      relayed to the others in the room (an emote or a chat phrase sent too soon is taken out)
 //   leave
 // Server to client:
 //   room    the room and its players, on every change; from the start it
-//           also has the lane count and each player's lane and side
+//           also has the lane count and each player's lane and side, and
+//           each player's finish (seconds) once topped out. ended: the
+//           climb is over and the results show; round: which climb it is
 //   started {startsIn, lanes}  ms until everyone starts climbing
 //   state   [playerId, [...]]
 const http = require('http');
@@ -91,22 +97,34 @@ function createServer({ graceMs, countdownMs } = {}) {
     socket.on('rejoin', (d, ack) => answer(rooms.rejoin(d?.code, d?.token), ack));
 
     socket.on('pick', (climber) => send(rooms.pick(socket.data.player, climber)));
+    socket.on('ready', (on) => send(rooms.ready(socket.data.player, on)));
 
-    socket.on('start', (...args) => {
-      // the answer callback comes first or after a payload, depending on the client
+    socket.on('topped', (secs) => send(rooms.topped(socket.data.player, secs)));
+
+    /// A creator's action: [act] answers { room } or { error }; after a yes,
+    /// [after] tells the room. The answer callback comes first or after a
+    /// payload, depending on the client.
+    const hostOnly = (act, after) => (...args) => {
       const ack = args.find((a) => typeof a === 'function');
-      const r = rooms.start(socket.data.player);
+      const r = act(socket.data.player);
       if (r.error) return reply(ack, { error: r.error });
       reply(ack, {});
-      io.to(r.room.code).emit('started', { startsIn: startsIn(r.room), lanes: r.room.lanes });
-      send(r.room);
-    });
+      after(r.room);
+    };
+    /// A climb starts (the first one, or Play again): everyone counts down.
+    const begun = (room) => {
+      io.to(room.code).emit('started', { startsIn: startsIn(room), lanes: room.lanes, round: room.round });
+      send(room);
+    };
+    socket.on('start', hostOnly((p) => rooms.start(p), begun));
+    socket.on('end', hostOnly((p) => rooms.end(p), send));
+    socket.on('again', hostOnly((p) => rooms.again(p), begun));
 
     socket.on('state', (s) => {
       const p = socket.data.player, room = rooms.roomOf(p);
-      if (!room || !room.started || !Array.isArray(s)) return;
+      if (!room || !room.started || room.ended || !Array.isArray(s)) return;
       // volatile: a state that cannot go out now is dropped, the next one is newer anyway
-      socket.to(room.code).volatile.emit('state', [p.id, s]);
+      socket.to(room.code).volatile.emit('state', [p.id, rooms.gate(p, s)]);
     });
 
     socket.on('leave', () => {

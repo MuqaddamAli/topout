@@ -46,6 +46,10 @@ class ScenePainter extends CustomPainter {
   /// The lane numbers on the crash pads (yours and the others'), made once.
   final Map<(int, bool), TextPainter> _laneMarks = {};
 
+  /// Speech bubble and friend arrow texts, made once each.
+  static final Map<String, TextPainter> _bubbleText = {};
+  final Map<String, TextPainter> _arrowText = {};
+
   /// Name tags of the other climbers, kept while the name stays the same.
   final Map<String, (String, TextPainter)> _names = {};
 
@@ -124,8 +128,9 @@ class ScenePainter extends CustomPainter {
     _parts(canvas);
     canvas.restore();
     _motes(canvas, r);
-    if (others.isNotEmpty || _names.isNotEmpty) _nameTags(canvas, others);
+    if (!menu && (others.isNotEmpty || _names.isNotEmpty || g.chatShown != null)) _labels(canvas, others, pose, gear);
     _vignette(canvas, size);
+    if (!menu && g.onlineClimb) _friendArrows(canvas, size);
     if (g.slipFlash > 0) _slipGlow(canvas, size);
     if (!menu) {
       if (bestY != null) _bestLabel(canvas, r, bestY);
@@ -152,9 +157,59 @@ class ScenePainter extends CustomPainter {
     return drawn;
   }
 
-  /// A name above each climber drawn, in screen space so it stays upright.
-  void _nameTags(Canvas canvas, List<RemoteClimber> drawn) {
+  /// A name above each other climber drawn and a speech bubble above anyone
+  /// saying a quick chat phrase (you too), in screen space so they stay
+  /// upright in every pose. They sit above the whole body (lying down too),
+  /// and labels of climbers in the same spot stack instead of overlapping.
+  void _labels(Canvas canvas, List<RemoteClimber> drawn, Pose? mine, Gear? myGear) {
     _names.removeWhere((id, _) => !g.remotes.byId.containsKey(id));
+    final placed = <Rect>[];
+    Rect free(Rect r) {
+      var box = r;
+      for (var n = 0; n < 8; n++) {
+        final hit = placed.where((o) => o.overlaps(box)).firstOrNull;
+        if (hit == null) break;
+        box = box.shift(Offset(0, hit.top - box.bottom - 2));
+      }
+      placed.add(box);
+      return box;
+    }
+
+    /// Above the body: the screen point over its highest part.
+    Offset over(Pose p, Gear gear) {
+      final b = _bounds(p, gear);
+      return g.w2s((b.left + b.right) / 2, math.max(p.head.y + 20, b.bottom - 14));
+    }
+
+    void bubble(Offset at, String text, double age) {
+      final tp = _bubbleText[text] ??= TextPainter(
+        text: TextSpan(text: text, style: TextStyle(fontFamily: 'Atkinson', fontSize: 14, fontWeight: FontWeight.w700, color: Pal.ink)),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+      )..layout(maxWidth: 200);
+      final fade = clampD(math.min(age / 0.15, (chatShow - age) / 0.4), 0, 1);
+      if (fade <= 0) return;
+      final box = free(Rect.fromCenter(center: at.translate(0, -tp.height / 2 - 10), width: tp.width + 18, height: tp.height + 10));
+      final a = (fade * 240).round();
+      _p
+        ..shader = null
+        ..color = Pal.chalk.withAlpha(a);
+      canvas.drawRRect(RRect.fromRectAndRadius(box, const Radius.circular(10)), _p);
+      final tail = Path()
+        ..moveTo(box.center.dx - 6, box.bottom - 0.5)
+        ..lineTo(box.center.dx + 6, box.bottom - 0.5)
+        ..lineTo(box.center.dx, box.bottom + 7)
+        ..close();
+      canvas.drawPath(tail, _p);
+      canvas.saveLayer(box.inflate(2), Paint()..color = Color.fromARGB(a, 255, 255, 255));
+      tp.paint(canvas, Offset(box.left + 9, box.top + 5));
+      canvas.restore();
+    }
+
+    if (mine != null && myGear != null) {
+      final said = g.chatShown;
+      if (said != null) bubble(over(mine, myGear), said, g.clock - g.chatAt);
+    }
     for (final o in drawn) {
       var e = _names[o.id];
       if (e == null || e.$1 != o.name) {
@@ -167,10 +222,59 @@ class ScenePainter extends CustomPainter {
         )..layout(maxWidth: 140);
         e = _names[o.id] = (o.name, tp);
       }
-      final tp = e.$2, head = o.pose!.head, at = g.w2s(head.x, head.y + 20);
-      final box = Rect.fromCenter(center: at.translate(0, -tp.height / 2), width: tp.width + 14, height: tp.height + 6);
+      final tp = e.$2, at = over(o.pose!, o.gear!);
+      final box = free(Rect.fromCenter(center: at.translate(0, -tp.height / 2), width: tp.width + 14, height: tp.height + 6));
       canvas.drawRRect(RRect.fromRectAndRadius(box, const Radius.circular(8)), _p..shader = null..color = rgba(13, 15, 21, 0.62));
       tp.paint(canvas, Offset(box.left + 7, box.top + 3));
+      final s = o.shown!, said = s.chat;
+      if (said != null) {
+        final age = (s.t - s.chatStart) / 1000;
+        if (age >= 0 && age < chatShow) bubble(Offset(box.center.dx, box.top - 2), quickChat[said], age);
+      }
+    }
+  }
+
+  /// A small arrow at the screen's edge for each other player out of view,
+  /// pointing at them, with their name and height. Kept faint and small.
+  void _friendArrows(Canvas canvas, Size size) {
+    // inside the HUD: below the top bar and the heights, above the bottom bar
+    final inner = Rect.fromLTRB(20, 245, size.width - 20, size.height - 250);
+    if (inner.width < 40 || inner.height < 40) return;
+    final mid = inner.center;
+    for (final o in g.remotes.all) {
+      final s = o.shown;
+      if (s == null) continue;
+      final p = g.w2s(s.c.x, s.c.y + 20);
+      if (p.dx > -10 && p.dx < size.width + 10 && p.dy > -10 && p.dy < size.height + 10) continue;
+      // where the line from the middle toward them leaves the inner box
+      final d = p - mid;
+      final k = math.min(d.dx == 0 ? double.infinity : (inner.width / 2) / d.dx.abs(),
+          d.dy == 0 ? double.infinity : (inner.height / 2) / d.dy.abs());
+      final at = mid + d * k, ang = math.atan2(d.dy, d.dx);
+      canvas.save();
+      canvas.translate(at.dx, at.dy);
+      canvas.rotate(ang);
+      final arrow = Path()
+        ..moveTo(9, 0)
+        ..lineTo(-5, -6.5)
+        ..lineTo(-2, 0)
+        ..lineTo(-5, 6.5)
+        ..close();
+      canvas.drawPath(arrow, _p..shader = null..color = rgba(242, 237, 228, 0.78));
+      canvas.restore();
+      final text = '${o.name} · ${s.metres.toStringAsFixed(1)} m';
+      final tp = _arrowText[text] ??= TextPainter(
+        text: TextSpan(text: text, style: TextStyle(fontFamily: 'Atkinson', fontSize: 11, fontWeight: FontWeight.w700, color: rgba(242, 237, 228, 0.85))),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+        ellipsis: '…',
+      )..layout(maxWidth: 120);
+      if (_arrowText.length > 64) _arrowText.clear();
+      // the label sits on the inner side of the arrow
+      final off = Offset(-math.cos(ang) * 16 - tp.width / 2 - math.cos(ang) * tp.width / 2, -math.sin(ang) * 14 - tp.height / 2);
+      final box = Rect.fromLTWH(at.dx + off.dx - 5, at.dy + off.dy - 2, tp.width + 10, tp.height + 4);
+      canvas.drawRRect(RRect.fromRectAndRadius(box, const Radius.circular(6)), _p..color = rgba(13, 15, 21, 0.5));
+      tp.paint(canvas, Offset(box.left + 5, box.top + 2));
     }
   }
 

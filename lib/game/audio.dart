@@ -26,7 +26,10 @@ enum Sfx {
   bird('bird', 4),
   breath('breath', 2),
   snatch('snatch', 2),
-  heart('heart', 1);
+  heart('heart', 1),
+  emoteCheer('emote_cheer', 1),
+  emoteTaunt('emote_taunt', 1),
+  emoteAura('emote_aura', 1);
 
   const Sfx(this.file, this.variants, [this.level = 1]);
   final String file;

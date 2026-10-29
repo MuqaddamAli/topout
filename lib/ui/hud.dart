@@ -188,6 +188,102 @@ class Hud extends StatelessWidget {
           top: pad.top + 124,
           child: IgnorePointer(child: _Heights(game: game)),
         ),
+      // ---------------- with others: quick chat; online at the top: End climb (the creator) and Watch
+      if (game.social)
+        Positioned(
+          right: pad.right + 12,
+          top: pad.top + 124,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            FrameSelect(
+              game: game,
+              select: (g) => (g.canChat, g.chatOpen, g.clock >= g.nextChatAt),
+              builder: (context, v) => _Appear(
+                visible: v.$1,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  GameButton(
+                    label: 'Chat',
+                    icon: Icons.chat_bubble_outline_rounded,
+                    minHeight: 40,
+                    radius: 999,
+                    on: v.$2,
+                    onTap: v.$1 ? () => _tap(game.toggleChat) : null,
+                  ),
+                  if (v.$2)
+                    for (final (i, text) in quickChat.indexed) ...[
+                      const SizedBox(height: 6),
+                      GameButton(
+                        label: '$text  ${'QWER'[i]}',
+                        minHeight: 38,
+                        radius: 999,
+                        onTap: v.$3 ? () => _tap(() => game.say(i)) : null,
+                      ),
+                    ],
+                ]),
+              ),
+            ),
+            if (game.onlineClimb) ...[
+              const SizedBox(height: 8),
+              FrameSelect(
+                game: game,
+                select: (g) => g.toppedOut && g.online.isHost && !(g.online.room?.ended ?? true),
+                builder: (context, show) => _Appear(
+                  visible: show,
+                  child: GameButton(label: 'End climb', minHeight: 40, radius: 999, onTap: show ? () => _tap(game.endClimb) : null),
+                ),
+              ),
+              const SizedBox(height: 8),
+              FrameSelect(
+                game: game,
+                select: (g) => (g.canWatch, g.watchingName),
+                builder: (context, v) => _Appear(
+                  visible: v.$1,
+                  child: GameButton(
+                    label: v.$2 == null ? 'Watch' : 'Watching ${v.$2}',
+                    icon: Icons.visibility_outlined,
+                    minHeight: 40,
+                    radius: 999,
+                    on: v.$2 != null,
+                    semanticLabel: 'Watch another climber (Tab)',
+                    onTap: v.$1 ? () => _tap(game.watchNext) : null,
+                  ),
+                ),
+              ),
+            ],
+          ]),
+        ),
+      // ---------------- emotes, while you stand with others
+      if (game.social)
+        Positioned(
+          right: pad.right + 12,
+          bottom: pad.bottom + 132,
+          child: FrameSelect(
+            game: game,
+            select: (g) => (g.canEmote, g.clock >= g.nextEmoteAt, g.emote),
+            builder: (context, v) => _Appear(
+              visible: v.$1,
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                for (final (e, icon) in const [
+                  (Emote.cheer, Icons.celebration_rounded),
+                  (Emote.taunt, Icons.waving_hand_rounded),
+                  (Emote.aura, Icons.self_improvement_rounded),
+                ]) ...[
+                  GameButton(
+                    label: e.label,
+                    icon: icon,
+                    compact: true,
+                    width: 64,
+                    minHeight: 50,
+                    radius: 16,
+                    on: v.$3 == e,
+                    semanticLabel: '${e.label} (key ${e.index + 1})',
+                    onTap: v.$1 && v.$2 ? () => _tap(() => game.doEmote(e)) : null,
+                  ),
+                  const SizedBox(height: 6),
+                ],
+              ]),
+            ),
+          ),
+        ),
       // ---------------- back to the climber after looking around
       Positioned(
         left: 0,
