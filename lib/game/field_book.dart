@@ -192,19 +192,29 @@ class FbTxt {
 /// Drawn with a 2.6 px round-capped stroke, in a box 28 px high.
 Path tallyPath(int n, {double x0 = 6}) {
   final p = Path();
+  for (final (a, b) in tallyStrokes(n, x0: x0)) {
+    p
+      ..moveTo(a.dx, a.dy)
+      ..lineTo(b.dx, b.dy);
+  }
+  return p;
+}
+
+/// The [n] strokes of [tallyPath], in the order they are drawn, each from
+/// where the pencil goes down to where it lifts.
+List<(Offset, Offset)> tallyStrokes(int n, {double x0 = 6}) {
+  final out = <(Offset, Offset)>[];
   var x = x0;
   for (var i = 1; i <= n; i++) {
     if (i % 5 == 0) {
-      p.moveTo(x - 34, 20);
-      p.lineTo(x - 2, 6);
+      out.add((Offset(x - 34, 20), Offset(x - 2, 6)));
       x += 10;
     } else {
-      p.moveTo(x, 4);
-      p.lineTo(x - 1.5, 24);
+      out.add((Offset(x, 4), Offset(x - 1.5, 24)));
       x += 8;
     }
   }
-  return p;
+  return out;
 }
 
 /// The bar-tack stitch on the cut end of a webbing strap: a zigzag of

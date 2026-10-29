@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../game/audio.dart';
@@ -7,11 +9,13 @@ import '../game/game.dart';
 import '../game/palette.dart';
 import 'hud.dart' show FrameSelect;
 import 'kit.dart';
+import 'motion.dart';
 import 'widgets.dart';
 
 /// The dark rock behind a card, with the card on it. The card rises into
-/// place when it appears. [bottom] puts it at the bottom of the screen (a
-/// page sliding up), otherwise it sits in the middle.
+/// place when it appears, turning a little as it settles, like a page put
+/// down. [bottom] puts it at the bottom of the screen (a page sliding up),
+/// otherwise it sits in the middle.
 class _Overlay extends StatelessWidget {
   const _Overlay({required this.child, this.bottom = false, this.maxWidth = 440});
   final Widget child;
@@ -29,8 +33,11 @@ class _Overlay extends StatelessWidget {
         duration: const Duration(milliseconds: 420),
         curve: Curves.easeOutCubic,
         builder: (context, t, child) => Transform.translate(
-          offset: Offset(0, (1 - t) * (bottom ? 120 : 26)),
-          child: Opacity(opacity: t.clamp(0.0, 1.0), child: child),
+          offset: Offset(0, (1 - t) * (bottom ? 120 : 30)),
+          child: Transform.rotate(
+            angle: (1 - t) * (bottom ? 1.2 : -2.4) * math.pi / 180,
+            child: Opacity(opacity: t.clamp(0.0, 1.0), child: child),
+          ),
         ),
         child: child,
       ),
@@ -113,7 +120,7 @@ class FallCard extends StatelessWidget {
               ),
               Stagger(
                 index: i++,
-                child: _StampIn(still: still, child: InkStamp(word: 'Fell', number: d.value, angle: -12, size: 0.9)),
+                child: StampIn(color: Kit.blaze, delay: const Duration(milliseconds: 260), child: InkStamp(word: 'Fell', number: d.value, angle: -12, size: 0.9)),
               ),
             ]),
             _gap(10),
@@ -155,15 +162,18 @@ class FallCard extends StatelessWidget {
             padding: const EdgeInsets.only(left: 18, right: 8),
             child: Stagger(
               index: i++,
-              child: PaperScrap(
-                angle: 1.5,
-                torn: false,
-                tapeAt: 0.1,
-                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Padding(padding: EdgeInsets.only(top: 1), child: LampIcon()),
-                  const SizedBox(width: 10),
-                  Expanded(child: Text(d.fix, style: Txt.body(15, color: Kit.ink, height: 1.4))),
-                ]),
+              child: Settle(
+                delay: Duration(milliseconds: 55 * i),
+                child: PaperScrap(
+                  angle: 1.5,
+                  torn: false,
+                  tapeAt: 0.1,
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Padding(padding: EdgeInsets.only(top: 1), child: LampIcon()),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(d.fix, style: Txt.body(15, color: Kit.ink, height: 1.4))),
+                  ]),
+                ),
               ),
             ),
           ),
@@ -178,25 +188,6 @@ class FallCard extends StatelessWidget {
           ]),
         ),
       ]),
-    );
-  }
-}
-
-/// A stamp that lands: it comes down a little bigger and settles.
-class _StampIn extends StatelessWidget {
-  const _StampIn({required this.still, required this.child});
-  final bool still;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    if (still) return child;
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 520),
-      curve: const Interval(0.35, 1, curve: Curves.easeOutBack),
-      builder: (context, t, child) => Opacity(opacity: t.clamp(0.0, 1.0), child: Transform.scale(scale: 1.6 - 0.6 * t, child: child)),
-      child: child,
     );
   }
 }
@@ -261,7 +252,7 @@ class _ScribblePainter extends CustomPainter {
   bool shouldRepaint(covariant _ScribblePainter o) => o.rows != rows;
 }
 
-/// One entry in the register, written by hand.
+/// One entry in the register, written by hand (it writes itself in).
 class _Entry extends StatelessWidget {
   const _Entry({required this.date, required this.climber, required this.route, required this.time});
   final String date, climber, route, time;
@@ -271,12 +262,16 @@ class _Entry extends StatelessWidget {
     final hand = FbTxt.hand(30, color: Kit.ink);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(children: [
-        Expanded(flex: 4, child: Text(date, maxLines: 1, overflow: TextOverflow.fade, softWrap: false, style: hand)),
-        Expanded(flex: 3, child: Text(climber, maxLines: 1, overflow: TextOverflow.fade, softWrap: false, style: hand)),
-        Expanded(flex: 5, child: Text(route, maxLines: 1, overflow: TextOverflow.fade, softWrap: false, style: hand)),
-        Expanded(flex: 3, child: Text(time, maxLines: 1, textAlign: TextAlign.right, style: hand)),
-      ]),
+      child: WriteIn(
+        delay: const Duration(milliseconds: 420),
+        duration: const Duration(milliseconds: 900),
+        child: Row(children: [
+          Expanded(flex: 4, child: Text(date, maxLines: 1, overflow: TextOverflow.fade, softWrap: false, style: hand)),
+          Expanded(flex: 3, child: Text(climber, maxLines: 1, overflow: TextOverflow.fade, softWrap: false, style: hand)),
+          Expanded(flex: 5, child: Text(route, maxLines: 1, overflow: TextOverflow.fade, softWrap: false, style: hand)),
+          Expanded(flex: 3, child: Text(time, maxLines: 1, textAlign: TextAlign.right, style: hand)),
+        ]),
+      ),
     );
   }
 }
@@ -347,7 +342,7 @@ class TopCard extends StatelessWidget {
           Positioned(
             right: 8,
             top: -14,
-            child: _StampIn(still: still, child: InkStamp(word: 'Top', number: top, circle: true, angle: 12)),
+            child: StampIn(color: Kit.blaze, delay: const Duration(milliseconds: 300), child: InkStamp(word: 'Top', number: top, circle: true, angle: 12)),
           ),
         ]),
         _gap(18),
@@ -460,8 +455,13 @@ class ResultsCard extends StatelessWidget {
                 select: (g) => g.countdown?.ceil(),
                 builder: (context, left) {
                   if (left != null) {
-                    return Text(left > 0 ? 'Starting in $left' : 'Starting…',
-                        textAlign: TextAlign.center, style: FbTxt.label(32, color: Kit.blazeWhite));
+                    return Once(
+                      replay: left,
+                      duration: const Duration(milliseconds: 360),
+                      curve: Curves.easeOutBack,
+                      builder: (context, t, child) => Transform.scale(scale: 1.25 - 0.25 * t, child: child),
+                      child: Text(left > 0 ? 'Starting in $left' : 'Starting…', textAlign: TextAlign.center, style: FbTxt.label(32, color: Kit.blazeWhite)),
+                    );
                   }
                   return _buttons([
                     if (o.isHost) GameButton(label: 'Play again', primary: true, onTap: o.busy ? null : () => _tap(game.playAgain)),

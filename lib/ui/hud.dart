@@ -8,6 +8,7 @@ import '../game/game.dart';
 import '../game/mountain.dart';
 import '../game/palette.dart';
 import 'kit.dart';
+import 'motion.dart';
 import 'widgets.dart';
 
 /// Rebuilds [builder] only when [select] gives a new value. It is checked
@@ -108,6 +109,7 @@ class Hud extends StatelessWidget {
           height: wide ? 92 : 72,
           string: 40 + pad.top,
           semanticLabel: 'Pause',
+          kicks: game.jolts,
           onTap: () => _tap(game.pause),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             const _PauseBars(),
@@ -182,7 +184,7 @@ class Hud extends StatelessWidget {
         child: Center(
           child: _Appear(
             visible: game.showRecenter,
-            child: IndexLine(label: 'back to me', chalk: true, onTap: () => _tap(game.recenter)),
+            child: WriteIn(replay: game.showRecenter, child: IndexLine(label: 'back to me', chalk: true, onTap: () => _tap(game.recenter))),
           ),
         ),
       ),
@@ -246,35 +248,41 @@ class _RouteScrap extends StatelessWidget {
     return IgnorePointer(
       child: SizedBox(
         width: width,
-        child: PaperScrap(
-          dim: dim,
-          tapeAt: 0.45,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-            Text(r.name.toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: FbTxt.label(width > 200 ? 24 : 20)),
-            const SizedBox(height: 3),
-            Text(
-              '${r.endless ? 'DAILY · ' : ''}${game.mode.label} · ${game.climber.name}'.toUpperCase(),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: small,
-            ),
-            const SizedBox(height: 2),
-            FrameSelect(
-              game: game,
-              select: (g) => fmtTime(g.time),
-              builder: (context, t) => Text('TIME  $t', style: FbTxt.typed(13, bold: true, height: 1.3)),
-            ),
-            const SizedBox(height: 2),
-            FrameSelect(
-              game: game,
-              select: (g) => (g.falls, g.caught),
-              builder: (context, v) => Wrap(spacing: 10, runSpacing: 2, crossAxisAlignment: WrapCrossAlignment.center, children: [
-                Row(mainAxisSize: MainAxisSize.min, children: [Text('FELL ', style: small), TallyMarks(count: math.min(v.$1, 15), height: 15, label: '${v.$1} falls')]),
-                Row(mainAxisSize: MainAxisSize.min, children: [Text('CAUGHT ', style: small), TallyMarks(count: math.min(v.$2, 15), height: 15, label: '${v.$2} caught')]),
-              ]),
-            ),
-            if (game.onlineClimb) _Heights(game: game),
-          ]),
+        // it is taped up at the start of a climb
+        child: Settle(
+          turn: -4,
+          drop: 16,
+          delay: const Duration(milliseconds: 120),
+          child: PaperScrap(
+            dim: dim,
+            tapeAt: 0.45,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              Text(r.name.toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: FbTxt.label(width > 200 ? 24 : 20)),
+              const SizedBox(height: 3),
+              Text(
+                '${r.endless ? 'DAILY · ' : ''}${game.mode.label} · ${game.climber.name}'.toUpperCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: small,
+              ),
+              const SizedBox(height: 2),
+              FrameSelect(
+                game: game,
+                select: (g) => fmtTime(g.time),
+                builder: (context, t) => Text('TIME  $t', style: FbTxt.typed(13, bold: true, height: 1.3)),
+              ),
+              const SizedBox(height: 2),
+              FrameSelect(
+                game: game,
+                select: (g) => (g.falls, g.caught),
+                builder: (context, v) => Wrap(spacing: 10, runSpacing: 2, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  Row(mainAxisSize: MainAxisSize.min, children: [Text('FELL ', style: small), TallyMarks(count: math.min(v.$1, 15), height: 15, label: '${v.$1} falls')]),
+                  Row(mainAxisSize: MainAxisSize.min, children: [Text('CAUGHT ', style: small), TallyMarks(count: math.min(v.$2, 15), height: 15, label: '${v.$2} caught')]),
+                ]),
+              ),
+              if (game.onlineClimb) _Heights(game: game),
+            ]),
+          ),
         ),
       ),
     );
@@ -524,7 +532,15 @@ class _Altimeter extends StatelessWidget {
               Positioned(
                 left: 0,
                 top: c.maxHeight / 2 - 15,
-                child: _HeightTag(text: h, big: wide),
+                // it gives a small jump when a lamp comes on
+                child: Once(
+                  replay: v.lit,
+                  onShow: false,
+                  duration: const Duration(milliseconds: 620),
+                  builder: (context, t, child) =>
+                      Transform.scale(alignment: Alignment.centerLeft, scale: 1 + 0.16 * math.sin(t * math.pi) * (1 - t * 0.4), child: child),
+                  child: _HeightTag(text: h, big: wide),
+                ),
               ),
             ]);
           }),
@@ -705,48 +721,59 @@ class _Rack extends StatelessWidget {
       final w = c.maxWidth, mid = w / 2, gap = wide ? 120.0 : 90.0;
       Widget at(double x, Widget child, {double width = 64}) =>
           Positioned(left: x - width / 2, top: _ropeY(x, w) - 4, width: width, child: child);
+      // each thing on the rack swings from its carabiner when the climber is jolted
+      Widget swing(int seed, Widget child) => Swing(kicks: game.jolts, seed: seed, strength: 0.8, child: child);
       return Stack(clipBehavior: Clip.none, children: [
         Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _RopePainter()))),
-        at(math.max(46, w * 0.11), _HandTag(game: game, hand: 0), width: 72),
+        at(math.max(46, w * 0.11), swing(1, _HandTag(game: game, hand: 0)), width: 72),
         at(
           mid - gap,
-          FrameSelect(
-            game: game,
-            select: (g) => g.canUndo && g.phase == Phase.climb,
-            builder: (context, can) => _RackItem(
-              label: 'UNDO',
-              keyHint: keys ? 'U' : null,
-              angle: 3,
-              semanticLabel: 'Undo',
-              onTap: can ? () => onTap(game.undo) : null,
-              drawing: const _UnclipPainter(),
+          swing(
+            2,
+            FrameSelect(
+              game: game,
+              select: (g) => g.canUndo && g.phase == Phase.climb,
+              builder: (context, can) => _RackItem(
+                label: 'UNDO',
+                keyHint: keys ? 'U' : null,
+                angle: 3,
+                semanticLabel: 'Undo',
+                onTap: can ? () => onTap(game.undo) : null,
+                drawing: const _UnclipPainter(),
+              ),
             ),
           ),
           width: keys ? 100 : 72,
         ),
         at(
           mid,
-          FrameSelect(
-            game: game,
-            select: (g) => (g.pillText, g.hangT > 0),
-            builder: (context, p) => _StatusTag(text: p.$1, danger: p.$2),
+          swing(
+            3,
+            FrameSelect(
+              game: game,
+              select: (g) => (g.pillText, g.hangT > 0),
+              builder: (context, p) => _StatusTag(text: p.$1, danger: p.$2),
+            ),
           ),
           width: 150,
         ),
         at(
           mid + gap,
-          _RackItem(
-            label: 'LOOK',
-            keyHint: keys ? 'L' : null,
-            angle: -2,
-            on: game.look,
-            semanticLabel: 'Look at the whole wall',
-            onTap: () => onTap(() => game.setLook(!game.look)),
-            drawing: const _MonocularPainter(),
+          swing(
+            4,
+            _RackItem(
+              label: 'LOOK',
+              keyHint: keys ? 'L' : null,
+              angle: -2,
+              on: game.look,
+              semanticLabel: 'Look at the whole wall',
+              onTap: () => onTap(() => game.setLook(!game.look)),
+              drawing: const _MonocularPainter(),
+            ),
           ),
           width: keys ? 100 : 72,
         ),
-        at(math.min(w - 46, w * 0.89), _HandTag(game: game, hand: 1), width: 72),
+        at(math.min(w - 46, w * 0.89), swing(5, _HandTag(game: game, hand: 1)), width: 72),
       ]);
     });
   }
@@ -979,6 +1006,15 @@ class _HandTagBodyState extends State<_HandTagBody> with SingleTickerProviderSta
             ),
             child: Column(children: [
               Text('${left ? 'L' : 'R'} $v', style: FbTxt.label(26, color: Kit.ink).copyWith(height: 1)),
+              const SizedBox(height: 3),
+              // the grip as a pencil bar that runs down and fills up smoothly
+              TweenAnimationBuilder<double>(
+                tween: Tween(end: v / 100),
+                duration: Duration(milliseconds: moving(context) ? 260 : 0),
+                curve: Curves.easeOutCubic,
+                builder: (context, f, _) => SizedBox(width: 46, height: 5, child: CustomPaint(painter: _GripBarPainter(f))),
+              ),
+              const SizedBox(height: 2),
               Text(label.toUpperCase(), style: FbTxt.typed(10, bold: true, color: Kit.ink, height: 1.2)),
             ]),
           ),
@@ -988,8 +1024,31 @@ class _HandTagBodyState extends State<_HandTagBody> with SingleTickerProviderSta
   }
 }
 
+/// How much grip a hand has left, 0 to 1: a box drawn in pencil, filled in
+/// graphite, blaze red once the hand is about to slip.
+class _GripBarPainter extends CustomPainter {
+  _GripBarPainter(this.f);
+  final double f;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final box = Offset.zero & size;
+    canvas.drawRect(box, Paint()..color = rgba(26, 29, 36, 0.12));
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width * f.clamp(0.0, 1.0), size.height), Paint()..color = f < 0.3 ? Kit.blaze : Kit.graphite);
+    canvas.drawRect(
+        box,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = Kit.ink.withValues(alpha: 0.6));
+  }
+
+  @override
+  bool shouldRepaint(covariant _GripBarPainter o) => o.f != f;
+}
+
 /// What is going on ("Resting", "Grab a hold!"), on a paper tag hanging in
-/// the middle of the rack; typed, blaze red when it is urgent.
+/// the middle of the rack; typed (it types out), blaze red when it is urgent.
 class _StatusTag extends StatelessWidget {
   const _StatusTag({required this.text, required this.danger});
   final String text;
@@ -1017,8 +1076,10 @@ class _StatusTag extends StatelessWidget {
                   color: danger ? Kit.blaze : Kit.paper,
                   boxShadow: [BoxShadow(color: rgba(0, 0, 0, 0.3), offset: const Offset(0, 4))],
                 ),
-                child: Text(on ? text.toUpperCase() : ' ',
-                    textAlign: TextAlign.center, style: FbTxt.typed(13, bold: true, color: danger ? Kit.blazeWhite : Kit.ink, height: 1.15)),
+                child: TypeIn(on ? text.toUpperCase() : ' ',
+                    perLetter: const Duration(milliseconds: 18),
+                    textAlign: TextAlign.center,
+                    style: FbTxt.typed(13, bold: true, color: danger ? Kit.blazeWhite : Kit.ink, height: 1.15)),
               ),
             ),
           ]),
@@ -1046,7 +1107,8 @@ class GameToast extends StatelessWidget {
         opacity: a,
         child: SlideTransition(
           position: Tween(begin: const Offset(0, -0.5), end: Offset.zero).animate(a),
-          child: child,
+          // put down a little turned, it settles straight
+          child: RotationTransition(turns: Tween(begin: -0.012, end: 0.0).animate(a), child: child),
         ),
       ),
       child: t == null
@@ -1078,26 +1140,30 @@ class _TipCard extends StatelessWidget {
     final w = MediaQuery.sizeOf(context).width;
     return SizedBox(
       width: math.min(math.max(0.0, w - 40), 440),
-      child: PaperScrap(
-        angle: 1,
-        torn: false,
-        tapeAt: 0.12,
-        rule: Rule.ruled,
-        cell: 24,
-        padding: const EdgeInsets.fromLTRB(16, 14, 6, 13),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-          Expanded(child: Text(text, style: Txt.body(16, color: Kit.ink, height: 1.35))),
-          SizedBox(
-            width: 44,
-            height: 44,
-            child: IconButton(
-              padding: EdgeInsets.zero,
-              tooltip: 'Close',
-              icon: Icon(Icons.close_rounded, color: Kit.ink, size: 22),
-              onPressed: game.hideTip,
+      child: Settle(
+        turn: 2.5,
+        drop: 8,
+        child: PaperScrap(
+          angle: 1,
+          torn: false,
+          tapeAt: 0.12,
+          rule: Rule.ruled,
+          cell: 24,
+          padding: const EdgeInsets.fromLTRB(16, 14, 6, 13),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+            Expanded(child: Text(text, style: Txt.body(16, color: Kit.ink, height: 1.35))),
+            SizedBox(
+              width: 44,
+              height: 44,
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                tooltip: 'Close',
+                icon: Icon(Icons.close_rounded, color: Kit.ink, size: 22),
+                onPressed: game.hideTip,
+              ),
             ),
-          ),
-        ]),
+          ]),
+        ),
       ),
     );
   }

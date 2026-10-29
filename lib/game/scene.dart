@@ -103,6 +103,7 @@ class ScenePainter extends CustomPainter {
     canvas.translate(g.cw / 2 - g.camX * s + sx, g.ch / 2 + g.camY * s + sy);
     canvas.scale(s, -s);
     _wall(canvas, r);
+    if (!menu) _cloudShadows(canvas, r);
     _ground(canvas, r);
     _blazes(canvas, r);
     _holds(canvas, r, menu);
@@ -377,23 +378,50 @@ class ScenePainter extends CustomPainter {
 
   TextPainter? _brandText;
   (double, Color)? _brandFor;
+  List<(TextPainter, Offset)> _brandLetters = const [];
+  final Paint _fadeLayer = Paint();
 
   /// The title screen's poster: TOPOUT, huge, between the sky and the
   /// mountains, so the peaks cover the bottom of the letters. Ink by day,
-  /// paper at dusk and night.
+  /// paper at dusk and night. When the title screen comes up the letters rise
+  /// into place one after another, and as the sheet scrolls the poster moves
+  /// up more slowly than the mountains in front of it.
   void _brand(Canvas c, Size size) {
     final wide = size.width >= 700, big = wide ? (size.width * 0.2).clamp(160.0, 290.0) : (size.width * 0.35).clamp(110.0, 150.0);
     final col = titleInk(_light.dusk > 0.5 || _light.night > 0.5 ? DayTime.dusk : DayTime.day);
     if (_brandFor != (big, col)) {
       _brandText?.dispose();
+      for (final (tp, _) in _brandLetters) {
+        tp.dispose();
+      }
       _brandFor = (big, col);
-      _brandText = TextPainter(
-        text: TextSpan(text: wide ? 'TOPOUT' : 'TOP\nOUT', style: FbTxt.label(big, color: col, spacing: 0.01).copyWith(height: 0.84)),
-        textDirection: TextDirection.ltr,
-      )..layout();
+      final text = wide ? 'TOPOUT' : 'TOP\nOUT', style = FbTxt.label(big, color: col, spacing: 0.01).copyWith(height: 0.84);
+      final word = _brandText = TextPainter(text: TextSpan(text: text, style: style), textDirection: TextDirection.ltr)..layout();
+      // each letter on its own, where it sits in the word
+      _brandLetters = [
+        for (var i = 0; i < text.length; i++)
+          if (text[i] != '\n')
+            (
+              TextPainter(text: TextSpan(text: text[i], style: style), textDirection: TextDirection.ltr)..layout(),
+              word.getOffsetForCaret(TextPosition(offset: i), Rect.zero),
+            ),
+      ];
     }
-    final tp = _brandText!;
-    tp.paint(c, Offset(wide ? 48 : 18, g.padTop + (wide ? 40 : 34)));
+    final at = Offset(wide ? 48 : 18, g.padTop + (wide ? 40 : 34) - g.menuScroll * 0.2);
+    final since = g.clock - g.menuShownAt;
+    if (g.reducedMotion || since > 1.5) {
+      _brandText!.paint(c, at);
+      return;
+    }
+    for (final (i, (tp, o)) in _brandLetters.indexed) {
+      final u = clampD((since - 0.1 - i * 0.075) / 0.7, 0, 1);
+      if (u <= 0) continue;
+      final e = 1 - math.pow(1 - u, 3).toDouble(), p = at + o + Offset(0, (1 - e) * big * 0.3);
+      _fadeLayer.color = Color.fromRGBO(0, 0, 0, e);
+      c.saveLayer(Rect.fromLTWH(p.dx - 4, p.dy - 4, tp.width + 8, tp.height + 8), _fadeLayer);
+      tp.paint(c, p);
+      c.restore();
+    }
   }
 
   void _birds(Canvas c, ClimbRoute r, double crest) {
@@ -639,13 +667,19 @@ class ScenePainter extends CustomPainter {
       put(_xf, _rects, n, HoldLayer.rock, 1);
       _cols[n++] = tint;
       if (chalk) {
+        // fresh chalk fades in
         put(_xf2, _rects2, m, HoldLayer.chalk, 1);
-        _cols2[m++] = 0xFFFFFFFF;
+        _cols2[m++] = _argb(const Color(0xFFFFFFFF), g.chalkShown(k));
       }
       if (snow > 0) {
         // the snow shrinks toward the hold and fades as it is brushed off
         put(_xf2, _rects2, m, HoldLayer.snow, 0.55 + 0.45 * snow);
         _cols2[m++] = _argb(snowCol, math.min(1.0, snow * 1.6));
+        // and now and then it catches the light
+        if (!g.reducedMotion) {
+          final glint = math.pow(math.max(0.0, math.sin(g.clock * 0.9 + Mountain.holdHash(r, k) * 60)), 60).toDouble();
+          if (glint > 0.03) _glints.add((h.x + (Mountain.holdHash(r, k + 7) - 0.5) * 10, h.y + 4, glint * snow));
+        }
       }
     }
     if (n > 0) {
@@ -659,6 +693,50 @@ class ScenePainter extends CustomPainter {
     for (final k in ledges) {
       _ledgeAt(c, r, r.holds[k], k, menu);
     }
+    _drawGlints(c);
+  }
+
+  final List<(double, double, double)> _glints = [];
+
+  /// Glints on snow: a small four-pointed star that flares and fades.
+  void _drawGlints(Canvas c) {
+    if (_glints.isEmpty) return;
+    final star = Path();
+    for (final (x, y, a) in _glints) {
+      final r = 1.2 + 3.4 * a, w = 0.5 + 0.4 * a;
+      star
+        ..moveTo(x - r, y)
+        ..lineTo(x - w, y + w)
+        ..lineTo(x, y + r)
+        ..lineTo(x + w, y + w)
+        ..lineTo(x + r, y)
+        ..lineTo(x + w, y - w)
+        ..lineTo(x, y - r)
+        ..lineTo(x - w, y - w)
+        ..close();
+    }
+    c.drawPath(star, _p..color = Color.lerp(_light.snow, const Color(0xFFFFFFFF), 0.7)!.withValues(alpha: 0.9));
+    _glints.clear();
+  }
+
+  /// In the light of day, the shadow of a cloud drifts across the rock now
+  /// and then: one wide, faint, soft patch moving with the wind.
+  void _cloudShadows(Canvas c, ClimbRoute r) {
+    final k = (1 - _light.night * 1.6) * (1 - _light.dusk * 0.5);
+    if (k <= 0.05 || g.reducedMotion) return;
+    final v = g.viewRange(), span = (v.x1 - v.x0) + 700;
+    // one passes every 70 seconds or so, slowly, a little higher each time
+    final t = g.clock / 70, n = t.floor(), u = t - n;
+    final x = v.x0 - 350 + span * u, y = (v.y0 + v.y1) / 2 + (Mountain.holdHash(r, n * 31) - 0.5) * (v.y1 - v.y0) * 0.6;
+    final rx = 230.0 + 90 * Mountain.holdHash(r, n * 17), ry = rx * 0.55;
+    final a = 0.17 * k * math.sin(u * math.pi);
+    if (a < 0.004) return;
+    _p
+      ..color = const Color(0xFF000000)
+      ..shader = ui.Gradient.radial(Offset(x, y), rx, [rgba(10, 14, 30, a), rgba(10, 14, 30, a * 0.6), rgba(10, 14, 30, 0)], [0, 0.5, 1],
+          TileMode.clamp, Matrix4.diagonal3Values(1, ry / rx, 1).storage..[13] = y * (1 - ry / rx));
+    c.drawRect(Rect.fromCenter(center: Offset(x, y), width: rx * 2, height: ry * 2), _p);
+    _p.shader = null;
   }
 
   /// A colour as the 0xAARRGGBB number drawRawAtlas wants, with alpha [a].
@@ -738,7 +816,7 @@ class ScenePainter extends CustomPainter {
   }
 
   void _flag(Canvas c, double fx, double y) {
-    final wave = g.reducedMotion ? 0.0 : 1.0;
+    final wave = g.reducedMotion ? 0.0 : (g.cele?.cheer ?? false ? 2.3 : 1.0);
     _fill(c, Rect.fromLTWH(fx, y, 2.2, 50), hex(0xd9d2c6));
     final flag = Path()..moveTo(fx + 2.2, y + 50);
     for (var i = 1; i <= 6; i++) {
@@ -856,8 +934,9 @@ class ScenePainter extends CustomPainter {
         c.drawPath(dashCircle(p.dx, p.dy, 17 * k, 2, 6), _line(Kit.chalk.withValues(alpha: 0.6 * 0.6 * fade), 1.6, cap: StrokeCap.round));
       }
       final e = d.i < 2 ? pose.arms[d.i].e : pose.legs[d.i - 2].e, p = g.w2s(e.x, e.y);
-      c.drawCircle(p, 21 * k, _line(Kit.webbing.withValues(alpha: 0.95 * fade), 4));
-      c.drawCircle(p, 27 * k, _line(Kit.webbing.withValues(alpha: 0.6 * fade), 1.5));
+      final pop = 0.7 + 0.3 * Curves.easeOutBack.transform(f);
+      c.drawCircle(p, 21 * k * pop, _line(Kit.webbing.withValues(alpha: 0.95 * fade), 4));
+      c.drawCircle(p, 27 * k * pop, _line(Kit.webbing.withValues(alpha: 0.6 * fade), 1.5));
     }
     final pt = d.candPt;
     if (d.candDyno != null && pt != null) {
@@ -1063,6 +1142,7 @@ class ScenePainter extends CustomPainter {
         PartKind.snow => p.r * 1.6,
         PartKind.pebble => p.r,
         PartKind.spark => 2.4,
+        PartKind.breath => p.r * (1 + p.t * 5) * 2,
       };
       final alpha = (k * 8).ceil().clamp(1, 8);
       final key = (p.kind.index * 64 + (size * 2).round().clamp(1, 63)) * 16 + alpha;
@@ -1080,6 +1160,7 @@ class ScenePainter extends CustomPainter {
           PartKind.dust => rgba(150, 140, 128, 0.45 * alpha),
           PartKind.snow => _light.snow.withValues(alpha: 0.9 * alpha),
           PartKind.spark => rgba(255, 200, 110, alpha),
+          PartKind.breath => rgba(236, 240, 248, 0.2 * alpha),
           PartKind.pebble => rgba(120, 116, 110, alpha),
         };
       c.drawRawPoints(ui.PointMode.points, Float32List.fromList(pts), _dot);

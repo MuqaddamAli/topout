@@ -1,7 +1,8 @@
 import 'dart:math' as math;
 
-/// Chalk puffs, rock dust, falling pebbles, snow knocked off holds, and the sparks of a lamp.
-enum PartKind { chalk, dust, pebble, snow, spark }
+/// Chalk puffs, rock dust, falling pebbles, snow knocked off holds, the
+/// sparks of a lamp, and breath in the cold.
+enum PartKind { chalk, dust, pebble, snow, spark, breath }
 
 class Particle {
   Particle(this.x, this.y, this.vx, this.vy, this.r, this.max, this.kind);
@@ -77,6 +78,10 @@ class Effects {
         p.vx *= 0.9;
         p.vy = p.vy * 0.9 - 40 * dt;
         p.x += math.sin(p.t * 5 + p.r * 3) * 0.12;
+      } else if (p.kind == PartKind.breath) {
+        // breath in the cold: it drifts out, rises a little and thins away
+        p.vx *= 0.95;
+        p.vy = p.vy * 0.95 + 10 * dt;
       } else {
         p.vx *= 0.9;
         p.vy = p.vy * 0.9 + (p.kind == PartKind.chalk ? 6 : -4) * dt;

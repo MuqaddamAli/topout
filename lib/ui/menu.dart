@@ -10,12 +10,14 @@ import '../game/field_book.dart';
 import '../game/game.dart';
 import 'climbers.dart';
 import 'kit.dart';
+import 'motion.dart';
 import 'widgets.dart';
 
 /// Title screen: a poster at the top (TOPOUT between the sky and the
 /// mountains, drawn by the scene, and the climber on the summit), then a
 /// sheet of the field book that scrolls up over it: who climbs, the routes,
-/// the mode and sound, how to play, and your climbing log.
+/// the mode and sound, how to play, and your climbing log. The scene behind
+/// moves up more slowly than the sheet as it scrolls.
 class MenuScreen extends StatelessWidget {
   const MenuScreen({super.key, required this.game});
   final Game game;
@@ -25,32 +27,38 @@ class MenuScreen extends StatelessWidget {
     final size = MediaQuery.sizeOf(context);
     final pad = MediaQuery.paddingOf(context);
     final wide = size.width >= 700;
-    return SingleChildScrollView(
-      padding: EdgeInsets.only(bottom: pad.bottom),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        // the poster shows through here
-        SizedBox(height: math.min(size.height * (wide ? 0.5 : 0.46), wide ? 460 : 400)),
-        Stagger(
-          index: 0,
-          step: 90,
-          lift: 24,
-          child: CustomPaint(
-            painter: PaperPainter(color: Kit.paper, cell: wide ? 24 : 16, lineColor: Kit.grid, raggedTop: true, shadow: 0, seed: 3),
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(math.max(18, pad.left + 14), 24, math.max(18, pad.right + 14), 32),
-              child: Surface(
-                paper: true,
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1040),
-                    child: _Book(game: game, wide: wide),
+    return NotificationListener<ScrollUpdateNotification>(
+      onNotification: (n) {
+        if (n.depth == 0 && moving(context)) game.menuScroll = n.metrics.pixels;
+        return false;
+      },
+      child: SingleChildScrollView(
+        padding: EdgeInsets.only(bottom: pad.bottom),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          // the poster shows through here
+          SizedBox(height: math.min(size.height * (wide ? 0.5 : 0.46), wide ? 460 : 400)),
+          Stagger(
+            index: 0,
+            step: 90,
+            lift: 24,
+            child: CustomPaint(
+              painter: PaperPainter(color: Kit.paper, cell: wide ? 24 : 16, lineColor: Kit.grid, raggedTop: true, shadow: 0, seed: 3),
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(math.max(18, pad.left + 14), 24, math.max(18, pad.right + 14), 32),
+                child: Surface(
+                  paper: true,
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1040),
+                      child: _Book(game: game, wide: wide),
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
-      ]),
+        ]),
+      ),
     );
   }
 }
@@ -153,6 +161,9 @@ class _Routes extends StatefulWidget {
 class _RoutesState extends State<_Routes> {
   int _sel = 0;
 
+  /// Which way the last change of tab went: 1 to the right, -1 to the left.
+  int _dir = 1;
+
   Game get game => widget.game;
 
   @override
@@ -165,7 +176,8 @@ class _RoutesState extends State<_Routes> {
         height: wide ? 380 : 300,
         child: Semantics(
           label: 'Topo of ${r.name}',
-          child: CachedPaint(cacheKey: 'topo-${r.id}-${r.date}', painter: TopoPainter(r)),
+          // drawn from the ground up each time the route changes
+          child: DrawUp(replay: r.id, child: CachedPaint(cacheKey: 'topo-${r.id}-${r.date}', painter: TopoPainter(r))),
         ),
       );
       final card = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -183,14 +195,36 @@ class _RoutesState extends State<_Routes> {
                     ? '${routes[k].name}, ${routes[k].date}'
                     : '${routes[k].name}, ${const ['', 'Easy', 'Medium', 'Hard'][routes[k].level.clamp(0, 3)]}, ${(routes[k].topY / unitsPerMetre).toStringAsFixed(1)} metres',
                 onTap: () {
+                  if (k == sel) return;
                   game.audio.play(Sfx.page);
-                  setState(() => _sel = k);
+                  setState(() {
+                    _dir = k > sel ? 1 : -1;
+                    _sel = k;
+                  });
                 },
               ),
             ],
           ]),
         ),
-        _RouteCard(game: game, route: r),
+        // the card turns like a page, the way the tabs went
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          reverseDuration: const Duration(milliseconds: 200),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          layoutBuilder: (current, previous) => Stack(alignment: Alignment.topCenter, children: [...previous, if (current != null) current]),
+          transitionBuilder: (child, a) {
+            final incoming = child.key == ValueKey(r.id);
+            return FadeTransition(
+              opacity: a,
+              child: SlideTransition(
+                position: Tween(begin: Offset((incoming ? 0.07 : -0.07) * _dir, 0), end: Offset.zero).animate(a),
+                child: child,
+              ),
+            );
+          },
+          child: KeyedSubtree(key: ValueKey(r.id), child: _RouteCard(game: game, route: r)),
+        ),
         const SizedBox(height: 14),
         GameButton(
           label: 'Rope up',
@@ -282,14 +316,19 @@ class _RouteCard extends StatelessWidget {
             Expanded(child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(r.name.toUpperCase(), style: FbTxt.label(40)))),
             Transform.translate(
               offset: const Offset(0, -12),
-              child: InkStamp(word: _grade(r), color: Kit.ink, size: 0.8, angle: 8, semanticLabel: 'Grade ${_grade(r)}'),
+              child: StampIn(
+                color: Kit.ink,
+                delay: const Duration(milliseconds: 240),
+                child: InkStamp(word: _grade(r), color: Kit.ink, size: 0.8, angle: 8, semanticLabel: 'Grade ${_grade(r)}'),
+              ),
             ),
           ]),
         ),
         const SizedBox(height: 12),
         Text(r.blurb, style: Txt.body(15, color: Kit.ink, height: 1.35)),
         const SizedBox(height: 6),
-        for (final (label, value) in rows) LeaderRow(label: label, value: Text(value), size: 13.5),
+        for (final (i, (label, value)) in rows.indexed)
+          LeaderRow(label: label, value: TypeIn(value, delay: Duration(milliseconds: 160 + 90 * i)), size: 13.5),
       ]),
     );
   }
@@ -422,13 +461,13 @@ class _Log extends StatelessWidget {
       const SectionHead(number: 5, title: 'Your climbs'),
       const SizedBox(height: 10),
       line('TOPS', count(rec.tops)),
-      line('METRES', Text(rec.metres.toStringAsFixed(0), style: FbTxt.typed(15))),
+      line('METRES', TypeIn(rec.metres.toStringAsFixed(0), style: FbTxt.typed(15), delay: const Duration(milliseconds: 500))),
       // falls you stopped by catching a hold on the way down
       line('FALLS', Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
         count(rec.falls),
         if (rec.catches > 0) Text('${rec.catches} caught', style: FbTxt.typed(13, color: Kit.graphite)),
       ])),
-      line('TIME', Text(time, style: FbTxt.typed(15))),
+      line('TIME', TypeIn(time, style: FbTxt.typed(15), delay: const Duration(milliseconds: 620))),
     ]);
   }
 }

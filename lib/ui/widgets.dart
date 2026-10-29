@@ -175,7 +175,7 @@ class GameButton extends StatelessWidget {
 }
 
 /// One choice of a few side by side (Relaxed, Normal, No saves): the picked
-/// one has a pencil ring round it.
+/// one has a pencil ring round it, drawn as it is picked, and its ink darkens.
 class GameChoice extends StatelessWidget {
   const GameChoice({super.key, required this.label, required this.on, required this.onTap});
   final String label;
@@ -201,16 +201,18 @@ class GameChoice extends StatelessWidget {
               constraints: const BoxConstraints(minHeight: 46),
               alignment: Alignment.center,
               padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: CustomPaint(
-                foregroundPainter: on ? PencilRing(color: ink) : null,
+              child: Circled(
+                on: on,
+                color: ink,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
-                    child: Text(label.toUpperCase(),
-                        maxLines: 1,
-                        textAlign: TextAlign.center,
-                        style: FbTxt.label(22, color: on ? ink : ink.withValues(alpha: 0.62))),
+                    child: AnimatedDefaultTextStyle(
+                      duration: const Duration(milliseconds: 220),
+                      style: FbTxt.label(22, color: on ? ink : ink.withValues(alpha: 0.62)),
+                      child: Text(label.toUpperCase(), maxLines: 1, textAlign: TextAlign.center),
+                    ),
                   ),
                 ),
               ),

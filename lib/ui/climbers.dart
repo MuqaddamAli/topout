@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../game/audio.dart';
@@ -7,6 +9,7 @@ import '../game/field_book.dart';
 import '../game/game.dart';
 import '../game/palette.dart';
 import 'kit.dart';
+import 'motion.dart';
 import 'widgets.dart';
 
 /// Pick who climbs: an index card for each climber, then the card of the
@@ -67,27 +70,39 @@ class _ClimberCard extends StatelessWidget {
               color: on ? Kit.card : Color.lerp(Kit.card, Kit.manila, 0.55),
               padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                AnimatedScale(
-                  scale: on ? 1 : 0.9,
-                  duration: const Duration(milliseconds: 260),
-                  curve: Curves.easeOutBack,
-                  child: SizedBox(height: 92, child: ClimberPortrait(climber: climber)),
+                // picked, the climber grows a little and gives a small hop
+                Once(
+                  replay: on,
+                  onShow: false,
+                  duration: const Duration(milliseconds: 440),
+                  curve: Curves.easeOut,
+                  builder: (context, t, child) => Transform.translate(offset: Offset(0, on ? -math.sin(t * math.pi) * 7 : 0), child: child),
+                  child: AnimatedScale(
+                    scale: on ? 1 : 0.9,
+                    duration: const Duration(milliseconds: 260),
+                    curve: Curves.easeOutBack,
+                    child: SizedBox(height: 92, child: ClimberPortrait(climber: climber)),
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(climber.name.toUpperCase(), style: FbTxt.label(22, color: on ? Kit.ink : Kit.graphite)),
               ]),
             ),
-            // the picked one: a webbing ribbon down its left edge
+            // the picked one: a webbing ribbon that runs down its left edge
             if (on)
               Positioned(
                 left: -3,
                 top: -4,
                 bottom: 10,
                 width: 9,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Kit.webbing,
-                    border: Border.symmetric(vertical: BorderSide(color: Kit.webbingEdge, width: 2)),
+                child: Once(
+                  duration: const Duration(milliseconds: 360),
+                  builder: (context, t, child) => FractionallySizedBox(alignment: Alignment.topCenter, heightFactor: t, child: child),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Kit.webbing,
+                      border: Border.symmetric(vertical: BorderSide(color: Kit.webbingEdge, width: 2)),
+                    ),
                   ),
                 ),
               ),
@@ -127,8 +142,8 @@ class _ClimberInfo extends StatelessWidget {
         _Fade(
           id: k.id,
           child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-            // the perk, as a pencil note
-            Text(k.perk.label.toLowerCase(), style: FbTxt.hand(32, color: Kit.blaze)),
+            // the perk, as a pencil note that writes itself in
+            WriteIn(delay: const Duration(milliseconds: 120), child: Text(k.perk.label.toLowerCase(), style: FbTxt.hand(32, color: Kit.blaze))),
             const SizedBox(width: 10),
             Expanded(child: Text(k.perk.note, style: Txt.body(14, color: Kit.ink, height: 1.3))),
           ]),

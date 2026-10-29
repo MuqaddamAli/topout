@@ -411,6 +411,11 @@ class Game {
   final Pulse uiChanged = Pulse();
   void _ui() => uiChanged.fire();
 
+  /// Fires on a jolt through the climber (a slip, a jump, a catch, a fall,
+  /// a landing, the top): what hangs on the screen swings.
+  final Pulse jolts = Pulse();
+  static const Set<Sfx> _jolting = {Sfx.slip, Sfx.jump, Sfx.catchHold, Sfx.snatch, Sfx.fall, Sfx.land, Sfx.top};
+
   bool reducedMotion = false;
 
   // ---- view
@@ -531,6 +536,14 @@ class Game {
   double _menuHop = 9;
   bool _menuLanded = true;
 
+  /// How far the title screen's sheet is scrolled, in pixels: the scene
+  /// behind it moves up more slowly, for depth.
+  double menuScroll = 0;
+
+  /// The clock when the title screen last came up (the poster's letters rise
+  /// in). The game opens on it.
+  double menuShownAt = 0;
+
   // ---- overlay data
   String? tipText;
   String? toastText;
@@ -551,6 +564,55 @@ class Game {
   void _grabbed(int k) {
     _grabbedAt.removeWhere((_, t) => clock - t > 1);
     _grabbedAt[k] = clock;
+  }
+
+  double _nextGrit = 8, _nextPuff = 1;
+
+  /// Up in the snow, or at night, each breath out shows: a faint puff from
+  /// the helmet, quicker when the hands are tired.
+  void _breathe(double dt) {
+    final r = route, p = pose;
+    if (phase != Phase.climb || reducedMotion || r == null || p == null) return;
+    final cold = math.max(Mountain.snow(r, camY), Mountain.night(Mountain.hourAt(r, camY)));
+    _nextPuff -= dt;
+    if (_nextPuff > 0 || cold < 0.3) return;
+    final tired = grip[0] < 40 || grip[1] < 40;
+    _nextPuff = (tired ? 1.43 : 3.0) * (0.9 + 0.2 * _rand.nextDouble());
+    final side = lookX >= 0 ? 1.0 : -1.0, x = p.head.x + side * 7, y = p.head.y - 3;
+    for (var n = 0; n < 4; n++) {
+      effects.parts.add(Particle(x + _rand.nextDouble() * 3, y + _rand.nextDouble() * 3, side * (10 + _rand.nextDouble() * 10),
+          2 + _rand.nextDouble() * 6, 1.2 + _rand.nextDouble() * 0.8, 1.1 + _rand.nextDouble() * 0.4, PartKind.breath));
+    }
+  }
+
+  /// Now and then a little grit comes down past the climber from above.
+  void _grit(double dt) {
+    if (phase != Phase.climb || reducedMotion) return;
+    _nextGrit -= dt;
+    if (_nextGrit > 0) return;
+    _nextGrit = 6 + _rand.nextDouble() * 9;
+    final v = viewRange(), x = v.x0 + (v.x1 - v.x0) * (0.15 + 0.7 * _rand.nextDouble());
+    for (var n = 1 + _rand.nextInt(3); n > 0; n--) {
+      effects.parts.add(Particle(x + (_rand.nextDouble() - 0.5) * 10, v.y1 + 10 + n * 7, (_rand.nextDouble() - 0.5) * 14,
+          -20 - _rand.nextDouble() * 30, 0.8 + _rand.nextDouble() * 0.7, 1.7, PartKind.pebble));
+    }
+  }
+
+  /// When each hold got its chalk (just now), so the chalk fades in.
+  final Map<int, double> _chalkedAt = {};
+
+  void _chalk(int k) {
+    if (!chalked.add(k)) return;
+    _chalkedAt.removeWhere((_, t) => clock - t > 1);
+    _chalkedAt[k] = clock;
+  }
+
+  /// How much of hold [k]'s chalk shows yet, 0 to 1.
+  double chalkShown(int k) {
+    final t = _chalkedAt[k];
+    if (t == null || reducedMotion) return 1;
+    final u = clampD((clock - t) / 0.45, 0, 1);
+    return 1 - (1 - u) * (1 - u);
   }
 
   /// How much hold [k] is squashed by a grab right now, 0 to about 0.6.
@@ -635,6 +697,7 @@ class Game {
   void _play(Sfx s, {double pan = 0, double volume = 1}) {
     audio.play(s, pan: pan, volume: volume);
     audio.buzz(s);
+    if (_jolting.contains(s)) jolts.fire();
   }
 
   // ================================================================ records
@@ -991,6 +1054,8 @@ class Game {
     effects.parts.clear();
     _later.clear();
     setMenuPose();
+    menuScroll = 0;
+    menuShownAt = clock;
     curtain = 1;
     slipFlash = 0;
     screen = Screen.menu;
@@ -1005,6 +1070,7 @@ class Game {
     if (phase != Phase.menu) return;
     _refreshDaily();
     screen = Screen.online;
+    menuScroll = 0; // the sheet is gone, so the view goes back
     online.connect();
     _ui();
   }
@@ -1597,7 +1663,7 @@ class Game {
       moves++;
       if (d.i < 2) {
         holdTime[d.i] = 0;
-        chalked.add(d.cand);
+        _chalk(d.cand);
       }
       _grabbed(d.cand);
       final hand = isHand[d.i];
@@ -1884,7 +1950,7 @@ class Game {
     l.h = dy.hold;
     l.x = dy.pt.x;
     l.y = dy.pt.y;
-    chalked.add(dy.hold);
+    _chalk(dy.hold);
     _grabbed(dy.hold);
     grip[dy.i] = math.max(1.0, grip[dy.i] - climber.catchCostFor(dy.q));
     holdTime[dy.i] = 0;
@@ -1919,6 +1985,11 @@ class Game {
         _play(Sfx.snow, pan: panOf(h.x), volume: 0.7);
       } else {
         (held ??= {}).add(k);
+        // while it is brushed off, a little snow trickles down
+        if (!reducedMotion && _rand.nextDouble() < dt * 10) {
+          final h = holds[k];
+          effects.burst(h.x + (_rand.nextDouble() - 0.5) * 14, h.y + 1, PartKind.snow, 1);
+        }
       }
     }
     snowyHeld = held ?? const {};
@@ -2123,7 +2194,7 @@ class Game {
     l.y = o.pt.y;
     grip[i] = math.max(1.0, grip[i] - o.cost);
     holdTime[i] = 0;
-    chalked.add(o.hold);
+    _chalk(o.hold);
     _grabbed(o.hold);
     // the body ends up hanging under the hand, and swings there from where it was
     final from = cd.copy(), hang = solve(c, [Anchor(i, o.pt.x, o.pt.y)], 60, climber.reach);
@@ -2354,8 +2425,10 @@ class Game {
         : math.sin(clock * ((grip[0] < 40 || grip[1] < 40) && phase == Phase.climb ? 4.4 : 2.1));
     if (phase == Phase.menu) {
       scale = baseScale();
-      camX = 180;
-      camY = menuRoute.topY - (portrait ? 0.06 : 0.11) * ch / scale;
+      // the view drifts a little, very slowly, and moves up with the sheet (more slowly)
+      final drift = reducedMotion ? 0.0 : math.sin(clock * 0.21) * 4 + math.sin(clock * 0.077 + 1) * 3;
+      camX = 180 + drift;
+      camY = menuRoute.topY - (portrait ? 0.06 : 0.11) * ch / scale - menuScroll * 0.35 / scale;
       lookX = -2.2 + math.sin(clock * 0.3) * 0.5;
       _menuHop += dt;
       final u = _menuHop / 0.42;
@@ -2469,6 +2542,8 @@ class Game {
     tremble = phase == Phase.climb && low < 30 ? (30 - low) / 30 * 1.3 : 0.0;
     if (phase == Phase.climb && low < 25) audio.breath((25 - low) / 25, clock);
     if (!reducedMotion) snowfall.update(dt, camX: camX, camY: camY, scale: scale, w: cw, h: ch);
+    _grit(dt);
+    _breathe(dt);
     _limbTargets(dt);
     // body lean: hands over feet
     final e = endDraw;
@@ -2661,9 +2736,12 @@ class Game {
 
   // ================================================================ pose
 
-  /// The hand at the end of arm [i], shaking a little when it is very tired.
+  /// The hand at the end of arm [i], shaking a little when it is very tired,
+  /// and rubbing to and fro while it brushes the snow off a hold.
   Pt _handEnd(int i) {
     final e0 = endDraw[i].copy();
+    final k = limbs.length == 4 ? limbs[i].h : null;
+    if (k != null && phase == Phase.climb && !reducedMotion && snowOn(k) > 0) e0.x += math.sin(clock * 26 + i * 2) * 1.1;
     if (hStyle[i] == HandStyle.grip && grip[i] < 35 && !reducedMotion && phase == Phase.climb) {
       final amp = (35 - grip[i]) / 35 * 1.6;
       e0.x += math.sin(clock * 47 + i) * amp;

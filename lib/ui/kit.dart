@@ -4,8 +4,10 @@
 // next; typed index lines for the rest; ink stamps for what is final; tally
 // marks for counts; ruled log pages; pencil marks round what is picked.
 //
-// No blurs: shadows are flat, offset copies. Things that sway or blink stop
-// when the phone asks for less motion.
+// No blurs: shadows are flat, offset copies. Pencil marks draw themselves,
+// typed lines type out, stamps come down and tags swing when knocked (see
+// motion.dart); all of it stops when the phone asks for less motion.
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -13,6 +15,7 @@ import 'package:flutter/material.dart';
 import '../game/core.dart' show Rng;
 import '../game/field_book.dart';
 import '../game/palette.dart';
+import 'motion.dart';
 import 'widgets.dart';
 
 /// Whether what is drawn here sits on paper (ink) or on the rock (paper
@@ -307,12 +310,16 @@ class LuggageTag extends StatefulWidget {
     this.sway = true,
     this.on = false,
     this.phase = 0,
+    this.kicks,
   });
   final Widget child;
   final VoidCallback? onTap;
   final String semanticLabel;
   final double width, height, string;
   final bool sway;
+
+  /// Knocks that make it swing (it also swings when tapped).
+  final Listenable? kicks;
 
   /// Turned on (Watching, the chat open): webbing orange.
   final bool on;
@@ -403,7 +410,7 @@ class _LuggageTagState extends State<LuggageTag> with SingleTickerProviderStateM
                 angle: (widget.sway ? 3.5 + 1.5 * math.sin(_sway.value * math.pi * 2) : 0) * math.pi / 180,
                 child: child,
               ),
-              child: tag,
+              child: Swing(kicks: widget.kicks, seed: (widget.phase * 97).round(), strength: 1.2, child: tag),
             ),
           ),
         ),
@@ -478,8 +485,38 @@ class WebbingButton extends StatefulWidget {
   State<WebbingButton> createState() => _WebbingButtonState();
 }
 
-class _WebbingButtonState extends State<WebbingButton> {
+class _WebbingButtonState extends State<WebbingButton> with SingleTickerProviderStateMixin {
   bool _down = false;
+
+  // now and then light runs along the strap, as if it caught the sun
+  late final AnimationController _sheen = AnimationController(vsync: this, duration: const Duration(milliseconds: 1150));
+  Timer? _first, _every;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!moving(context)) {
+      _first?.cancel();
+      _every?.cancel();
+      _first = _every = null;
+      _sheen.value = 0;
+    } else if (_every == null) {
+      void shine() {
+        if (mounted && widget.onTap != null && !_down) _sheen.forward(from: 0);
+      }
+
+      _first = Timer(const Duration(milliseconds: 900), shine);
+      _every = Timer.periodic(const Duration(milliseconds: 6200), (_) => shine());
+    }
+  }
+
+  @override
+  void dispose() {
+    _first?.cancel();
+    _every?.cancel();
+    _sheen.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -508,25 +545,28 @@ class _WebbingButtonState extends State<WebbingButton> {
               child: AnimatedSlide(
                 offset: Offset(0, _down ? 4 / h : 0),
                 duration: const Duration(milliseconds: 70),
-                child: CustomPaint(
-                  painter: _WebbingPainter(down: _down, cut: cut),
-                  child: SizedBox(
-                    height: h,
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(44, 0, 12 + cut, 0),
-                      child: Row(children: [
-                        Expanded(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            child: Text(widget.label.toUpperCase(), maxLines: 1, style: FbTxt.label(widget.size, color: Kit.ink)),
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    painter: _WebbingPainter(down: _down, cut: cut),
+                    foregroundPainter: _SheenPainter(_sheen, cut),
+                    child: SizedBox(
+                      height: h,
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(44, 0, 12 + cut, 0),
+                        child: Row(children: [
+                          Expanded(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(widget.label.toUpperCase(), maxLines: 1, style: FbTxt.label(widget.size, color: Kit.ink)),
+                            ),
                           ),
-                        ),
-                        if (widget.extra case final e?) ...[
-                          const SizedBox(width: 8),
-                          Text(e, style: FbTxt.typed(wide ? 15 : 13, bold: true, color: Kit.ink, height: 1)),
-                        ],
-                      ]),
+                          if (widget.extra case final e?) ...[
+                            const SizedBox(width: 8),
+                            Text(e, style: FbTxt.typed(wide ? 15 : 13, bold: true, color: Kit.ink, height: 1)),
+                          ],
+                        ]),
+                      ),
                     ),
                   ),
                 ),
@@ -537,6 +577,47 @@ class _WebbingButtonState extends State<WebbingButton> {
       ),
     );
   }
+}
+
+/// The light running along a webbing strap: a soft band, slanted like the
+/// cut end, that crosses it once each time [t] runs.
+class _SheenPainter extends CustomPainter {
+  _SheenPainter(this.t, this.cut) : super(repaint: t);
+  final Animation<double> t;
+  final double cut;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final v = t.value;
+    if (v <= 0 || v >= 1) return;
+    final w = size.width, h = size.height, x = -60 + (w + 120) * Curves.easeInOutSine.transform(v);
+    canvas.save();
+    canvas.clipPath(Path()
+      ..moveTo(0, 0)
+      ..lineTo(w, 0)
+      ..lineTo(w - cut, h)
+      ..lineTo(0, h)
+      ..close());
+    final band = Path()
+      ..moveTo(x - 26, 0)
+      ..lineTo(x + 26, 0)
+      ..lineTo(x + 26 - h * 0.45, h)
+      ..lineTo(x - 26 - h * 0.45, h)
+      ..close();
+    final fade = math.sin(v * math.pi);
+    canvas.drawPath(
+        band,
+        Paint()
+          ..shader = LinearGradient(colors: [
+            const Color(0x00FFF3E0),
+            Color.fromRGBO(255, 243, 224, 0.26 * fade),
+            const Color(0x00FFF3E0),
+          ]).createShader(Rect.fromLTRB(x - 26 - h * 0.45, 0, x + 26, h)));
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _SheenPainter o) => o.t != t || o.cut != cut;
 }
 
 // ---------------------------------------------------------------- index lines
@@ -592,13 +673,17 @@ class _IndexLineState extends State<IndexLine> {
       ],
       if (widget.icon case final i?) ...[Icon(i, size: widget.size * 0.62, color: ink), const SizedBox(width: 8)],
       Flexible(
-        child: Container(
-          padding: const EdgeInsets.only(bottom: 2),
-          decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: (_hover || _focus) && !disabled ? ink : Colors.transparent, width: 2)),
+        // the underline is drawn from the left on hover or focus
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(end: (_hover || _focus) && !disabled ? 1.0 : 0.0),
+          duration: Duration(milliseconds: moving(context) ? 220 : 0),
+          curve: Curves.easeOutCubic,
+          builder: (context, u, child) => CustomPaint(foregroundPainter: u > 0 ? _UnderlinePainter(u, ink) : null, child: child),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(widget.chalk ? widget.label : widget.label.toUpperCase(),
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: style.copyWith(height: 1.05)),
           ),
-          child: Text(widget.chalk ? widget.label : widget.label.toUpperCase(),
-              maxLines: 1, overflow: TextOverflow.ellipsis, style: style.copyWith(height: 1.05)),
         ),
       ),
       if (widget.keyHint case final k?) ...[const SizedBox(width: 10), KeyHint(k, color: ink)],
@@ -628,7 +713,7 @@ class _IndexLineState extends State<IndexLine> {
                 child: Align(
                   alignment: Alignment.centerLeft,
                   widthFactor: 1,
-                  child: widget.on ? CustomPaint(foregroundPainter: PencilRing(color: ink), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4), child: line)) : line,
+                  child: widget.on ? Circled(color: ink, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4), child: line)) : line,
                 ),
               ),
             ),
@@ -637,6 +722,18 @@ class _IndexLineState extends State<IndexLine> {
       ),
     );
   }
+}
+
+class _UnderlinePainter extends CustomPainter {
+  _UnderlinePainter(this.u, this.color);
+  final double u;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) => canvas.drawRect(Rect.fromLTWH(0, size.height - 2, size.width * u, 2), Paint()..color = color);
+
+  @override
+  bool shouldRepaint(covariant _UnderlinePainter o) => o.u != u || o.color != color;
 }
 
 /// A key on the keyboard that does the same thing, in a typed box.
@@ -658,10 +755,33 @@ class KeyHint extends StatelessWidget {
 
 // ---------------------------------------------------------------- pencil
 
-/// A pencil ring drawn round something picked, not quite closed.
+/// [child] with a pencil ring round it ([on]): the ring draws itself, in
+/// one stroke, when it comes on.
+class Circled extends StatelessWidget {
+  const Circled({super.key, required this.child, this.on = true, this.color});
+  final Widget child;
+  final bool on;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = color ?? Surface.ink(context);
+    return Once(
+      replay: on,
+      duration: const Duration(milliseconds: 380),
+      curve: Curves.easeInOutCubic,
+      builder: (context, t, child) => CustomPaint(foregroundPainter: on ? PencilRing(color: ink, progress: t) : null, child: child),
+      child: child,
+    );
+  }
+}
+
+/// A pencil ring drawn round something picked, not quite closed. [progress]
+/// is how much of it is drawn yet.
 class PencilRing extends CustomPainter {
-  PencilRing({required this.color});
+  PencilRing({required this.color, this.progress = 1});
   final Color color;
+  final double progress;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -674,8 +794,9 @@ class PencilRing extends CustomPainter {
       final o = c + Offset(math.cos(t) * rx * wob, math.sin(t) * ry * wob);
       i == 0 ? p.moveTo(o.dx, o.dy) : p.lineTo(o.dx, o.dy);
     }
+    if (progress <= 0) return;
     canvas.drawPath(
-        p,
+        progress >= 1 ? p : _part(p, progress),
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.8
@@ -685,24 +806,45 @@ class PencilRing extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant PencilRing o) => o.color != color;
+  bool shouldRepaint(covariant PencilRing o) => o.color != color || o.progress != progress;
 }
 
-/// A box drawn in pencil, ticked when [on].
+/// The first [t] of [p], as far as a pencil would have got along it.
+Path _part(Path p, double t) {
+  final out = Path();
+  for (final m in p.computeMetrics()) {
+    out.addPath(m.extractPath(0, m.length * t), Offset.zero);
+  }
+  return out;
+}
+
+/// A box drawn in pencil, ticked when [on]. The tick is drawn as it comes
+/// on (and as the box first shows, with [drawIn]).
 class PencilBox extends StatelessWidget {
-  const PencilBox({super.key, required this.on, this.size = 22});
+  const PencilBox({super.key, required this.on, this.size = 22, this.drawIn = false});
   final bool on;
   final double size;
+  final bool drawIn;
 
   @override
-  Widget build(BuildContext context) =>
-      SizedBox(width: size, height: size, child: CustomPaint(painter: _PencilBoxPainter(on, Surface.ink(context))));
+  Widget build(BuildContext context) {
+    final ink = Surface.ink(context);
+    // the tick is drawn in one quick stroke when it comes on
+    return Once(
+      replay: on,
+      onShow: drawIn,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+      builder: (context, t, _) => SizedBox(width: size, height: size, child: CustomPaint(painter: _PencilBoxPainter(on, ink, tick: t))),
+    );
+  }
 }
 
 class _PencilBoxPainter extends CustomPainter {
-  _PencilBoxPainter(this.on, this.color);
+  _PencilBoxPainter(this.on, this.color, {this.tick = 1});
   final bool on;
   final Color color;
+  final double tick;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -721,12 +863,13 @@ class _PencilBoxPainter extends CustomPainter {
           ..lineTo(2.5, h - 2)
           ..close(),
         p);
-    if (on) {
+    if (on && tick > 0) {
+      final mark = Path()
+        ..moveTo(5, h * 0.55)
+        ..lineTo(w * 0.42, h - 5)
+        ..lineTo(w + 3, -3);
       canvas.drawPath(
-          Path()
-            ..moveTo(5, h * 0.55)
-            ..lineTo(w * 0.42, h - 5)
-            ..lineTo(w + 3, -3),
+          tick >= 1 ? mark : _part(mark, tick),
           p
             ..strokeWidth = 2.6
             ..color = Kit.blaze);
@@ -734,12 +877,14 @@ class _PencilBoxPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _PencilBoxPainter o) => o.on != on || o.color != color;
+  bool shouldRepaint(covariant _PencilBoxPainter o) => o.on != on || o.color != color || o.tick != tick;
 }
 
 // ---------------------------------------------------------------- tallies and stamps
 
-/// Tally marks: strokes, every fifth one crossing the four before it.
+/// Tally marks: strokes, every fifth one crossing the four before it. New
+/// strokes are pencilled in one after another (all of them, when it first
+/// shows).
 class TallyMarks extends StatelessWidget {
   const TallyMarks({super.key, required this.count, this.color, this.height = 22, this.label});
   final int count;
@@ -758,16 +903,24 @@ class TallyMarks extends StatelessWidget {
       child: SizedBox(
         width: (n == 0 ? 14 : w) * height / 28,
         height: height,
-        child: CustomPaint(painter: _TallyPainter(n, ink)),
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: n.toDouble()),
+          duration: Duration(milliseconds: moving(context) ? 460 : 0),
+          curve: Curves.easeOutSine,
+          builder: (context, shown, _) => CustomPaint(painter: _TallyPainter(n, ink, shown)),
+        ),
       ),
     );
   }
 }
 
 class _TallyPainter extends CustomPainter {
-  _TallyPainter(this.n, this.color);
+  _TallyPainter(this.n, this.color, this.shown);
   final int n;
   final Color color;
+
+  /// How many strokes are drawn so far; the last one may be partly drawn.
+  final double shown;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -782,11 +935,19 @@ class _TallyPainter extends CustomPainter {
       canvas.drawLine(const Offset(3, 14), const Offset(11, 14), p..color = color.withValues(alpha: 0.5));
       return;
     }
-    canvas.drawPath(tallyPath(n), p);
+    if (shown >= n) {
+      canvas.drawPath(tallyPath(n), p);
+      return;
+    }
+    final strokes = tallyStrokes(n);
+    for (var k = 0; k < strokes.length && k < shown; k++) {
+      final (a, b) = strokes[k];
+      canvas.drawLine(a, Offset.lerp(a, b, (shown - k).clamp(0.0, 1.0))!, p);
+    }
   }
 
   @override
-  bool shouldRepaint(covariant _TallyPainter o) => o.n != n || o.color != color;
+  bool shouldRepaint(covariant _TallyPainter o) => o.n != n || o.color != color || o.shown != shown;
 }
 
 /// A rubber stamp, a little worn: a circle or a box in blaze red (or ink),
@@ -944,7 +1105,8 @@ class _RingsPainter extends CustomPainter {
   bool shouldRepaint(covariant _RingsPainter o) => o.spread != spread;
 }
 
-/// A typed log line: a bold label column, then the text.
+/// A typed log line: a bold label column, then the text, which types
+/// itself out when it shows.
 class LogLine extends StatelessWidget {
   const LogLine({super.key, required this.label, required this.text, this.labelWidth = 64, this.size = 16, this.cursor = false, this.color});
   final String label, text;
@@ -960,10 +1122,10 @@ class LogLine extends StatelessWidget {
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
       SizedBox(width: labelWidth, child: Text(label, style: FbTxt.typed(size, bold: true, color: ink))),
       Expanded(
-        child: Text.rich(TextSpan(children: [
-          TextSpan(text: text),
-          if (cursor) const WidgetSpan(alignment: PlaceholderAlignment.middle, child: Padding(padding: EdgeInsets.only(left: 4), child: _Cursor())),
-        ]), style: FbTxt.typed(size, color: ink)),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Flexible(child: TypeIn(text, style: FbTxt.typed(size, color: ink), delay: const Duration(milliseconds: 160))),
+          if (cursor) const Padding(padding: EdgeInsets.only(left: 4), child: _Cursor()),
+        ]),
       ),
     ]);
   }

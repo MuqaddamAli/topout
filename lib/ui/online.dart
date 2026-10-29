@@ -13,6 +13,7 @@ import '../game/palette.dart';
 import 'climbers.dart';
 import 'hud.dart' show FrameSelect, GameToast;
 import 'kit.dart';
+import 'motion.dart';
 import 'widgets.dart';
 
 /// Play online: make a room or join one with its code, then the lobby with
@@ -257,8 +258,16 @@ class _OnlineScreenState extends State<OnlineScreen> {
                   : '${room.laneCount} lanes side by side, two climbers in each. Bridges join them.',
               style: Txt.body(13, color: Kit.graphite)),
           const SizedBox(height: 6),
+          // someone who joins slides into the register
           for (final p in room.players)
-            _PlayerRow(player: p, lane: room.slot(p), you: p.id == online.you, host: p.id == room.host),
+            KeyedSubtree(
+              key: ValueKey(p.id),
+              child: Once(
+                duration: const Duration(milliseconds: 380),
+                builder: (context, t, child) => Opacity(opacity: t, child: Transform.translate(offset: Offset((1 - t) * 28, 0), child: child)),
+                child: _PlayerRow(player: p, lane: room.slot(p), you: p.id == online.you, host: p.id == room.host),
+              ),
+            ),
         ]),
       ),
       const SizedBox(height: 22),
@@ -282,8 +291,13 @@ class _OnlineScreenState extends State<OnlineScreen> {
         FrameSelect<int>(
           game: game,
           select: (g) => (g.countdown ?? 0).ceil(),
-          builder: (context, left) => Text(left > 0 ? 'Starting in $left' : 'Starting…',
-              textAlign: TextAlign.center, style: FbTxt.label(32, color: Kit.blazeWhite)),
+          builder: (context, left) => Once(
+            replay: left,
+            duration: const Duration(milliseconds: 360),
+            curve: Curves.easeOutBack,
+            builder: (context, t, child) => Transform.scale(scale: 1.25 - 0.25 * t, child: child),
+            child: Text(left > 0 ? 'Starting in $left' : 'Starting…', textAlign: TextAlign.center, style: FbTxt.label(32, color: Kit.blazeWhite)),
+          ),
         )
       else if (online.isHost)
         GameButton(
@@ -310,19 +324,24 @@ class _CodeTag extends StatelessWidget {
       width: 168,
       child: Stack(clipBehavior: Clip.none, children: [
         Positioned(left: 83, top: -30, width: 1.5, height: 46, child: ColoredBox(color: Kit.blazeWhite.withValues(alpha: 0.85))),
-        Transform.rotate(
-          angle: -0.04,
-          child: CustomPaint(
-            painter: _BigTagPainter(),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 34, 10, 14),
-              child: Column(children: [
-                Text('ROOM', style: FbTxt.typed(12, bold: true, color: Kit.ink)),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: SelectableText(code, maxLines: 1, semanticsLabel: code.split('').join(' '), style: FbTxt.label(60, color: Kit.ink, spacing: 0.04)),
-                ),
-              ]),
+        // it swings in on its string
+        Swing(
+          swingIn: true,
+          seed: code.hashCode,
+          child: Transform.rotate(
+            angle: -0.04,
+            child: CustomPaint(
+              painter: _BigTagPainter(),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 34, 10, 14),
+                child: Column(children: [
+                  Text('ROOM', style: FbTxt.typed(12, bold: true, color: Kit.ink)),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: SelectableText(code, maxLines: 1, semanticsLabel: code.split('').join(' '), style: FbTxt.label(60, color: Kit.ink, spacing: 0.04)),
+                  ),
+                ]),
+              ),
             ),
           ),
         ),
@@ -443,7 +462,7 @@ class _PlayerRow extends StatelessWidget {
                   style: FbTxt.typed(12.5, color: Kit.graphite, height: 1.2)),
             ]),
           ),
-          if (player.ready) ...[const PencilBox(on: true, size: 20), const SizedBox(width: 4), const _Tag(label: 'Ready'), const SizedBox(width: 6)],
+          if (player.ready) ...[const PencilBox(on: true, size: 20, drawIn: true), const SizedBox(width: 4), const _Tag(label: 'Ready'), const SizedBox(width: 6)],
           if (host) const _Tag(label: 'Creator'),
           if (you) ...[const SizedBox(width: 6), const _Tag(label: 'You')],
         ]),
