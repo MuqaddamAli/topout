@@ -12,6 +12,7 @@ enum Sfx {
   grabCrimp('grab_crimp', 3),
   grabSloper('grab_sloper', 3),
   foot('foot', 4),
+  snow('snow', 3),
   chalk('chalk', 2, 0.7),
   slip('slip', 2),
   fall('fall', 1),
@@ -23,6 +24,8 @@ enum Sfx {
   best('best', 1),
   no('no', 1),
   tap('tap', 2),
+  page('page', 2),
+  clip('clip', 2),
   bird('bird', 4),
   breath('breath', 2),
   snatch('snatch', 2),
@@ -39,9 +42,10 @@ enum Sfx {
 
 /// Plays the music, the wind and the sound effects.
 ///
-/// All sounds are files in assets/audio, made by tool/make_audio.py. The
-/// files are already balanced against each other; the levels here set the
-/// music and the wind under the effects.
+/// All sounds are files in assets/audio, made by tool/make_audio.py: the
+/// effects from CC0 recordings (docs/SOUND_CREDITS.md), the music, the wind
+/// and the birds synthesized. The files are already balanced against each
+/// other; the levels here set the music and the wind under the effects.
 class GameAudio {
   GameAudio({required bool musicOn, required bool sfxOn, this.enabled = true})
       : _musicOn = musicOn,

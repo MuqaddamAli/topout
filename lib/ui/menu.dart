@@ -183,7 +183,7 @@ class _RoutesState extends State<_Routes> {
                     ? '${routes[k].name}, ${routes[k].date}'
                     : '${routes[k].name}, ${const ['', 'Easy', 'Medium', 'Hard'][routes[k].level.clamp(0, 3)]}, ${(routes[k].topY / unitsPerMetre).toStringAsFixed(1)} metres',
                 onTap: () {
-                  game.audio.play(Sfx.tap);
+                  game.audio.play(Sfx.page);
                   setState(() => _sel = k);
                 },
               ),
@@ -198,7 +198,7 @@ class _RoutesState extends State<_Routes> {
           primary: true,
           semanticLabel: 'Climb ${r.name}',
           onTap: () {
-            game.audio.play(Sfx.tap);
+            game.audio.play(Sfx.clip);
             game.startRoute(r);
           },
         ),

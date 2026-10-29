@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
-"""Makes the game's music and sound effects (assets/audio/*.mp3).
+"""Makes the game's sounds (assets/audio/*.mp3).
 
-Everything is synthesized here, offline, with numpy, and encoded with ffmpeg:
-no samples, no noise floors, no clipping. Sounds that carry a pitch use notes
-from the music's key (D major), so they sit well together.
+The sound effects are cut and mixed from CC0 recordings (Kenney and
+OpenGameArt packs, see docs/SOUND_CREDITS.md), fetched once into
+build/audio-sources. The music, the wind and the birds are synthesized here
+with numpy. Everything is encoded with ffmpeg.
 
     python tool/make_audio.py              all files
     python tool/make_audio.py grab foot    only the files whose names start so
 
-Needs numpy, and ffmpeg (with libmp3lame) on PATH.
+Needs numpy, ffmpeg (with libmp3lame) on PATH, and the internet the first time.
 """
 import pathlib
 import subprocess
 import sys
+import urllib.parse
+import urllib.request
 
 import numpy as np
 
@@ -90,13 +93,6 @@ def shape(x, lo=None, hi=None, order=2):
     return np.fft.irfft(spec * g, len(x))
 
 
-def noise(n, rng, lo=None, hi=None, order=2):
-    """Filtered noise, scaled to unit RMS."""
-    pad = samples(0.05)
-    x = shape(rng.standard_normal(n + 2 * pad), lo, hi, order)[pad:pad + n]
-    return x / (np.sqrt((x ** 2).mean()) + 1e-12)
-
-
 def place(dst, src, at):
     """Mixes src into dst starting at sample `at` (cut at the end)."""
     at = int(at)
@@ -143,9 +139,10 @@ def room(x, wet, rt60=0.7, seed=1, bright=4500):
     return y
 
 
-def finish(x, loud_db, floor_db=-70.0, fade=0.02):
-    """Sets the loudness of the loud part, keeps the peak under -1 dBFS,
-    cuts the silent tail and fades the end to true zero."""
+def finish(x, loud_db, floor_db=-70.0, fade=0.02, peak_db=-1.0):
+    """Sets the loudness of the loud part, keeps the peak under `peak_db`
+    (a sharp click sounds louder than its loudness says), cuts the silent
+    tail and fades the end to true zero."""
     win = samples(0.03)
     frames = x[:len(x) // win * win].reshape(-1, win)
     rms = np.sqrt((frames ** 2).mean(1))
@@ -153,8 +150,8 @@ def finish(x, loud_db, floor_db=-70.0, fade=0.02):
     level = np.sqrt((loud ** 2).mean())
     x = x * (10 ** (loud_db / 20) / level)
     peak = np.max(np.abs(x))
-    if peak > 10 ** (-1 / 20):
-        x *= 10 ** (-1 / 20) / peak
+    if peak > 10 ** (peak_db / 20):
+        x *= 10 ** (peak_db / 20) / peak
     above = np.nonzero(np.abs(x) > 10 ** (floor_db / 20))[0]
     end = above[-1] + 1 if len(above) else len(x)
     x = x[:end].copy()
@@ -194,227 +191,276 @@ def kalimba(m, vel, total=1.6):
     return vel * partials(hz(m), total, spec, attack=0.003)
 
 
-def bell(m, vel, total=2.2, tau=1.1):
-    """A warm chime for the save, top and best sounds."""
-    spec = [(1, 1.0, tau), (2.0, 0.22, tau * 0.6), (3.0, 0.1, tau * 0.35), (4.16, 0.06, tau * 0.2)]
-    return vel * partials(hz(m), total, spec, attack=0.004)
+# ---------------------------------------------------------------- stock recordings
+
+# The sound effects are cut from CC0 (public domain) recordings: Kenney's
+# packs and CC0 packs from OpenGameArt, as mirrored by the Open Game SFX
+# Index. They are fetched once, at a fixed commit, into build/audio-sources.
+# docs/SOUND_CREDITS.md lists the recordings each file is made of.
+INDEX = 'https://raw.githubusercontent.com/Legerdo/open-game-sfx-index/d463e4d24ea2c18a75b27de8da1532642d80483c/audio/'
+CACHE = ROOT / 'build' / 'audio-sources'
+
+# folder in the index: (pack, author, page)
+PACKS = {
+    'impact-sounds': ('Impact Sounds', 'Kenney', 'https://kenney.nl/assets/impact-sounds'),
+    'rpg-audio': ('RPG Audio', 'Kenney', 'https://kenney.nl/assets/rpg-audio'),
+    'interface-sounds': ('Interface Sounds', 'Kenney', 'https://kenney.nl/assets/interface-sounds'),
+    'ui-audio': ('UI Audio', 'Kenney', 'https://kenney.nl/assets/ui-audio'),
+    'music-jingles': ('Music Jingles', 'Kenney', 'https://kenney.nl/assets/music-jingles'),
+    'oga-rpg-pack': ('RPG Sound Pack', 'artisticdude', 'https://opengameart.org/content/rpg-sound-pack'),
+    'oga-battle': ('Battle Sound Effects', 'Ogrebane', 'https://opengameart.org/content/battle-sound-effects'),
+    'oga-rubberduck-breaking-75': ('75 CC0 breaking, falling and hit SFX', 'rubberduck', 'https://opengameart.org/content/75-cc0-breaking-falling-hit-sfx'),
+    'oga-rubberduck-metal-wood-100': ('100 CC0 metal and wood SFX', 'rubberduck', 'https://opengameart.org/content/100-cc0-metal-and-wood-sfx'),
+    'oga-rubberduck-foley-100-v2': ('100 CC0 SFX #2', 'rubberduck', 'https://opengameart.org/content/100-cc0-sfx-2'),
+    'oga-rubberduck-100-foley': ('100 CC0 SFX', 'rubberduck', 'https://opengameart.org/content/100-cc0-sfx'),
+    'oga-rubberduck-creatures-80-v2': ('80 CC0 creature SFX #2', 'rubberduck', 'https://opengameart.org/content/80-cc0-creture-sfx-2'),
+}
+
+# which recordings each file uses, for docs/SOUND_CREDITS.md
+USED = {}
+_making = ['']
 
 
-def mallet(m, vel, total=0.5, tau=0.18):
-    """Short muted wood tone for small cues."""
-    return vel * partials(hz(m), total, [(1, 1.0, tau), (3.9, 0.12, tau * 0.2)], attack=0.003)
+def stock(path, start=0.0, length=None, semis=0.0):
+    """A recording from the index (its path under audio/), mono, from `start`
+    seconds and at most `length` long, `semis` semitones higher (resampled,
+    so a higher sound is also a little shorter)."""
+    USED.setdefault(_making[0], set()).add(path)
+    f = CACHE / path
+    if not f.exists():
+        f.parent.mkdir(parents=True, exist_ok=True)
+        with urllib.request.urlopen(INDEX + urllib.parse.quote(path), timeout=60) as r:
+            f.write_bytes(r.read())
+    cmd = ['ffmpeg', '-v', 'error', '-i', str(f), '-ac', '1', '-ar', str(SR), '-f', 'f64le', '-']
+    x = np.frombuffer(subprocess.run(cmd, capture_output=True, check=True).stdout, np.float64)
+    a = samples(start)
+    x = (x[a:] if length is None else x[a:a + samples(length)]).copy()
+    if semis:
+        x = np.interp(np.arange(0, len(x) - 1, 2 ** (semis / 12)), np.arange(len(x)), x)
+    # neither a cut nor the end of a recording (they stop hard) ever clicks
+    if start:
+        k = min(samples(0.004), len(x))
+        x[:k] *= ramp(k)
+    k = min(samples(0.012), len(x))
+    x[len(x) - k:] *= ramp(k)[::-1]
+    return x
 
 
-def pat(f0, f1, tau, total, attack=0.002):
-    """The body of a soft impact: a sine that drops in pitch and dies away."""
-    n = samples(total)
-    return osc(glide(f0, f1, n, 3.0), n) * env(total, attack, tau)
+def band(x, lo=None, hi=None):
+    """[shape] for a one-shot sound: padded first, so the filter's ringing
+    cannot wrap from the start of the sound around to its end."""
+    pad = samples(0.06)
+    return shape(np.concatenate([np.zeros(pad), x, np.zeros(pad)]), lo, hi)[pad:pad + len(x)]
+
+
+def mix(total, *parts):
+    """Lays (sound, at seconds, gain in dB) parts into `total` seconds."""
+    x = np.zeros(samples(total))
+    for s, at, db in parts:
+        place(x, s * 10 ** (db / 20), samples(at))
+    return x
+
+
+IMPACT, RPG, UI = 'impact-sounds/', 'rpg-audio/', 'interface-sounds/'
+JINGLE = 'music-jingles/jingles_'
+CLOTH = 'oga-rpg-pack/RPG Sound Pack/inventory/cloth.wav'
+CLOTH_HEAVY = 'oga-rpg-pack/RPG Sound Pack/inventory/cloth-heavy.wav'
+KEYS = 'oga-rubberduck-metal-wood-100/keys_0'
 
 
 # ---------------------------------------------------------------- sound effects
 
 def grab(kind, v):
-    """A hand closing on a hold: a soft woody pat (jug), a crisp tick on a
-    small edge (crimp), a dull round pat on a sloper."""
-    rng = np.random.default_rng(100 + v * 7 + {'jug': 0, 'crimp': 1, 'sloper': 2}[kind])
-    p = 1 + (v - 1) * 0.045
-    total = 0.35
-    n = samples(total)
+    """A hand closing on a hold: a slap of skin on a jug, fingertips knocking
+    onto a small edge (crimp), a palm smearing onto a sloper. Each has a
+    soft, low thump under it for the weight of the body."""
+    weight = band(stock(f'{IMPACT}impactSoft_medium_00{v}.ogg'), 40, 900)
     if kind == 'jug':
-        x = pat(175 * p, 118 * p, 0.05, total)
-        x += 0.32 * partials(610 * p, total, [(1, 1, 0.026), (2.47, 0.35, 0.012)])
-        grit = 0.07
+        hand = band(stock(f'{IMPACT}impactPunch_medium_00{(0, 2, 4)[v - 1]}.ogg', length=0.3), 90, 2400)
+        x = mix(0.34, (hand, 0, 0), (weight, 0, -5))
     elif kind == 'crimp':
-        x = 0.6 * pat(225 * p, 160 * p, 0.035, total)
-        x += 0.36 * partials(900 * p, total, [(1, 1, 0.018), (2.41, 0.3, 0.008)])
-        grit = 0.06
+        tip = band(stock('oga-rubberduck-breaking-75/bfh1_rock_hit_01.ogg', semis=(0, 1.5, -1.5)[v - 1]), 300, 5000)
+        knock = band(stock(f'{IMPACT}impactGeneric_light_00{v}.ogg'), 120, 3000)
+        x = mix(0.3, (tip, 0, 0), (knock, 0.004, -6), (weight, 0, -12))
     else:
-        x = pat(140 * p, 98 * p, 0.07, total, attack=0.004)
-        x += 0.22 * partials(420 * p, total, [(1, 1, 0.03)], attack=0.004)
-        grit = 0.0
-    if grit:
-        x += grit * noise(n, rng, 300, 1800) * env(total, 0.001, 0.012)
-    return finish(room(x, 0.12, 0.35, seed=v), -24)
+        palm = band(stock(RPG + ('handleSmallLeather.ogg', 'handleSmallLeather2.ogg', 'handleSmallLeather.ogg')[v - 1],
+                           semis=(0, 0, -2)[v - 1]), 150, 3800)
+        x = mix(0.36, (palm, 0, 0), (weight, 0.01, -2))
+    return finish(room(x, 0.1, 0.35, seed=v), -24, peak_db=-14)
 
 
 def foot(v):
-    """A rubber shoe on rock: a low soft thud and a short, quiet scuff."""
-    rng = np.random.default_rng(200 + v)
-    p = 1 + (v - 2.5) * 0.05
-    total = 0.3
-    n = samples(total)
-    x = 0.9 * pat(115 * p, 78 * p, 0.045, total, attack=0.003)
-    x += 0.16 * noise(n, rng, 150, 900) * env(total, 0.008, 0.03)
-    return finish(room(x, 0.1, 0.3, seed=v), -29)
+    """A climbing shoe set down on rock."""
+    x = band(stock(f'{IMPACT}footstep_concrete_00{v - 1}.ogg'), 70, 3500)
+    return finish(room(x, 0.08, 0.3, seed=v), -29, peak_db=-18)
+
+
+def snow(v):
+    """A hand or a foot crunching into snow on a hold."""
+    x = band(stock(f'{IMPACT}footstep_snow_00{v - 1}.ogg'), 120, 9000)
+    return finish(room(x, 0.08, 0.3, seed=40 + v), -30, peak_db=-18)
 
 
 def chalk(v):
-    """A dip in the chalk bag: a soft powdery puff."""
-    rng = np.random.default_rng(300 + v)
-    total = 0.45
-    n = samples(total)
-    x = noise(n, rng, 300, 1300) * env(total, 0.03, 0.09)
-    x += 0.35 * pat(210, 170, 0.025, total)
-    return finish(x, -34)
+    """Fingers dipping into the chalk bag."""
+    x = band(stock(RPG + ('cloth2.ogg', 'cloth4.ogg')[v - 1]), 300, 6500)
+    return finish(x, -34, peak_db=-21)
 
 
 def slip(v):
-    """A hand slips: two soft notes going down, and a light scrape."""
-    rng = np.random.default_rng(400 + v)
-    total = 0.9
-    n = samples(total)
-    hi, lo = (69, 66) if v == 1 else (71, 67)  # A4 to F#4, B4 to G4
-    x = np.zeros(n)
-    place(x, mallet(hi, 0.8, 0.6, 0.22), 0)
-    place(x, mallet(lo, 0.7, 0.6, 0.28), samples(0.13))
-    scrape = noise(n, rng, 450, 1400) * env(total, 0.01, 0.12, 0.25, 0.05)
-    x += 0.22 * scrape
-    return finish(room(x, 0.2, 0.6, seed=v), -25)
+    """A hand or a foot skating off: a scuff, and grit trickling down."""
+    scuff = band(stock(RPG + ('cloth1.ogg', 'cloth3.ogg')[v - 1]), 200, 6000)
+    grit = band(stock(f'oga-rubberduck-breaking-75/bfh1_rock_falling_0{(8, 7)[v - 1]}.ogg'), 400, 9000)
+    bump = band(stock(f'{IMPACT}impactSoft_medium_00{v + 2}.ogg'), 40, 700)
+    x = mix(0.95, (scuff, 0, 0), (grit, 0.12, -7), (bump, 0, -9))
+    return finish(room(x, 0.2, 0.6, seed=v), -25, peak_db=-13)
 
 
 def fall():
-    """Falling: a soft whoosh of air and a low falling tone."""
-    rng = np.random.default_rng(500)
-    total = 1.0
-    n = samples(total)
-    t = np.arange(n) / SR
-    # air: crossfade from a brighter to a darker band as the climber drops
-    bright = noise(n, rng, 280, 1100)
-    dark = noise(n, rng, 110, 450)
-    u = np.clip(t / 0.8, 0, 1)
-    air = (bright * (1 - u) + dark * u) * env(total, 0.12, 0.5)
-    tone = 0.5 * osc(glide(330, 150, n, 1.5), n) * env(total, 0.02, 0.35)
-    return finish(room(air * 0.6 + tone, 0.15, 0.6, seed=5), -25)
+    """Off the wall: a rush of air and a flap of clothes."""
+    air = band(stock('oga-rubberduck-foley-100-v2/sfx100v2_air_02.ogg'), 150, 1800)
+    swish = band(stock('oga-battle/battle_sound_effects/swish_3.wav', semis=-3), 100, 4000)
+    flap = band(stock(CLOTH_HEAVY), 150, 6000)
+    x = mix(1.3, (air, 0, 0), (swish, 0, -2), (flap, 0.06, -10))
+    return finish(room(x, 0.15, 0.6, seed=5), -25)
 
 
 def land(v):
-    """Landing on the crash pad: a deep soft thump, no rattle."""
-    rng = np.random.default_rng(600 + v)
-    total = 0.6
-    n = samples(total)
-    p = 1 + (v - 1.5) * 0.06
-    x = pat(88 * p, 50 * p, 0.12, total, attack=0.003)
-    x += 0.4 * noise(n, rng, 40, 300) * env(total, 0.004, 0.05)
-    x += 0.06 * noise(n, rng, 350, 1200) * env(total, 0.01, 0.06)
+    """Onto the crash pad: a heavy, soft thud, the clothes, the gear on the harness."""
+    thud = band(stock(f'{IMPACT}impactSoft_heavy_00{(0, 2)[v - 1]}.ogg'), 30, 1500)
+    body = band(stock(RPG + 'dropLeather.ogg'), 120, 6000)
+    gear = band(stock(f'{KEYS}{(4, 1)[v - 1]}.ogg'), 800, 9000)
+    x = mix(0.6, (thud, 0, 0), (body, 0.008, -7), (gear, 0.03, -20))
     return finish(x, -22)
 
 
 def jump(v):
-    """A jump: a light rising breath of air and a small rising tone."""
-    rng = np.random.default_rng(700 + v)
-    total = 0.45
-    n = samples(total)
-    t = np.arange(n) / SR
-    low = noise(n, rng, 220, 650)
-    high = noise(n, rng, 500, 1300)
-    u = np.clip(t / 0.25, 0, 1)
-    air = (low * (1 - u) + high * u) * env(total, 0.03, 0.12)
-    tone = osc(glide(300 * (1 + 0.04 * v), 520, n, 0.7), n) * env(total, 0.01, 0.08)
-    return finish(room(0.6 * air + 0.5 * tone, 0.12, 0.4, seed=v), -27)
+    """A jump for a hold: a quick whoosh, the clothes, the gear jingling."""
+    whoosh = band(stock('oga-rpg-pack/RPG Sound Pack/battle/' + ('swing.wav', 'swing2.wav')[v - 1]), 120, 6000)
+    cloth = band(stock(RPG + 'cloth2.ogg'), 200, 7000)
+    gear = band(stock(f'{KEYS}{(1, 4)[v - 1]}.ogg'), 800, 9000)
+    x = mix(0.55, (whoosh, 0, 0), (cloth, 0.02, -9), (gear, 0.05, -19))
+    return finish(room(x, 0.1, 0.4, seed=v), -27)
 
 
 def catch(v):
-    """Catching a hold after a jump: a firm pat and a small bright note."""
-    rng = np.random.default_rng(800 + v)
-    total = 0.9
-    n = samples(total)
-    x = pat(190, 128, 0.06, total)
-    x += 0.3 * partials(600, total, [(1, 1, 0.03), (2.47, 0.3, 0.012)])
-    x += 0.06 * noise(n, rng, 300, 1800) * env(total, 0.001, 0.012)
-    place(x, mallet(74 if v == 1 else 76, 0.28, 0.7, 0.3), samples(0.02))
-    return finish(room(x, 0.15, 0.5, seed=v), -22)
+    """Catching the hold at the end of a jump: a hard slap, the body swinging in."""
+    hand = band(stock(f'{IMPACT}impactPunch_heavy_00{(1, 3)[v - 1]}.ogg', length=0.45), 60, 2800)
+    swing = band(stock(CLOTH_HEAVY), 150, 6000)
+    gear = band(stock(f'{KEYS}4.ogg', semis=(0, 1)[v - 1]), 800, 9000)
+    x = mix(0.8, (hand, 0, 0), (swing, 0.03, -9), (gear, 0.04, -18))
+    return finish(room(x, 0.12, 0.5, seed=v), -22)
+
+
+def snatch(v):
+    """A falling hand slams onto a hold: a heavy slap and a jolt through the
+    body and the gear."""
+    hand = band(stock(f'{IMPACT}impactPunch_heavy_00{(0, 4)[v - 1]}.ogg', length=0.5), 50, 3200)
+    jolt = band(stock(f'{IMPACT}impactSoft_heavy_00{(1, 3)[v - 1]}.ogg'), 30, 900)
+    gear = band(stock(f'{KEYS}1.ogg', semis=(0, -1)[v - 1]), 700, 9000)
+    cloth = band(stock(CLOTH), 200, 6500)
+    x = mix(0.8, (hand, 0, 0), (jolt, 0, -4), (gear, 0.035, -14), (cloth, 0.02, -10))
+    return finish(room(x, 0.12, 0.45, seed=30 + v), -21)
 
 
 def save():
-    """The lamp lights up: two warm notes rising (A5, D6)."""
-    total = 2.6
-    x = np.zeros(samples(total))
-    place(x, bell(81, 0.9, 2.2, 1.0), 0)
-    place(x, bell(86, 0.8, 2.3, 1.2), samples(0.14))
-    return finish(room(x, 0.3, 1.2, seed=9, bright=6000), -22)
+    """Clipping in at a ledge: the carabiner's gate, then two rising notes."""
+    gate = band(stock(RPG + 'metalClick.ogg'), 400, 12000)
+    ding = stock(JINGLE + 'STEEL08.ogg')
+    x = mix(1.6, (gate, 0, 0), (ding, 0.3, -6))
+    return finish(room(x, 0.25, 1.2, seed=9, bright=6000), -22)
 
 
 def top():
-    """At the top: a gentle rising arpeggio over a soft D major chord."""
-    total = 3.6
-    n = samples(total)
-    x = np.zeros(n)
-    for k, m in enumerate([74, 78, 81, 86, 90]):
-        place(x, kalimba(m, 0.9 - k * 0.08, 2.2), samples(k * 0.12))
-    chord = np.zeros(n)
-    for m in [62, 66, 69, 74]:
-        chord += partials(hz(m), total, [(1, 1, 3.0), (2, 0.2, 1.2)], attack=0.5, length=2.4, release=0.6)
-    x += 0.18 * chord
+    """The top: pizzicato, steel drum and a low orchestral hit climbing
+    D, E, F sharp, G together."""
+    x = mix(1.6, (stock(JINGLE + 'PIZZI10.ogg'), 0, 0), (stock(JINGLE + 'STEEL10.ogg'), 0, -4),
+            (stock(JINGLE + 'HIT16.ogg'), 0, -9))
     return finish(room(x, 0.3, 1.4, seed=11, bright=6000), -21)
 
 
 def best():
-    """A new best height: a small sparkle (E6, A6)."""
-    total = 1.8
-    x = np.zeros(samples(total))
-    place(x, bell(88, 0.8, 1.6, 0.7), 0)
-    place(x, bell(93, 0.6, 1.6, 0.8), samples(0.09))
+    """A new best: a playful pizzicato turn, moved into D."""
+    x = stock(JINGLE + 'PIZZI15.ogg', semis=2)
     return finish(room(x, 0.25, 1.0, seed=12, bright=6500), -23)
 
 
 def no():
-    """You can't go there: two soft, low, muted notes."""
-    total = 0.4
-    x = np.zeros(samples(total))
-    place(x, mallet(55, 0.9, 0.25, 0.05), 0)
-    place(x, mallet(52, 0.8, 0.25, 0.06), samples(0.085))
-    return finish(x, -27)
-
-
-def emote_cheer():
-    """Cheer (online): a quick, bright little leap up the D major chord, D5 to D6,
-    over a soft chord."""
-    total = 1.9
-    n = samples(total)
-    x = np.zeros(n)
-    for k, m in enumerate([74, 78, 81, 86]):
-        place(x, kalimba(m, 0.85 - k * 0.05, 1.3), samples(k * 0.07))
-    place(x, bell(90, 0.35, 1.2, 0.5), samples(0.3))
-    chord = np.zeros(n)
-    for m in [62, 69, 74]:
-        chord += partials(hz(m), total, [(1, 1, 1.4), (2, 0.15, 0.6)], attack=0.05, length=0.9, release=0.4)
-    x += 0.12 * chord
-    return finish(room(x, 0.25, 1.0, seed=21, bright=6500), -25)
-
-
-def emote_taunt():
-    """Taunt (online): a playful "ha-ha-ha", three short bouncing notes (A5,
-    F#5, A5) and a little rising flick: friendly, never rude."""
-    total = 1.4
-    x = np.zeros(samples(total))
-    for k, (m, v) in enumerate([(81, 0.8), (78, 0.7), (81, 0.75)]):
-        place(x, mallet(m, v, 0.4, 0.07) + 0.5 * kalimba(m + 12, v * 0.5, 0.4), samples(k * 0.13))
-    flick = osc(glide(hz(83), hz(86), samples(0.18), 2.0), samples(0.18)) * env(0.18, 0.004, 0.06)
-    place(x, 0.35 * flick, samples(0.44))
-    return finish(room(x, 0.2, 0.8, seed=22, bright=6000), -26)
-
-
-def emote_aura():
-    """Aura (online): lying back, showing off. A slow, soft swell of a D major
-    seventh with a high sparkle drifting down."""
-    total = 3.0
-    n = samples(total)
-    x = np.zeros(n)
-    for m in [62, 66, 69, 73]:
-        x += partials(hz(m), total, [(1, 1, 2.0), (2, 0.18, 0.9), (3, 0.05, 0.4)], attack=0.6, length=1.6,
-                      release=0.7)
-    x *= 0.22
-    for k, m in enumerate([93, 90, 85]):
-        place(x, bell(m, 0.32 - k * 0.06, 1.4, 0.6), samples(0.35 + k * 0.22))
-    return finish(room(x, 0.35, 1.6, seed=23, bright=5500), -27)
+    """A move that cannot be made: a dull, short knock on wood."""
+    knock = band(stock(f'{IMPACT}impactWood_light_000.ogg'), 80, 3000)
+    low = band(stock(UI + 'bong_001.ogg'), 60, 1500)
+    return finish(mix(0.3, (knock, 0, 0), (low, 0, -10)), -27, peak_db=-17)
 
 
 def tap(v):
-    """A button: a tiny, quiet wooden tick."""
-    total = 0.12
-    f = 1150 if v == 1 else 1320
-    x = partials(f, total, [(1, 1, 0.018), (2.6, 0.15, 0.006)], attack=0.002)
-    return finish(x, -31)
+    """A button: a soft click."""
+    x = band(stock('ui-audio/' + ('click1.ogg', 'click3.ogg')[v - 1]), 200, 6000)
+    return finish(x, -33, peak_db=-21)
+
+
+def page(v):
+    """Turning a page of the field book."""
+    x = band(stock(RPG + ('bookFlip1.ogg', 'bookFlip2.ogg')[v - 1], start=(0.25, 0)[v - 1], length=0.45), 250, 8000)
+    return finish(x, -31, peak_db=-19)
+
+
+def clip(v):
+    """Roping up: a carabiner snapping shut."""
+    x = band(stock(RPG + ('metalLatch.ogg', 'metalClick.ogg')[v - 1], length=(None, 0.2)[v - 1]), 400, 12000)
+    return finish(room(x, 0.12, 0.4, seed=50 + v), -27, peak_db=-15)
+
+
+def breath(v):
+    """A tired breath out."""
+    x = band(stock('oga-rubberduck-creatures-80-v2/breath_02.ogg', semis=(0, -2)[v - 1]), 150, 2600)
+    return finish(x, -34)
+
+
+def heart():
+    """Time slows down in a fall: two soft, low heartbeats."""
+    lub = band(stock(f'{IMPACT}impactSoft_heavy_000.ogg'), 25, 260)
+    dub = band(stock(f'{IMPACT}impactSoft_heavy_003.ogg', semis=1), 25, 260)
+    return finish(mix(1.0, (lub, 0, 0), (dub, 0.24, -3)), -26)
+
+
+def emote_cheer():
+    """Cheer: a sax climbing D, E, F sharp, G."""
+    return finish(room(stock(JINGLE + 'SAX10.ogg'), 0.25, 1.0, seed=21, bright=6500), -25)
+
+
+def emote_taunt():
+    """Taunt: a cheeky boing."""
+    x = mix(0.6, (band(stock('oga-rubberduck-100-foley/spring_03.ogg'), 120, 9000), 0, 0),
+            (stock(UI + 'pluck_002.ogg'), 0, -8))
+    return finish(room(x, 0.2, 0.8, seed=22, bright=6000), -26, peak_db=-13)
+
+
+def emote_aura():
+    """Aura: a dreamy pizzicato run up a whole-tone scale from D, with a shimmer."""
+    run = stock(JINGLE + 'PIZZI02.ogg', semis=2)
+    shimmer = band(stock('oga-rpg-pack/RPG Sound Pack/battle/magic1.wav'), 1500, 12000)
+    x = mix(1.6, (run, 0, 0), (shimmer, 0.05, -14))
+    return finish(room(x, 0.35, 1.6, seed=23, bright=5500), -27)
+
+
+def credits():
+    """docs/SOUND_CREDITS.md: the recordings in each file."""
+    lines = ['# Sound credits', '',
+             'The sound effects are cut and mixed by `tool/make_audio.py` from CC0 (public',
+             'domain) recordings: no credit is needed, but here it is. The recordings come',
+             'from the [Open Game SFX Index](https://github.com/Legerdo/open-game-sfx-index),',
+             'which mirrors these packs. The music, the wind and the birds are synthesized',
+             'by the same script.', '',
+             '| Pack | By | Licence |', '|---|---|---|']
+    packs = sorted({p.split('/')[0] for used in USED.values() for p in used})
+    for p in packs:
+        name, by, page = PACKS[p]
+        lines.append(f'| [{name}]({page}) | {by} | CC0 1.0 |')
+    lines += ['', '| File | Made from |', '|---|---|']
+    for name in sorted(USED):
+        if name:
+            lines.append(f'| `{name}.mp3` | ' + ', '.join(f'`{p}`' for p in sorted(USED[name])) + ' |')
+    (ROOT / 'docs' / 'SOUND_CREDITS.md').write_text('\n'.join(lines) + '\n')
 
 
 def bird(v):
@@ -435,46 +481,6 @@ def bird(v):
         place(x, chirp, samples(at))
         at += d + rng.uniform(0.05, 0.11)
     return finish(room(x, 0.25, 0.9, seed=20 + v, bright=7000), -31)
-
-
-def breath(v):
-    """A tired breath out: soft and low."""
-    rng = np.random.default_rng(1000 + v)
-    total = 0.8
-    n = samples(total)
-    x = noise(n, rng, 200, 850)
-    x *= env(total, 0.16, 0.0, 0.35, 0.12)
-    return finish(x, -34)
-
-
-def snatch(v):
-    """A falling hand slams onto a hold: a heavy woody slap, a puff of chalk,
-    then a short breath out after the jolt."""
-    rng = np.random.default_rng(1200 + v)
-    total = 0.8
-    n = samples(total)
-    p = 1 + (v - 1.5) * 0.05
-    x = pat(150 * p, 92 * p, 0.07, total)
-    x += 0.38 * partials(520 * p, total, [(1, 1, 0.03), (2.47, 0.35, 0.012)])
-    x += 0.10 * noise(n, rng, 300, 1800) * env(total, 0.001, 0.015)
-    x += 0.12 * noise(n, rng, 350, 1300) * env(total, 0.02, 0.07)
-    breath_out = noise(samples(0.4), rng, 250, 900) * env(0.4, 0.05, 0.0, 0.16, 0.1)
-    place(x, 0.18 * breath_out, samples(0.09))
-    return finish(room(x, 0.15, 0.45, seed=30 + v), -21)
-
-
-def heart():
-    """Time slows down in a fall: two soft, low heartbeats."""
-    total = 1.1
-    x = np.zeros(samples(total))
-    for at, g in ((0.0, 1.0), (0.24, 0.7)):
-        n = samples(0.35)
-        # low enough to feel, with overtones so small speakers play it too
-        beat = osc(glide(78, 58, n, 2.0), n) * env(0.35, 0.012, 0.09)
-        beat += 0.55 * osc(glide(156, 116, n, 2.0), n) * env(0.35, 0.008, 0.05)
-        beat += 0.3 * osc(glide(234, 174, n, 2.0), n) * env(0.35, 0.006, 0.035)
-        place(x, g * beat, samples(at))
-    return finish(x, -26)
 
 
 def wind():
@@ -625,6 +631,8 @@ def jobs():
             yield f'grab_{kind}_{v}', lambda kind=kind, v=v: grab(kind, v)
     for v in (1, 2, 3, 4):
         yield f'foot_{v}', lambda v=v: foot(v)
+    for v in (1, 2, 3):
+        yield f'snow_{v}', lambda v=v: snow(v)
     for v in (1, 2):
         yield f'chalk_{v}', lambda v=v: chalk(v)
         yield f'slip_{v}', lambda v=v: slip(v)
@@ -632,6 +640,8 @@ def jobs():
         yield f'jump_{v}', lambda v=v: jump(v)
         yield f'catch_{v}', lambda v=v: catch(v)
         yield f'tap_{v}', lambda v=v: tap(v)
+        yield f'page_{v}', lambda v=v: page(v)
+        yield f'clip_{v}', lambda v=v: clip(v)
         yield f'breath_{v}', lambda v=v: breath(v)
     for v in (1, 2, 3, 4):
         yield f'bird_{v}', lambda v=v: bird(v)
@@ -655,4 +665,7 @@ if __name__ == '__main__':
     for name, make in jobs():
         if only and not any(name.startswith(o) for o in only):
             continue
+        _making[0] = name
         write(name, make())
+    if not only:
+        credits()

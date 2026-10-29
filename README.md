@@ -20,7 +20,7 @@ This is the Flutter version of the Topout web prototype (kept in `web_prototype/
 - Records: best time per route, highest point, today's best on the Daily Wall, and a log of tops, metres, falls (and how many you caught) and time.
 - Climbers drawn in code, each in their own build and clothes, with soft shading and thin outlines, and a harness, quickdraws, chalk bag and hair that swing; holds that are part of the rock; a sky, clouds and snowy mountain ranges in the colours of the hour; lamps, mist, falling snow, frost and birds.
 - While you aim, chalk on the rock shows where a hand or foot can go: a ring is a good hold, a broken ring a poor one, a cross no hold, a ring of dots a jump, with a word like "jug!" or "crimp" by the hold under your finger. The shape says it, so it reads without colour.
-- Calm music (electric piano, a soft pad, bass and kalimba, no drums) and soft sound effects in the same key, with wind that grows as you climb. Phones also buzz a little on grabs, slips and landings.
+- Calm music (electric piano, a soft pad, bass and kalimba, no drums), with wind that grows as you climb, and sound effects cut from real recordings (all public domain): skin on rock for each kind of hold, climbing shoes, a crunch of snow on snowy holds, the chalk bag, grit trickling down when you slip, gear jingling on the harness, a carabiner when you rope up and clip in at a ledge, the pages of the field book, and pizzicato and steel-drum jingles in the music's key. Phones also buzz a little on grabs, slips and landings.
 - Soft animations everywhere: cards and tips slide in, buttons press in, holds give a little when you grab them, lamps send out a ring of light, grass sways, dust floats in the evening light, snow falls and mist drifts, luggage tags sway, a hand's tag pulses when the hand is about to slip, stamps land, and the end-of-climb numbers count up. All of it turns off when the phone asks for less motion.
 
 ## Climbers
@@ -163,10 +163,12 @@ World units are centimetres with y pointing up. The ground is at y = 0, and 100 
 
 ## Sounds and music
 
-`tool/make_audio.py` makes every file in `assets/audio/`. It is all synthesis in numpy, with no samples and no noise floor, so every sound fades to true silence. Sounds with a pitch use notes from the music's key (D major), so they sit well with it. The online emotes have their own soft cues (`emote_cheer`, `emote_taunt`, `emote_aura`): a little rising leap, a playful "ha-ha-ha" and a slow, relaxed swell. The music is a 24-bar loop at 66 bpm: electric-piano chords, a soft pad, a gentle bass and a few kalimba notes. Its reverb tail wraps around to the start, so it loops without a seam.
+`tool/make_audio.py` makes every file in `assets/audio/`. The sound effects are cut, layered and filtered from CC0 (public domain) recordings: Kenney's Impact Sounds, RPG Audio, Interface Sounds, UI Audio and Music Jingles, and CC0 packs from OpenGameArt, fetched once from the [Open Game SFX Index](https://github.com/Legerdo/open-game-sfx-index) at a fixed commit into `build/audio-sources/`. `docs/SOUND_CREDITS.md` lists the recordings in each file (the script writes it). A grab is skin slapping rock with a soft thump of body weight under it; a jug, a crimp and a sloper each have their own. A jump and a landing carry the clothes and the gear on the harness, a slip has grit trickling down after it, and a fall is a rush of air. The jingles (a ledge, the top, a new best, the emotes) climb D, E, F sharp and G, the music's key. Every recording fades out at its end and is filtered with padding, so nothing clicks; loudness and peaks are set per sound, so sharp clicks stay soft.
+
+The music, the wind and the birds are synthesized in numpy. The music is a 24-bar loop at 66 bpm: electric-piano chords, a soft pad, a gentle bass and a few kalimba notes. Its reverb tail wraps around to the start, so it loops without a seam.
 
 ```bash
-pip install numpy          # ffmpeg (with MP3 support) is also needed
+pip install numpy          # ffmpeg (with MP3 support) is also needed, and the internet the first time
 python tool/make_audio.py              # everything (about a minute)
 python tool/make_audio.py grab foot    # only the files whose names start so
 ```

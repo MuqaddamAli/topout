@@ -632,8 +632,8 @@ class Game {
     }
   }
 
-  void _play(Sfx s, {double pan = 0}) {
-    audio.play(s, pan: pan);
+  void _play(Sfx s, {double pan = 0, double volume = 1}) {
+    audio.play(s, pan: pan, volume: volume);
     audio.buzz(s);
   }
 
@@ -1602,7 +1602,10 @@ class Game {
       _grabbed(d.cand);
       final hand = isHand[d.i];
       effects.burst(l.x, l.y + (hand ? 3 : 0), hand ? PartKind.chalk : PartKind.dust, hand ? 8 : 6);
-      _play(hand ? _grabSound(holds[d.cand].t) : Sfx.foot, pan: panOf(l.x));
+      final snowy = snowOn(d.cand) > 0;
+      // a foot on snow only crunches; a hand slaps the hold and the snow
+      _play(hand ? _grabSound(holds[d.cand].t) : (snowy ? Sfx.snow : Sfx.foot), pan: panOf(l.x));
+      if (hand && snowy) _play(Sfx.snow, pan: panOf(l.x), volume: 0.6);
       if (!hand) _maybeStand();
       _ui();
     } else {
@@ -1913,7 +1916,7 @@ class Game {
       if (now >= 1) {
         final h = holds[k];
         effects.burst(h.x, h.y + 3, PartKind.snow, 9);
-        _play(Sfx.chalk, pan: panOf(h.x));
+        _play(Sfx.snow, pan: panOf(h.x), volume: 0.7);
       } else {
         (held ??= {}).add(k);
       }
