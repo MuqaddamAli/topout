@@ -29,6 +29,9 @@ Future<void> _loadFonts() async {
   await load('Atkinson', ['AtkinsonHyperlegible-Regular.ttf', 'AtkinsonHyperlegible-Bold.ttf']);
   await load('BigShoulders', ['BigShouldersDisplay-ExtraBold.ttf', 'BigShouldersDisplay-Black.ttf']);
   await load('PlexMono', ['IBMPlexMono-Medium.ttf']);
+  await load('ArchivoXC', ['Archivo-ExtraCondensedBlack.ttf']);
+  await load('CourierPrime', ['CourierPrime-Regular.ttf', 'CourierPrime-Bold.ttf']);
+  await load('Reenie', ['ReenieBeanie-Regular.ttf']);
   // Real icons too, if the Flutter SDK is where we expect it.
   final root = Platform.environment['FLUTTER_ROOT'];
   if (root != null) {
@@ -248,7 +251,7 @@ void main() {
       expect(game.fall!.options, isNotEmpty);
     }
 
-    // 1. tap the glowing hold: the right hand catches it and the body hangs there
+    // 1. tap the marked hold: the right hand catches it and the body hangs there
     await slip();
     expect(game.fall!.slow, lessThan(1), reason: 'time runs slow');
     await shot(tester, '11_catch_window');

@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-/// Chalk puffs, rock dust, falling pebbles, snow, and the sparks of a lamp.
+/// Chalk puffs, rock dust, falling pebbles, snow knocked off holds, and the sparks of a lamp.
 enum PartKind { chalk, dust, pebble, snow, spark }
 
 class Particle {
@@ -40,7 +40,7 @@ class Effects {
   final List<Particle> parts = [];
   final List<Mote> motes = [];
   final List<Bird> birds = [];
-  double _nextFlock = 4, _snowDue = 0;
+  double _nextFlock = 4;
 
   /// [n] particles flying out from x, y.
   void burst(double x, double y, PartKind kind, int n) {
@@ -59,17 +59,6 @@ class Effects {
     }
   }
 
-  /// Snow falling in from the top of the view (x0 to x1, at height y):
-  /// 120 flakes a second, at most 170 particles in all.
-  void snow(double dt, double x0, double x1, double y) {
-    _snowDue += dt * 120;
-    for (; _snowDue >= 1; _snowDue--) {
-      if (parts.length >= 170) continue;
-      parts.add(Particle(x0 + _rand.nextDouble() * (x1 - x0), y, 10 + _rand.nextDouble() * 14, -35 - _rand.nextDouble() * 25,
-          0.8 + _rand.nextDouble() * 1.6, 9, PartKind.snow));
-    }
-  }
-
   void update(double dt, double clock) {
     _updateParts(dt);
     _updateBirds(dt);
@@ -84,7 +73,10 @@ class Effects {
       if (p.kind == PartKind.pebble) {
         p.vy -= 700 * dt;
       } else if (p.kind == PartKind.snow) {
-        p.x += math.sin(p.t * 1.7 + p.r * 3) * 0.25;
+        // a puff of snow knocked off a hold: it spreads, then drifts down
+        p.vx *= 0.9;
+        p.vy = p.vy * 0.9 - 40 * dt;
+        p.x += math.sin(p.t * 5 + p.r * 3) * 0.12;
       } else {
         p.vx *= 0.9;
         p.vy = p.vy * 0.9 + (p.kind == PartKind.chalk ? 6 : -4) * dt;
