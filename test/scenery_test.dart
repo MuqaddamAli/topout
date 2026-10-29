@@ -189,6 +189,14 @@ void main() {
       await tester.pumpWidget(RepaintBoundary(key: shotKey, child: TopoutApp(game: game)));
       await frames(tester, 1);
       await shot(tester, 'scenery_00_menu');
+      // the rest of the field book, scrolled up over the poster
+      for (final n in ['b', 'c', 'd']) {
+        await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -700));
+        await frames(tester, 0.6);
+        await shot(tester, 'scenery_00_menu_$n');
+      }
+      await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, 3000));
+      await frames(tester, 0.4);
       var n = 1;
       for (final r in game.routes) {
         game.startRoute(r);

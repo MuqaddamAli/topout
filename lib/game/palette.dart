@@ -6,25 +6,18 @@ Color hex(int rgb) => Color(0xFF000000 | rgb);
 /// Colour with alpha from 0 to 1.
 Color rgba(int r, int g, int b, double a) => Color.fromRGBO(r, g, b, a.clamp(0.0, 1.0));
 
+/// The colours of the scene that the Field Book (field_book.dart, [Kit]) does
+/// not set: the dark behind everything, the light tint of good, weak and
+/// bad holds on chalk marks, the ground and its crash pads, and the lamps.
 class Pal {
   static final ink = hex(0x11141b);
-  static final ink2 = hex(0x1b2029);
-  static final ink3 = hex(0x262c37);
-  static final line = hex(0x394150);
-  static final chalk = hex(0xf2ede4);
-  static final chalkDim = hex(0xaca8a0);
-  static final signal = hex(0xff7a2f);
-  static final signalInk = hex(0x1a0e06);
   static final good = hex(0x7fdc95);
   static final weak = hex(0xf4c64d);
   static final bad = hex(0xff5a5a);
-  static final jump = hex(0x7cc8ff);
-  static final earth = hex(0x2a2521);
   static final earthTop = hex(0x3a332b);
   static final grass = hex(0x5b6b43);
   static final pad = hex(0x203457);
   static final padTop = hex(0x2e4c7c);
-  static final outline = hex(0x15171e);
   static final lamp = hex(0xffd27a);
 }
 

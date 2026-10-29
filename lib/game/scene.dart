@@ -203,7 +203,7 @@ class ScenePainter extends CustomPainter {
 
     void bubble(Offset at, String text, double age) {
       final tp = _bubbleText[text] ??= TextPainter(
-        text: TextSpan(text: text, style: TextStyle(fontFamily: 'Atkinson', fontSize: 14, fontWeight: FontWeight.w700, color: Pal.ink)),
+        text: TextSpan(text: text, style: TextStyle(fontFamily: 'Atkinson', fontSize: 14, fontWeight: FontWeight.w700, color: Kit.ink)),
         textDirection: TextDirection.ltr,
         maxLines: 1,
       )..layout(maxWidth: 200);
@@ -213,8 +213,10 @@ class ScenePainter extends CustomPainter {
       final a = (fade * 240).round();
       _p
         ..shader = null
-        ..color = Pal.chalk.withAlpha(a);
-      canvas.drawRRect(RRect.fromRectAndRadius(box, const Radius.circular(10)), _p);
+        ..color = Kit.paper.withAlpha(a);
+      // a scrap of paper with a little tail
+      canvas.drawRect(box.shift(const Offset(0, 3)), Paint()..color = rgba(0, 0, 0, 0.25 * fade));
+      canvas.drawRect(box, _p);
       final tail = Path()
         ..moveTo(box.center.dx - 6, box.bottom - 0.5)
         ..lineTo(box.center.dx + 6, box.bottom - 0.5)
@@ -235,7 +237,7 @@ class ScenePainter extends CustomPainter {
       if (e == null || e.$1 != o.name) {
         e?.$2.dispose();
         final tp = TextPainter(
-          text: TextSpan(text: o.name, style: TextStyle(fontFamily: 'Atkinson', fontSize: 13, fontWeight: FontWeight.w700, color: Pal.chalk)),
+          text: TextSpan(text: o.name, style: FbTxt.typed(12.5, bold: true, color: Kit.ink, height: 1.1)),
           textDirection: TextDirection.ltr,
           maxLines: 1,
           ellipsis: '…',
@@ -244,7 +246,9 @@ class ScenePainter extends CustomPainter {
       }
       final tp = e.$2, at = over(o.pose!, o.gear!);
       final box = free(Rect.fromCenter(center: at.translate(0, -tp.height / 2), width: tp.width + 14, height: tp.height + 6));
-      canvas.drawRRect(RRect.fromRectAndRadius(box, const Radius.circular(8)), _p..shader = null..color = rgba(13, 15, 21, 0.62));
+      // a little paper name tag
+      canvas.drawRect(box.shift(const Offset(0, 2)), _p..shader = null..color = rgba(0, 0, 0, 0.25));
+      canvas.drawRect(box, _p..color = Kit.paper.withValues(alpha: 0.92));
       tp.paint(canvas, Offset(box.left + 7, box.top + 3));
       final s = o.shown!, said = s.chat;
       if (said != null) {
@@ -362,7 +366,35 @@ class ScenePainter extends CustomPainter {
   void _sky(Canvas c, Size size, ClimbRoute r) {
     final sc = g.scale, crest = (g.camY - r.topY) * sc + g.ch / 2;
     _backdrop.paint(c, size, _light,
-        crest: crest, d: g.camY - r.topY, sc: sc, camX: g.camX, clock: g.clock, still: g.reducedMotion, birds: (c, crest) => _birds(c, r, crest));
+        crest: crest,
+        d: g.camY - r.topY,
+        sc: sc,
+        camX: g.camX,
+        clock: g.clock,
+        still: g.reducedMotion,
+        birds: (c, crest) => _birds(c, r, crest),
+        behindRanges: g.phase == Phase.menu && g.screen == Screen.menu ? (c) => _brand(c, size) : null);
+  }
+
+  TextPainter? _brandText;
+  (double, Color)? _brandFor;
+
+  /// The title screen's poster: TOPOUT, huge, between the sky and the
+  /// mountains, so the peaks cover the bottom of the letters. Ink by day,
+  /// paper at dusk and night.
+  void _brand(Canvas c, Size size) {
+    final wide = size.width >= 700, big = wide ? (size.width * 0.2).clamp(160.0, 290.0) : (size.width * 0.35).clamp(110.0, 150.0);
+    final col = titleInk(_light.dusk > 0.5 || _light.night > 0.5 ? DayTime.dusk : DayTime.day);
+    if (_brandFor != (big, col)) {
+      _brandText?.dispose();
+      _brandFor = (big, col);
+      _brandText = TextPainter(
+        text: TextSpan(text: wide ? 'TOPOUT' : 'TOP\nOUT', style: FbTxt.label(big, color: col, spacing: 0.01).copyWith(height: 0.84)),
+        textDirection: TextDirection.ltr,
+      )..layout();
+    }
+    final tp = _brandText!;
+    tp.paint(c, Offset(wide ? 48 : 18, g.padTop + (wide ? 40 : 34)));
   }
 
   void _birds(Canvas c, ClimbRoute r, double crest) {
@@ -545,8 +577,7 @@ class ScenePainter extends CustomPainter {
     final tp = _laneMarks[(lane, yours)] ??= TextPainter(
       text: TextSpan(
         text: 'LANE ${lane + 1}',
-        style: TextStyle(
-            fontFamily: 'BigShoulders', fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 1.2, color: yours ? Pal.signal : rgba(242, 237, 228, 0.8)),
+        style: FbTxt.label(15, spacing: 0.06, color: yours ? Kit.webbing : Kit.blazeWhite.withValues(alpha: 0.8)),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
@@ -720,7 +751,7 @@ class ScenePainter extends CustomPainter {
     flag
       ..lineTo(fx + 2.2, y + 34)
       ..close();
-    c.drawPath(flag, _p..color = Pal.signal);
+    c.drawPath(flag, _p..color = Kit.webbing);
   }
 
   void _lamp(Canvas c, double x, double y, bool lit, int k) {
@@ -893,7 +924,7 @@ class ScenePainter extends CustomPainter {
     if (!(g.hangT > 0)) return;
     final at = Offset(g.cd.x, g.cd.y), f = clampD(g.hangT / g.hangMax, 0, 1);
     c.drawCircle(at, 44, _line(rgba(12, 14, 20, 0.4), 3));
-    c.drawArc(Rect.fromCircle(center: at, radius: 44), math.pi / 2, -math.pi * 2 * f, false, _line(Pal.bad, 2));
+    c.drawArc(Rect.fromCircle(center: at, radius: 44), math.pi / 2, -math.pi * 2 * f, false, _line(Kit.low, 2.4));
   }
 
   // ---------------------------------------------------------------- catching a fall
@@ -974,15 +1005,19 @@ class ScenePainter extends CustomPainter {
     final tp = _catchText ??= TextPainter(
       text: TextSpan(
           text: 'Tap a chalk mark!',
-          style: TextStyle(fontFamily: 'Atkinson', fontWeight: FontWeight.w700, fontSize: 15, color: Pal.chalk)),
+          style: FbTxt.typed(15, bold: true, color: Kit.ink, height: 1.1)),
       textDirection: TextDirection.ltr,
     )..layout();
     final p = g.w2s(best.pt.x, best.pt.y);
     final x = clampD(p.dx - tp.width / 2, 16, g.cw - tp.width - 16), y = clampD(p.dy - 64, 120, g.ch - 220);
-    c.drawRRect(roundRect(x - 10, y - 6, tp.width + 20, tp.height + 12, 10), _p
+    final box = Rect.fromLTWH(x - 10, y - 6, tp.width + 20, tp.height + 12);
+    c.drawRect(box.shift(const Offset(0, 3)), _p
       ..shader = null
-      ..color = rgba(12, 14, 20, 0.82 * _slowness));
+      ..color = rgba(0, 0, 0, 0.3 * _slowness));
+    c.drawRect(box, _p..color = Kit.paper.withValues(alpha: _slowness));
+    c.saveLayer(box, Paint()..color = Color.fromRGBO(255, 255, 255, _slowness));
     tp.paint(c, Offset(x, y));
+    c.restore();
   }
 
   /// First move of the lesson: a finger shows the drag.
@@ -1007,7 +1042,7 @@ class ScenePainter extends CustomPainter {
     if (y < v.y0 || y > v.y1) return null;
     // dashes stay fixed on the wall as the view moves
     final x0 = (v.x0 / 21).floorToDouble() * 21;
-    c.drawPath(dashLine(x0, y, v.x1, y, 12, 9), _line(rgba(124, 200, 255, 0.55), 1.6));
+    c.drawPath(dashLine(x0, y, v.x1, y, 12, 9), _line(Kit.blaze.withValues(alpha: 0.6), 1.6));
     return y;
   }
 
@@ -1019,13 +1054,14 @@ class ScenePainter extends CustomPainter {
     if (tp == null || tp.plainText != text) {
       tp?.dispose();
       tp = _label = TextPainter(
-        text: TextSpan(
-            text: text, style: TextStyle(fontFamily: 'Atkinson', fontWeight: FontWeight.w700, fontSize: 12, color: Pal.jump)),
+        text: TextSpan(text: text.toUpperCase(), style: FbTxt.typed(11.5, bold: true, color: Kit.blazeWhite, height: 1.1)),
         textDirection: TextDirection.ltr,
       )..layout();
     }
-    c.drawRRect(roundRect(10, p.dy - 22, tp.width + 14, 18, 6), _p..color = rgba(12, 14, 20, 0.78));
-    tp.paint(c, Offset(17, p.dy - 13 - tp.height / 2));
+    // a blaze-red tag beside the altimeter, the colour of your best on it
+    final x = g.cw >= 700 ? 74.0 : 56.0;
+    c.drawRect(Rect.fromLTWH(x, p.dy - 22, tp.width + 14, 18), _p..color = Kit.blaze);
+    tp.paint(c, Offset(x + 7, p.dy - 13 - tp.height / 2));
   }
 
   /// Particles grouped by look (kind, size step, alpha step), so all of them

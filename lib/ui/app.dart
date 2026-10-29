@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
+import '../game/field_book.dart';
 import '../game/game.dart';
 import '../game/palette.dart';
 import '../game/scene.dart';
@@ -25,7 +26,7 @@ class TopoutApp extends StatelessWidget {
         brightness: Brightness.dark,
         scaffoldBackgroundColor: Pal.ink,
         fontFamily: 'Atkinson',
-        colorScheme: ColorScheme.dark(primary: Pal.signal, surface: Pal.ink2),
+        colorScheme: ColorScheme.dark(primary: Kit.webbing, surface: Kit.ink),
       ),
       home: GameScreen(game: game),
     );
@@ -126,6 +127,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             behavior: HitTestBehavior.translucent,
             child: LayoutBuilder(builder: (context, c) {
               game.setViewport(c.biggest);
+              game.padTop = MediaQuery.paddingOf(context).top;
               return Stack(children: [
                 Positioned.fill(
                   child: Listener(

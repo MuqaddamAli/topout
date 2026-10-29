@@ -415,6 +415,9 @@ class Game {
 
   // ---- view
   double cw = 390, ch = 844;
+
+  /// The screen's safe area at the top (a notch), for the title poster.
+  double padTop = 0;
   bool portrait = true;
   double camX = 180, camY = 120, scale = 1;
   double? camManual;
@@ -2349,7 +2352,7 @@ class Game {
     if (phase == Phase.menu) {
       scale = baseScale();
       camX = 180;
-      camY = menuRoute.topY - 0.11 * ch / scale;
+      camY = menuRoute.topY - (portrait ? 0.06 : 0.11) * ch / scale;
       lookX = -2.2 + math.sin(clock * 0.3) * 0.5;
       _menuHop += dt;
       final u = _menuHop / 0.42;

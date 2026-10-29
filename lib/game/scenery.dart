@@ -3,6 +3,7 @@
 // it), clouds tinted by the light, three mountain ranges with snow on their
 // peaks, and a band of mist between them. It shows above the summit.
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'art.dart';
@@ -68,7 +69,7 @@ class Backdrop {
   final ui.Paint _img = ui.Paint()..filterQuality = ui.FilterQuality.medium;
 
   void paint(ui.Canvas c, ui.Size size, Light light, {required double crest, required double d, required double sc, required double camX,
-      required double clock, required bool still, required void Function(ui.Canvas c, double crest) birds}) {
+      required double clock, required bool still, required void Function(ui.Canvas c, double crest) birds, void Function(ui.Canvas c)? behindRanges}) {
     final cw = size.width, ch = size.height, env = light.env;
     if (crest <= -40) return;
     final lim = math.min(ch, crest + 100 * sc);
@@ -125,6 +126,7 @@ class Backdrop {
     }
     _img.colorFilter = null;
     if (light.night < 0.7) birds(c, crest);
+    behindRanges?.call(c);
     _ranges(c, cw, ch, light, crest: crest, d: d, sc: sc, camX: camX, clock: clock, still: still);
   }
 
@@ -136,9 +138,9 @@ class Backdrop {
       (p: 0.55, col: ui.Color.lerp(env.far, env.near, 0.35)!, amp: 108.0, fr: 0.017, seed: 4.1, snow: 0.66),
       (p: 0.75, col: env.near, amp: 72.0, fr: 0.026, seed: 7.3, snow: 0.0),
     ];
-    // Big concave anti-aliased paths are slow to fill, so each range is one
-    // fill (its haze is part of the gradient) and stops just under the summit
-    // edge, which dips at most ~111 below the top; the wall covers the rest.
+    // Each range is one fill (its haze is part of the gradient) and stops
+    // just under the summit edge, which dips at most ~111 below the top; the
+    // wall covers the rest.
     final bottom = math.min(ch, crest + 130 * sc);
     final snowCol = ui.Color.lerp(light.snow, env.skyLow, 0.2)!;
     for (var k = 0; k < ranges.length; k++) {
@@ -152,18 +154,11 @@ class Backdrop {
         xs.add(x);
         ys.add(base - rg.amp * sc * n);
       }
-      final path = ui.Path()..moveTo(0, bottom);
-      for (var i = 0; i < xs.length; i++) {
-        path.lineTo(xs[i], ys[i]);
-      }
-      path
-        ..lineTo(cw, bottom)
-        ..close();
       _p
         ..color = const ui.Color(0xFF000000)
         ..shader = ui.Gradient.linear(ui.Offset(0, base - rg.amp * sc), ui.Offset(0, base + 40 * sc),
             [ui.Color.lerp(rg.col, env.skyLow, 0.28)!, rg.col, ui.Color.lerp(rg.col, env.skyTop, 0.15)!], [0, 0.55, 1]);
-      c.drawPath(path, _p);
+      _drawBand(c, xs, ys, 0, xs.length, floor: bottom);
       _p.shader = null;
       if (rg.snow > 0) _snowCaps(c, xs, ys, base - rg.amp * sc * rg.snow, sc, snowCol, rg.seed);
       // mist between the far ranges and the near one
@@ -172,21 +167,24 @@ class Backdrop {
   }
 
   /// Snow on the peaks of a range: everything above [line] on screen, with a
-  /// ragged lower edge, in one path.
+  /// ragged lower edge.
   void _snowCaps(ui.Canvas c, List<double> xs, List<double> ys, double line, double sc, ui.Color col, double seed) {
-    final caps = ui.Path();
+    // a gradient of one colour: drawn with the mesh's colours, a plain paint
+    // colour is not used by every renderer, a shader is
+    _p
+      ..color = const ui.Color(0xFF000000)
+      ..shader = ui.Gradient.linear(ui.Offset.zero, const ui.Offset(0, 1), [col, col]);
     var run = <int>[];
     void flush() {
       if (run.length >= 2) {
-        caps.moveTo(xs[run.first], ys[run.first]);
-        for (final i in run.skip(1)) {
-          caps.lineTo(xs[i], ys[i]);
-        }
-        for (final i in run.reversed) {
+        // the lower edge is ragged, and never above the ridge, so each cap
+        // tapers to nothing at its ends
+        final low = <double>[];
+        for (final i in run) {
           final jag = (math.sin(xs[i] * 0.21 + seed) * 4 + math.sin(xs[i] * 0.067 + seed * 3) * 7) * sc;
-          caps.lineTo(xs[i], math.min(line + jag.abs() * 0.6, ys[i] + 26 * sc + jag));
+          low.add(math.max(ys[i], math.min(line + jag.abs() * 0.6, ys[i] + 26 * sc + jag)));
         }
-        caps.close();
+        _drawBand(c, xs, ys, run.first, run.first + run.length, low: low, alpha: 0.85);
       }
       run = [];
     }
@@ -200,7 +198,49 @@ class Backdrop {
       }
     }
     flush();
-    c.drawPath(caps, _p..color = col.withValues(alpha: 0.85));
+    _p.shader = null;
+  }
+
+  /// Fills a band across the sky with the gradient of [_p] at [alpha]: from
+  /// the edge [top] (screen y at each of [xs], from [from] to [to]) down to
+  /// the edge [low] (one y for each of those), or down to the level [floor].
+  /// It is drawn as triangles with a clear fringe a pixel wide outside the
+  /// top edge and [low], which smooths them. A concave anti-aliased path
+  /// this big would be slow to fill, and on the web it would be filled again
+  /// from scratch every frame.
+  void _drawBand(ui.Canvas c, List<double> xs, List<double> top, int from, int to, {List<double>? low, double floor = 0, double alpha = 1}) {
+    // the paint's own alpha is lost when it is blended with the mesh's colours,
+    // so [alpha] goes in the mesh
+    const aa = 1.0, clear = 0x00FFFFFF;
+    final solid = (alpha * 255).round() << 24 | 0xFFFFFF;
+    final n = to - from, rows = low == null ? 3 : 4;
+    final pos = Float32List(n * rows * 2), colors = Int32List(n * rows), idx = Uint16List((n - 1) * (rows - 1) * 6);
+    for (var i = 0; i < n; i++) {
+      final x = xs[from + i], t = top[from + i], b = low != null ? low[i] : floor, v = i * rows;
+      final edge = [t - aa, t, b, b + aa];
+      for (var r = 0; r < rows; r++) {
+        pos[(v + r) * 2] = x;
+        pos[(v + r) * 2 + 1] = edge[r];
+        colors[v + r] = r == 0 || r == 3 ? clear : solid;
+      }
+    }
+    var k = 0;
+    for (var i = 0; i < n - 1; i++) {
+      for (var r = 0; r < rows - 1; r++) {
+        final a = i * rows + r, b = a + rows;
+        idx
+          ..[k++] = a
+          ..[k++] = b
+          ..[k++] = a + 1
+          ..[k++] = a + 1
+          ..[k++] = b
+          ..[k++] = b + 1;
+      }
+    }
+    final mesh = ui.Vertices.raw(ui.VertexMode.triangles, pos, colors: colors, indices: idx);
+    // the paint's gradient, times the clear or solid of the mesh
+    c.drawVertices(mesh, ui.BlendMode.modulate, _p);
+    mesh.dispose();
   }
 
   void _mist(ui.Canvas c, double cw, double y, double sc, ui.Color col, double clock, bool still) {

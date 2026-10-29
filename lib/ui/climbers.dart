@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import '../game/audio.dart';
 import '../game/climber.dart';
 import '../game/core.dart';
+import '../game/field_book.dart';
 import '../game/game.dart';
 import '../game/palette.dart';
+import 'kit.dart';
 import 'widgets.dart';
 
-/// Pick who climbs: a card for each climber, then the stats and perk of the
-/// one you picked. The stats of every climber add up to the same total.
+/// Pick who climbs: an index card for each climber, then the card of the
+/// one you picked with their stats as tally marks and their perk as a
+/// pencil note. The stats of every climber add up to the same total.
 class ClimberPicker extends StatelessWidget {
   const ClimberPicker({super.key, required this.game});
   final Game game;
@@ -24,11 +27,11 @@ class ClimberPicker extends StatelessWidget {
         ],
       ]);
       final info = _ClimberInfo(climber: game.climber);
-      if (!wide) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [cards, const SizedBox(height: 10), info]);
+      if (!wide) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [cards, const SizedBox(height: 12), info]);
       return IntrinsicHeight(
         child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Expanded(flex: 11, child: cards),
-          const SizedBox(width: 12),
+          const SizedBox(width: 14),
           Expanded(flex: 9, child: info),
         ]),
       );
@@ -43,7 +46,7 @@ class _ClimberCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final on = game.climber == climber, look = Look.of(climber.id);
+    final on = game.climber == climber;
     return Semantics(
       inMutuallyExclusiveGroup: true,
       checked: on,
@@ -55,24 +58,39 @@ class _ClimberCard extends StatelessWidget {
           game.audio.play(Sfx.tap);
           game.setClimber(climber);
         },
-        child: AnimatedContainer(
+        child: AnimatedSlide(
+          offset: Offset(0, on ? -0.03 : 0),
           duration: const Duration(milliseconds: 220),
           curve: Curves.easeOutCubic,
-          decoration: BoxDecoration(
-            color: on ? Color.alphaBlend(look.shirt[0].withAlpha(28), Pal.ink2) : Pal.ink2,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: on ? Pal.signal : Pal.line, width: on ? 2 : 1.5),
-          ),
-          padding: const EdgeInsets.fromLTRB(4, 6, 4, 8),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            AnimatedScale(
-              scale: on ? 1 : 0.9,
-              duration: const Duration(milliseconds: 260),
-              curve: Curves.easeOutBack,
-              child: SizedBox(height: 92, child: ClimberPortrait(climber: climber, glow: on)),
+          child: Stack(clipBehavior: Clip.none, children: [
+            IndexCard(
+              color: on ? Kit.card : Color.lerp(Kit.card, Kit.manila, 0.55),
+              padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                AnimatedScale(
+                  scale: on ? 1 : 0.9,
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeOutBack,
+                  child: SizedBox(height: 92, child: ClimberPortrait(climber: climber)),
+                ),
+                const SizedBox(height: 4),
+                Text(climber.name.toUpperCase(), style: FbTxt.label(22, color: on ? Kit.ink : Kit.graphite)),
+              ]),
             ),
-            const SizedBox(height: 4),
-            Text(climber.name.toUpperCase(), style: Txt.display(20, spacing: 0.06, color: on ? Pal.chalk : Pal.chalkDim)),
+            // the picked one: a webbing ribbon down its left edge
+            if (on)
+              Positioned(
+                left: -3,
+                top: -4,
+                bottom: 10,
+                width: 9,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Kit.webbing,
+                    border: Border.symmetric(vertical: BorderSide(color: Kit.webbingEdge, width: 2)),
+                  ),
+                ),
+              ),
           ]),
         ),
       ),
@@ -89,46 +107,30 @@ class _ClimberInfo extends StatelessWidget {
   Widget build(BuildContext context) {
     final k = climber;
     final stats = [('Reach', k.reachStat), ('Grip', k.gripStat), ('Rest', k.restStat), ('Jump', k.jumpStat)];
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 13),
-      decoration: BoxDecoration(
-        color: Pal.ink2,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Pal.line, width: 1.5),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-        _Fade(
-          id: k.id,
-          child: Text('${k.name} · ${k.role}'.toUpperCase(), style: Txt.display(19, spacing: 0.05)),
+    return IndexCard(
+      headAt: 46,
+      angle: -0.6,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(
+          height: 30,
+          child: _Fade(id: k.id, child: Text('${k.name} · ${k.role}'.toUpperCase(), style: FbTxt.label(26))),
         ),
-        const SizedBox(height: 10),
-        for (var row = 0; row < 2; row++) ...[
-          if (row > 0) const SizedBox(height: 7),
+        const SizedBox(height: 12),
+        for (var row = 0; row < 2; row++)
           Row(children: [
             for (var col = 0; col < 2; col++) ...[
               if (col > 0) const SizedBox(width: 14),
               Expanded(child: StatPips(label: stats[row * 2 + col].$1, value: stats[row * 2 + col].$2)),
             ],
           ]),
-        ],
-        const SizedBox(height: 11),
+        const SizedBox(height: 6),
         _Fade(
           id: k.id,
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 1),
-              child: Icon(Icons.auto_awesome_rounded, size: 17, color: Pal.lamp),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text.rich(
-                TextSpan(children: [
-                  TextSpan(text: '${k.perk.label}. ', style: TextStyle(fontWeight: FontWeight.w700, color: Pal.chalk)),
-                  TextSpan(text: k.perk.note),
-                ]),
-                style: Txt.body(14, color: Pal.chalkDim, height: 1.35),
-              ),
-            ),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+            // the perk, as a pencil note
+            Text(k.perk.label.toLowerCase(), style: FbTxt.hand(32, color: Kit.blaze)),
+            const SizedBox(width: 10),
+            Expanded(child: Text(k.perk.note, style: Txt.body(14, color: Kit.ink, height: 1.3))),
           ]),
         ),
       ]),
@@ -159,7 +161,7 @@ class _Fade extends StatelessWidget {
   }
 }
 
-/// A stat from 1 to 5 as five small bars. They fill and empty smoothly.
+/// A stat from 1 to 5, as tally marks.
 class StatPips extends StatelessWidget {
   const StatPips({super.key, required this.label, required this.value});
   final String label;
@@ -170,22 +172,13 @@ class StatPips extends StatelessWidget {
     return Semantics(
       label: '$label $value of 5',
       excludeSemantics: true,
-      child: Row(children: [
-        SizedBox(width: 46, child: Text(label.toUpperCase(), style: Txt.eyebrow(size: 10.5, spacing: 0.1))),
-        for (var k = 1; k <= 5; k++)
-          Expanded(
-            child: AnimatedContainer(
-              duration: Duration(milliseconds: 160 + k * 40),
-              curve: Curves.easeOut,
-              height: 7,
-              margin: EdgeInsets.only(left: k == 1 ? 0 : 3),
-              decoration: BoxDecoration(
-                color: k <= value ? (value >= 4 ? Pal.good : (value <= 2 ? Pal.weak : Pal.signal)) : Pal.ink3,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-      ]),
+      child: SizedBox(
+        height: 22,
+        child: Row(children: [
+          SizedBox(width: 52, child: Text(label.toUpperCase(), style: FbTxt.typed(12, bold: true, height: 1))),
+          TallyMarks(count: value, height: 18),
+        ]),
+      ),
     );
   }
 }

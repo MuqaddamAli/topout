@@ -14,8 +14,6 @@ Future<void> loadGameFonts() async {
   }
 
   await load('Atkinson', ['AtkinsonHyperlegible-Regular.ttf', 'AtkinsonHyperlegible-Bold.ttf']);
-  await load('BigShoulders', ['BigShouldersDisplay-ExtraBold.ttf', 'BigShouldersDisplay-Black.ttf']);
-  await load('PlexMono', ['IBMPlexMono-Medium.ttf']);
   await load('ArchivoXC', ['Archivo-ExtraCondensedBlack.ttf']);
   await load('CourierPrime', ['CourierPrime-Regular.ttf', 'CourierPrime-Bold.ttf']);
   await load('Reenie', ['ReenieBeanie-Regular.ttf']);

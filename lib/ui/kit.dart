@@ -47,6 +47,7 @@ class PaperPainter extends CustomPainter {
     this.shadow = 6,
     this.seed = 1,
     this.lineColor,
+    this.raggedTop = false,
   });
   final Color color;
   final Rule rule;
@@ -63,9 +64,19 @@ class PaperPainter extends CustomPainter {
   final int seed;
   final Color? lineColor;
 
+  /// A top edge torn off a pad.
+  final bool raggedTop;
+
   Path shape(Size size) {
     final w = size.width, h = size.height;
-    final p = Path()..moveTo(0, 0)..lineTo(w, 0);
+    final p = Path()..moveTo(0, 0);
+    if (raggedTop) {
+      final r = Rng(seed + 77);
+      for (var x = 0.0; x < w; x += 4 + r() * 6) {
+        p.lineTo(x, r() * 4);
+      }
+    }
+    p.lineTo(w, 0);
     if (!torn && tornTop <= 0) {
       p
         ..lineTo(w, h)
@@ -127,7 +138,7 @@ class PaperPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant PaperPainter o) =>
-      o.color != color || o.rule != rule || o.cell != cell || o.margin != margin || o.torn != torn || o.tornTop != tornTop;
+      o.color != color || o.rule != rule || o.cell != cell || o.margin != margin || o.torn != torn || o.tornTop != tornTop || o.raggedTop != raggedTop;
 }
 
 /// A strip of masking tape.
@@ -198,6 +209,56 @@ class PaperScrap extends StatelessWidget {
       ]),
     );
   }
+}
+
+/// An index card: card stock, a flat shadow, blue rules and a red line
+/// under its head, at [headAt] from the top.
+class IndexCard extends StatelessWidget {
+  const IndexCard({super.key, required this.child, this.headAt, this.padding = const EdgeInsets.fromLTRB(14, 12, 14, 14), this.color, this.angle = 0});
+  final Widget child;
+  final double? headAt;
+  final EdgeInsets padding;
+  final Color? color;
+  final double angle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.rotate(
+      angle: angle * math.pi / 180,
+      child: CustomPaint(
+        painter: _IndexCardPainter(color ?? Kit.card, headAt),
+        child: Padding(padding: padding, child: Surface(paper: true, child: child)),
+      ),
+    );
+  }
+}
+
+class _IndexCardPainter extends CustomPainter {
+  _IndexCardPainter(this.color, this.headAt);
+  final Color color;
+  final double? headAt;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final box = Offset.zero & size;
+    canvas.drawRect(box.shift(const Offset(0, 5)), Paint()..color = rgba(0, 0, 0, 0.28));
+    canvas.drawRect(box, Paint()..color = color);
+    final rule = Paint()
+      ..color = Kit.rule
+      ..strokeWidth = 1;
+    final start = (headAt ?? 18) + 22;
+    for (var y = start; y < size.height - 6; y += 22) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), rule);
+    }
+    if (headAt case final hy?) {
+      canvas.drawLine(Offset(0, hy), Offset(size.width, hy), Paint()
+        ..color = Kit.margin
+        ..strokeWidth = 1.5);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _IndexCardPainter o) => o.color != color || o.headAt != headAt;
 }
 
 // ---------------------------------------------------------------- the luggage tag

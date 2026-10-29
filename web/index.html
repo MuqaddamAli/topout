@@ -37,43 +37,42 @@
   <link rel="icon" type="image/png" href="favicon.png"/>
 
   <!-- Start loading the big pieces right away -->
-  <link rel="preload" href="assets/assets/fonts/BigShouldersDisplay-Black.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="preload" href="assets/assets/fonts/Archivo-ExtraCondensedBlack.ttf" as="font" type="font/ttf" crossorigin>
 
   <title>Topout</title>
   <link rel="manifest" href="manifest.json">
 
   <style>
     @font-face {
-      font-family: 'Big Shoulders';
-      src: url('assets/assets/fonts/BigShouldersDisplay-Black.ttf') format('truetype');
+      font-family: 'ArchivoXC';
+      src: url('assets/assets/fonts/Archivo-ExtraCondensedBlack.ttf') format('truetype');
       font-weight: 900;
       font-display: swap;
     }
-    html, body { margin: 0; height: 100%; background: #11141b; }
+    html, body { margin: 0; height: 100%; background: #141a1c; }
     /* Shown while the game loads, then it fades away (see flutter_bootstrap.js). */
     #splash {
       position: fixed; inset: 0; z-index: 10;
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
-      background: linear-gradient(180deg, #0f1530 0%, #33386a 34%, #9a627a 58%, #f6a873 74%, #11141b 74.2%, #11141b 100%);
+      background: linear-gradient(180deg, #5e5a86 0%, #a7787f 40%, #f09a6e 70%, #4f5a55 70.2%, #2f3a33 82%, #141a1c 100%);
       font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
       transition: opacity 0.5s ease;
     }
     #splash.done { opacity: 0; pointer-events: none; }
     #splash .mark {
-      font-family: 'Big Shoulders', Impact, 'Arial Narrow', sans-serif;
-      font-weight: 900; font-size: clamp(64px, 18vw, 132px); line-height: 0.8; letter-spacing: 0.01em;
-      color: #f2ede4; text-shadow: 0 6px 30px rgba(10, 10, 20, 0.5);
+      font-family: 'ArchivoXC', Impact, 'Arial Narrow', sans-serif;
+      font-weight: 900; font-size: clamp(72px, 22vw, 150px); line-height: 0.84; letter-spacing: 0.01em;
+      color: #f4f1e8;
     }
-    #splash .mark span { color: #ff7a2f; }
     #splash .bar {
-      width: min(220px, 52vw); height: 4px; border-radius: 2px; overflow: hidden;
-      background: rgba(242, 237, 228, 0.16);
+      width: min(220px, 52vw); height: 6px; overflow: hidden;
+      background: rgba(244, 241, 232, 0.2);
     }
     #splash .bar i {
-      display: block; height: 100%; width: 38%; border-radius: 2px; background: #ff7a2f;
+      display: block; height: 100%; width: 38%; background: #ff5b1f;
       animation: climb 1.3s ease-in-out infinite;
     }
-    #splash .note { color: #aca8a0; font-size: 14px; letter-spacing: 0.16em; text-transform: uppercase; }
+    #splash .note { color: #f4f1e8; font-family: 'Courier New', ui-monospace, monospace; font-weight: 700; font-size: 14px; letter-spacing: 0.12em; text-transform: uppercase; }
     @keyframes climb { 0% { transform: translateX(-110%); } 100% { transform: translateX(290%); } }
     @media (prefers-reduced-motion: reduce) {
       #splash .bar i { animation: none; width: 100%; opacity: 0.6; }
@@ -84,7 +83,7 @@
 <body>
   <script>
     // Draw at most 2 device pixels per CSS pixel. On 3x phones that is 56%
-    // fewer pixels to fill every frame, and the cel-shaded art looks the same.
+    // fewer pixels to fill every frame, and the art looks the same.
     (function () {
       var d = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio') ||
         Object.getOwnPropertyDescriptor(Window.prototype, 'devicePixelRatio');
@@ -96,7 +95,7 @@
     })();
   </script>
   <div id="splash" role="status" aria-label="Loading Topout">
-    <div class="mark">TOP<span>OUT</span></div>
+    <div class="mark">TOPOUT</div>
     <div class="bar"><i></i></div>
     <div class="note">Chalking up</div>
   </div>
