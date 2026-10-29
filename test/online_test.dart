@@ -147,7 +147,8 @@ void main() {
     await tap(tester, 'KAI');
     expect(link().last('pick'), 'kai');
 
-    await tap(tester, 'Start');
+    expect(find.text('Start · 0/5 ready'), findsOneWidget);
+    await tap(tester, 'Start · 0/5 ready');
     expect(link().did('start'), isTrue);
     // from the start, the server's lanes are shown
     link().push('room', {
@@ -233,11 +234,11 @@ void main() {
     await settle(tester);
     await tap(tester, 'Join');
     expect(find.text('Waiting for Host to start…'), findsOneWidget);
-    expect(find.text('Start'), findsNothing);
+    expect(find.textContaining('Start · '), findsNothing);
 
     link().push('room', roomJson(host: 'p1', names: ['Bo']));
     await settle(tester);
-    expect(find.text('Start'), findsOneWidget);
+    expect(find.textContaining('Start · '), findsOneWidget);
     expect(find.text('1/8 players'), findsOneWidget);
     await done(tester);
   });

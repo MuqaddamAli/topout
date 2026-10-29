@@ -19,7 +19,9 @@ import 'walk.dart';
 /// bits: see [encode]; 14 standing on a flat hold (walking there is played
 /// back from how the body moves), 15 facing left.
 /// After secs, while an emote plays: the emote (1 Cheer, 2 Taunt, 3 Aura)
-/// and when it started (ms, on the sender's clock, like t).
+/// and when it started (ms, on the sender's clock, like t). After those,
+/// while a quick chat phrase shows: the phrase (1 to 4, see [quickChat]) and
+/// when it was said (the emote is then 0 0 if none plays).
 class ClimberState {
   ClimberState({
     required this.t,
@@ -40,6 +42,8 @@ class ClimberState {
     this.secs,
     this.emote,
     this.emoteStart = 0,
+    this.chat,
+    this.chatStart = 0,
   });
 
   /// The sender's clock in ms (any start; only differences matter).
@@ -66,6 +70,10 @@ class ClimberState {
   final Emote? emote;
   final int emoteStart;
 
+  /// The quick chat phrase showing (an index into [quickChat]), and when it was said.
+  final int? chat;
+  final int chatStart;
+
   static double _r(double v, [double k = 10]) => (v * k).roundToDouble() / k;
 
   List<Object> encode() {
@@ -87,8 +95,9 @@ class ClimberState {
       for (final e in ends) ...[_r(e.x), _r(e.y)],
       bits,
       _r(metres),
-      if (secs != null || emote != null) _r(secs ?? 0),
-      if (emote != null) ...[emote!.wire, emoteStart],
+      if (secs != null || emote != null || chat != null) _r(secs ?? 0),
+      if (emote != null || chat != null) ...[emote?.wire ?? 0, emote != null ? emoteStart : 0],
+      if (chat != null) ...[chat! + 1, chatStart],
     ];
   }
 
@@ -124,6 +133,10 @@ class ClimberState {
       secs: secs != null && secs.isFinite ? secs : null,
       emote: raw.length > 19 && raw[19] is num ? Emote.fromWire(raw[18] is num ? raw[18] as num : null) : null,
       emoteStart: raw.length > 19 && raw[19] is num ? (raw[19] as num).toInt() : 0,
+      chat: raw.length > 21 && raw[20] is num && raw[21] is num && (raw[20] as num) >= 1 && (raw[20] as num) <= quickChat.length
+          ? (raw[20] as num).toInt() - 1
+          : null,
+      chatStart: raw.length > 21 && raw[21] is num ? (raw[21] as num).toInt() : 0,
     );
   }
 
@@ -153,6 +166,8 @@ class ClimberState {
       secs: n.secs,
       emote: n.emote,
       emoteStart: n.emoteStart,
+      chat: n.chat,
+      chatStart: n.chatStart,
     );
   }
 }

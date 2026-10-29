@@ -330,6 +330,16 @@ class Game {
   /// The standing pose drawn this frame (null while climbing).
   StandPose? _sp;
 
+  /// The quick chat phrase you said (an index into [quickChat]), when, and
+  /// when the next one may be said. [chatOpen]: the phrase menu is open.
+  int? chat;
+  double chatAt = 0, nextChatAt = 0;
+  int _chatStartMs = 0;
+  bool chatOpen = false;
+
+  /// The player your camera follows after you topped out (Watch), or null.
+  String? watching;
+
   /// With others the climb goes on after the top: you reached it (your time
   /// stopped), and the top hold you will stand on once the cheer is over.
   bool toppedOut = false;
@@ -621,6 +631,9 @@ class Game {
     walkTo = null;
     toppedOut = false;
     _celeStand = null;
+    chat = null;
+    chatOpen = false;
+    watching = null;
     if (at != null) {
       // with others: standing on the ground at your spawn, free to walk
       _standOn(0, at.x);
@@ -717,6 +730,10 @@ class Game {
     if (dir != 0) {
       facing = dir;
       _endEmote();
+      if (watching != null) {
+        watching = null;
+        _ui();
+      }
     }
     final em = emote;
     if (em != null && clock - emoteAt > em.length) _endEmote();
@@ -757,6 +774,7 @@ class Game {
     emote = e;
     emoteAt = clock;
     _emoteStartMs = _netMs.round();
+    watching = null;
     nextEmoteAt = clock + emoteCooldown;
     _walkV = walkAmt = 0;
     walkTo = null;
@@ -765,6 +783,49 @@ class Game {
     if (e == Emote.aura) later(0.7, () => effects.burst(cd.x, cd.y + 10, PartKind.spark, 8));
     _ui();
   }
+
+  /// Quick chat works while climbing too, with others.
+  bool get canChat => social && phase == Phase.climb;
+
+  /// Says quick chat phrase [i] to everyone, if the last one was long enough ago.
+  void say(int i) {
+    chatOpen = false;
+    if (!canChat || i < 0 || i >= quickChat.length || clock < nextChatAt) return _ui();
+    chat = i;
+    chatAt = clock;
+    _chatStartMs = _netMs.round();
+    nextChatAt = clock + emoteCooldown;
+    watching = null;
+    _play(Sfx.tap, pan: panOf(c.x));
+    _ui();
+  }
+
+  /// The phrase showing above your climber now, if any.
+  String? get chatShown => chat != null && clock - chatAt < chatShow ? quickChat[chat!] : null;
+
+  void toggleChat() {
+    if (!canChat) return;
+    chatOpen = !chatOpen;
+    _ui();
+  }
+
+  /// After you topped out, the camera can follow the others.
+  bool get canWatch => onlineClimb && toppedOut && remotes.all.any((o) => o.shown != null);
+
+  /// Follows the next player (in the room's order), and after the last one
+  /// comes back to you.
+  void watchNext() {
+    if (!canWatch) return;
+    final ids = [for (final o in remotes.all) if (o.shown != null) o.id];
+    final k = watching == null ? -1 : ids.indexOf(watching!);
+    watching = k + 1 < ids.length ? ids[k + 1] : null;
+    camManual = null;
+    showRecenter = false;
+    _ui();
+  }
+
+  /// The name of the player you watch.
+  String? get watchingName => watching == null ? null : remotes.byId[watching]?.name;
 
   static Sfx sfxFor(Emote e) => switch (e) { Emote.cheer => Sfx.emoteCheer, Emote.taunt => Sfx.emoteTaunt, Emote.aura => Sfx.emoteAura };
 
@@ -1051,6 +1112,8 @@ class Game {
         facingLeft: facing < 0,
         emote: emote,
         emoteStart: _emoteStartMs,
+        chat: chatShown != null ? chat : null,
+        chatStart: _chatStartMs,
         metres: climberHeight(),
         secs: onlineSecs,
       );
@@ -1563,6 +1626,23 @@ class Game {
       };
       if (em != null && social) {
         doEmote(em);
+        return true;
+      }
+      final phrase = switch (k) {
+        LogicalKeyboardKey.keyQ => 0,
+        LogicalKeyboardKey.keyW => 1,
+        LogicalKeyboardKey.keyE => 2,
+        LogicalKeyboardKey.keyR => 3,
+        _ => -1,
+      };
+      if (phrase >= 0 && social) {
+        say(phrase);
+        return true;
+      }
+      // Tab is always the game's here: let go, it would move the keyboard
+      // focus away and the keys would stop working
+      if (k == LogicalKeyboardKey.tab && social) {
+        watchNext();
         return true;
       }
       if (k == LogicalKeyboardKey.keyU || (k == LogicalKeyboardKey.keyZ && ctrl)) {
@@ -2231,11 +2311,15 @@ class Game {
     final cf = catchFlash;
     if (cf != null && (cf.t += dt) > 0.4) catchFlash = null;
     scale = lerpD(baseScale(), lookScale(), lookK);
+    // Watch: the camera follows another player (the one who left: back to you)
+    final w = watching == null ? null : remotes.byId[watching]?.shown?.c;
+    if (watching != null && w == null) watching = null;
+    final at = w ?? cd;
     if (drag == null) {
-      final normY = camManual ?? cd.y + 40, normX = camXFor(cd.x);
-      final lookY = r.endless ? cd.y + 320 : (r.topY + 50) / 2;
+      final normY = camManual ?? at.y + 40, normX = camXFor(at.x);
+      final lookY = r.endless ? at.y + 320 : (r.topY + 50) / 2;
       // Look shows the lane you are in now
-      final ty = lerpD(normY, lookY, lookK), tx = lerpD(normX, r.laneAt(cd.x).mid, lookK), e = reducedMotion ? 1.0 : math.min(1.0, dt * 6);
+      final ty = lerpD(normY, lookY, lookK), tx = lerpD(normX, r.laneAt(at.x).mid, lookK), e = reducedMotion ? 1.0 : math.min(1.0, dt * 6);
       camY += (ty - camY) * e;
       camX += (tx - camX) * e;
     }

@@ -13,11 +13,14 @@ const ROUTES = ['first', 'steps', 'crimps', 'daily'];
 const MODES = ['casual', 'normal', 'solo'];
 const CLIMBERS = ['ada', 'rio', 'mei', 'kai'];
 
-// Emotes ride in the climber state the server passes on: [id] is where the
-// emote is in the array (0 or missing: none), [at] when it started on the
-// sender's clock. A new one may start at most this often (the game waits 2 s;
-// a little less here, for the network's jitter).
-const GATED = [{ key: 'emote', id: 18, at: 19 }];
+// Emotes and quick chat ride in the climber state the server passes on:
+// [id] is where each is in the array (0 or missing: none), [at] when it
+// started on the sender's clock. A new one of each may start at most this
+// often (the game waits 2 s; a little less here, for the network's jitter).
+const GATED = [
+  { key: 'emote', id: 18, at: 19 },
+  { key: 'chat', id: 20, at: 21 },
+];
 const GATE_MS = 1800;
 
 const Err = {
@@ -67,6 +70,8 @@ class Rooms {
       name,
       climber: CLIMBERS.includes(climber) ? climber : 'ada',
       connected: true,
+      // tapped Ready in the lobby
+      ready: false,
       // set at the start: the lane (0 is the first) and the side in it (0 left, 1 right)
       lane: null,
       side: null,
@@ -128,6 +133,14 @@ class Rooms {
     const room = this.roomOf(player);
     if (!room || room.started || !CLIMBERS.includes(climber)) return null;
     player.climber = climber;
+    return room;
+  }
+
+  /// [player] is ready to climb, or not any more (only in the lobby).
+  ready(player, on) {
+    const room = this.roomOf(player);
+    if (!room || room.started || typeof on !== 'boolean' || player.ready === on) return null;
+    player.ready = on;
     return room;
   }
 
@@ -264,6 +277,7 @@ class Rooms {
         name: p.name,
         climber: p.climber,
         connected: p.connected,
+        ready: p.ready,
         lane: p.lane,
         side: p.side,
         finish: p.finish,

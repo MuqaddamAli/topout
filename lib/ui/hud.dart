@@ -188,19 +188,68 @@ class Hud extends StatelessWidget {
           top: pad.top + 124,
           child: IgnorePointer(child: _Heights(game: game)),
         ),
-      // ---------------- online: the creator, at the top, can end the climb for everyone
-      if (game.onlineClimb)
+      // ---------------- with others: quick chat; online at the top: End climb (the creator) and Watch
+      if (game.social)
         Positioned(
           right: pad.right + 12,
           top: pad.top + 124,
-          child: FrameSelect(
-            game: game,
-            select: (g) => g.toppedOut && g.online.isHost && !(g.online.room?.ended ?? true),
-            builder: (context, show) => _Appear(
-              visible: show,
-              child: GameButton(label: 'End climb', minHeight: 40, radius: 999, onTap: show ? () => _tap(game.endClimb) : null),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            FrameSelect(
+              game: game,
+              select: (g) => (g.canChat, g.chatOpen, g.clock >= g.nextChatAt),
+              builder: (context, v) => _Appear(
+                visible: v.$1,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  GameButton(
+                    label: 'Chat',
+                    icon: Icons.chat_bubble_outline_rounded,
+                    minHeight: 40,
+                    radius: 999,
+                    on: v.$2,
+                    onTap: v.$1 ? () => _tap(game.toggleChat) : null,
+                  ),
+                  if (v.$2)
+                    for (final (i, text) in quickChat.indexed) ...[
+                      const SizedBox(height: 6),
+                      GameButton(
+                        label: '$text  ${'QWER'[i]}',
+                        minHeight: 38,
+                        radius: 999,
+                        onTap: v.$3 ? () => _tap(() => game.say(i)) : null,
+                      ),
+                    ],
+                ]),
+              ),
             ),
-          ),
+            if (game.onlineClimb) ...[
+              const SizedBox(height: 8),
+              FrameSelect(
+                game: game,
+                select: (g) => g.toppedOut && g.online.isHost && !(g.online.room?.ended ?? true),
+                builder: (context, show) => _Appear(
+                  visible: show,
+                  child: GameButton(label: 'End climb', minHeight: 40, radius: 999, onTap: show ? () => _tap(game.endClimb) : null),
+                ),
+              ),
+              const SizedBox(height: 8),
+              FrameSelect(
+                game: game,
+                select: (g) => (g.canWatch, g.watchingName),
+                builder: (context, v) => _Appear(
+                  visible: v.$1,
+                  child: GameButton(
+                    label: v.$2 == null ? 'Watch' : 'Watching ${v.$2}',
+                    icon: Icons.visibility_outlined,
+                    minHeight: 40,
+                    radius: 999,
+                    on: v.$2 != null,
+                    semanticLabel: 'Watch another climber (Tab)',
+                    onTap: v.$1 ? () => _tap(game.watchNext) : null,
+                  ),
+                ),
+              ),
+            ],
+          ]),
         ),
       // ---------------- emotes, while you stand with others
       if (game.social)

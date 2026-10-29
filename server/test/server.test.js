@@ -336,6 +336,65 @@ test('emotes go out with the states, and a burst of them is cut down', async () 
   for (const s of all) s.emit('leave');
 });
 
+test('the ready check: each player taps Ready (and can untap), everyone sees it; only in the lobby', async () => {
+  const host = await makeRoom();
+  assert.equal(host.r.room.players[0].ready, false);
+  const b = await connect();
+  await ask(b, 'join', { code: host.code, name: 'B' });
+  let update = roomWhen(host.s, (r) => r.players[1]?.ready === true);
+  b.emit('ready', true);
+  await update;
+  update = roomWhen(b, (r) => r.players[0].ready && r.players[1].ready);
+  host.s.emit('ready', true);
+  await update;
+  update = roomWhen(host.s, (r) => r.players[1].ready === false);
+  b.emit('ready', false);
+  await update;
+  // junk is ignored, and after the start Ready no longer changes
+  b.emit('ready', 'yes');
+  const started = roomWhen(host.s, (r) => r.started);
+  await ask(host.s, 'start');
+  await started;
+  b.emit('ready', true);
+  await wait(60);
+  assert.equal([...server.rooms.rooms.get(host.code).players.values()][1].ready, false);
+});
+
+test('quick chat: like emotes, one phrase may start every ~2 s', () => {
+  const rooms = new Rooms();
+  const p = {};
+  const say = (id, start) => [...withEmote(0, 0), id, start];
+  assert.equal(rooms.gate(p, say(2, 500), 0)[20], 2);
+  assert.equal(rooms.gate(p, say(3, 900), 400)[20], 0, 'too soon');
+  assert.equal(rooms.gate(p, say(4, 3000), GATE_MS + 10)[20], 4);
+  // chat and emotes have their own wait: an emote right after a phrase goes through
+  const both = [...withEmote(1, 3100), 4, 3000];
+  const out = rooms.gate(p, both, GATE_MS + 20);
+  assert.deepEqual([out[18], out[20]], [1, 4]);
+});
+
+test('a dropped player who comes back mid-climb keeps their lane, their time and Ready', async () => {
+  const host = await makeRoom();
+  const b = await connect();
+  const rb = await ask(b, 'join', { code: host.code, name: 'B' });
+  const readied = roomWhen(host.s, (r) => r.players[1]?.ready === true);
+  b.emit('ready', true);
+  await readied;
+  const started = roomWhen(host.s, (r) => r.started);
+  await ask(host.s, 'start');
+  await started;
+  const up = roomWhen(host.s, (r) => r.players[1].finish != null);
+  b.emit('topped', 42.5);
+  await up;
+  const dropped = roomWhen(host.s, (r) => r.players[1]?.connected === false);
+  b.close();
+  await dropped;
+  const back = await ask(await connect(), 'rejoin', { code: host.code, token: rb.token });
+  const me = back.room.players[1];
+  assert.deepEqual([me.name, me.connected, me.lane, me.side, me.finish, me.ready], ['B', true, 0, 1, 42.5, true]);
+  assert.equal(back.room.started, true);
+});
+
 test('origins: Vercel, localhost and the local network only', () => {
   assert.ok(originAllowed('https://topout.vercel.app'));
   assert.ok(originAllowed('http://localhost:5000'));

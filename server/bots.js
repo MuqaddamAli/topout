@@ -22,7 +22,9 @@
 // foot free, 12 falling, 13 topped out, 14 standing on a flat hold (the
 // others play the steps back from how the body moves), 15 facing left.
 // While an emote plays, two more numbers follow secs: the emote (1 Cheer,
-// 2 Taunt, 3 Aura) and when it started (ms, the same clock as t).
+// 2 Taunt, 3 Aura) and when it started (ms, the same clock as t). While a
+// quick chat phrase shows, two more: the phrase (1 "Wait for me!", 2 "Come
+// on!", 3 "Nice!", 4 "Over here!") and when it was said (0 0 for no emote).
 const { io } = require('socket.io-client');
 
 const args = process.argv.slice(2);
@@ -49,6 +51,8 @@ const LANE_WIDTH = 360;
 const WALK_SPEED = 55, STAND_Y = 107.5;
 // how long each emote plays (s); a bot's Aura (lying down) lasts a while too
 const EMOTE_LENGTH = [0, 1.6, 2.2, 4];
+// a phrase shows this long (s), and a bot says one every so often
+const CHAT_SHOW = 3;
 const SPAWN_X = [[95, 267], [93, 265]];
 
 /// Where a player of [lane] and [side] (0 left, 1 right) starts.
@@ -70,6 +74,8 @@ class Climb {
     this.walkLeft = 2 + Math.random() * 4;
     this.emote = 0;
     this.nextEmote = 1 + Math.random() * 3;
+    this.chat = 0;
+    this.nextChat = 4 + Math.random() * 10;
     this.walkDir = Math.random() < 0.5 ? -1 : 1;
     this.y = 100;
     this.fallV = null;
@@ -99,6 +105,20 @@ class Climb {
       this.nextEmote = this.emoteUntil + 6 + Math.random() * 8;
     }
     return this.emote > 0;
+  }
+
+  /// The emote and quick chat numbers that follow secs in a state (none if neither).
+  extras(t) {
+    if (this.chat && t > this.chatUntil) this.chat = 0;
+    if (!this.chat && t > this.nextChat) {
+      this.chat = 1 + Math.floor(Math.random() * 4);
+      this.chatStart = Date.now();
+      this.chatUntil = t + CHAT_SHOW;
+      this.nextChat = this.chatUntil + 7 + Math.random() * 15;
+    }
+    const emote = this.walkLeft > 0 || this.topped ? this.emote : 0;
+    if (this.chat) return [emote, emote ? this.emoteStart : 0, this.chat, this.chatStart];
+    return emote ? [emote, this.emoteStart] : [];
   }
 
   update(dt, t) {
@@ -158,8 +178,7 @@ class Climb {
       s.push(round(x - 31), y + 80, round(x + 31), y + 80, round(x - 12), y, round(x + 12), y);
       let bits = 2 | (2 << 2) | (5 << 4) | (5 << 7) | (1 << 14) | (this.walkDir < 0 ? 1 << 15 : 0);
       if (this.topped) bits |= 1 << 13;
-      const st = [...s, bits, round(y / 100), round(this.topped ? this.toppedAt : t)];
-      return this.emote ? [...st, this.emote, this.emoteStart] : st;
+      return [...s, bits, round(y / 100), round(this.topped ? this.toppedAt : t), ...this.extras(t)];
     }
     const falling = this.fallV != null;
     const moving = (i) => falling || (this.limbs[i].t < 1 && this.limbs[i].from);
@@ -174,7 +193,7 @@ class Climb {
       const p = this.limbAt(i);
       s.push(round(p.x), round(p.y));
     }
-    s.push(bits, round((this.y - 100) / 100), round(t));
+    s.push(bits, round((this.y - 100) / 100), round(t), ...this.extras(t));
     return s;
   }
 }

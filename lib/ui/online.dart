@@ -247,6 +247,16 @@ class _OnlineScreenState extends State<OnlineScreen> {
       ClimberPicker(game: game),
       const SizedBox(height: 18),
       if (online.error case final e?) ...[_ErrorLine(e), const SizedBox(height: 12)],
+      if (!room.started) ...[
+        GameButton(
+          label: online.ready ? 'Ready ✓' : 'Ready',
+          icon: online.ready ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+          minHeight: 48,
+          on: online.ready,
+          onTap: online.status == NetStatus.online ? () => _tap(() => online.setReady(!online.ready)) : null,
+        ),
+        const SizedBox(height: 10),
+      ],
       if (room.started)
         FrameSelect<int>(
           game: game,
@@ -256,7 +266,8 @@ class _OnlineScreenState extends State<OnlineScreen> {
         )
       else if (online.isHost)
         GameButton(
-          label: 'Start',
+          // the creator can start any time, and sees how many are ready
+          label: 'Start · ${room.players.where((p) => p.ready).length}/${room.players.length} ready',
           primary: true,
           minHeight: 56,
           icon: Icons.flag_rounded,
@@ -363,6 +374,7 @@ class _PlayerRow extends StatelessWidget {
                 style: Txt.body(13, color: Pal.chalkDim, height: 1.2)),
           ]),
         ),
+        if (player.ready) ...[_Tag(label: 'Ready', color: Pal.good), const SizedBox(width: 6)],
         if (host) _Tag(label: 'Creator', color: Pal.lamp),
         if (you) ...[const SizedBox(width: 6), _Tag(label: 'You', color: Pal.jump)],
       ]),

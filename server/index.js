@@ -6,11 +6,12 @@
 //   join   {code, name, climber}                  -> same
 //   rejoin {code, token}                          -> same (after a dropped connection)
 //   pick   climber
+//   ready  true or false   (in the lobby: ready to climb)
 //   start                                         -> {} or {error} (host only)
 //   topped secs       you reached the top, secs after the start
 //   end                                           -> {} or {error} (host only: the results show)
 //   again                                         -> {} or {error} (host only, after the results: a new climb)
-//   state  [...]      relayed to the others in the room (an emote sent too soon is taken out)
+//   state  [...]      relayed to the others in the room (an emote or a chat phrase sent too soon is taken out)
 //   leave
 // Server to client:
 //   room    the room and its players, on every change; from the start it
@@ -96,6 +97,7 @@ function createServer({ graceMs, countdownMs } = {}) {
     socket.on('rejoin', (d, ack) => answer(rooms.rejoin(d?.code, d?.token), ack));
 
     socket.on('pick', (climber) => send(rooms.pick(socket.data.player, climber)));
+    socket.on('ready', (on) => send(rooms.ready(socket.data.player, on)));
 
     socket.on('topped', (secs) => send(rooms.topped(socket.data.player, secs)));
 

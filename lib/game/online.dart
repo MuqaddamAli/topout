@@ -105,9 +105,19 @@ class SocketLink implements NetLink {
 
 class RoomPlayer {
   RoomPlayer(
-      {required this.id, required this.name, required this.climber, required this.connected, this.lane, this.side, this.finish});
+      {required this.id,
+      required this.name,
+      required this.climber,
+      required this.connected,
+      this.ready = false,
+      this.lane,
+      this.side,
+      this.finish});
   final String id, name, climber;
   final bool connected;
+
+  /// Tapped Ready in the lobby.
+  final bool ready;
 
   /// From the start: the lane (0 is the first) and the side in it (0 left, 1 right).
   final int? lane, side;
@@ -120,6 +130,7 @@ class RoomPlayer {
         name: '${m['name']}',
         climber: '${m['climber']}',
         connected: m['connected'] != false,
+        ready: m['ready'] == true,
         lane: (m['lane'] as num?)?.toInt(),
         side: (m['side'] as num?)?.toInt(),
         finish: (m['finish'] as num?)?.toDouble(),
@@ -305,6 +316,7 @@ class Online extends ChangeNotifier {
     final ms = startsIn is num ? startsIn.toInt() : 0;
     startedRound = round is num ? round.toInt() : (room?.round ?? 0);
     startsAt = DateTime.now().add(Duration(milliseconds: ms));
+    _toppedSecs = null;
     startsInMs = ms;
     starts++;
   }
@@ -322,6 +334,8 @@ class Online extends ChangeNotifier {
       _token = '${r['token']}';
       // a rejoin after the start is already climbing: no new start for it
       if (room!.started && !lost) _started(r['startsIn']);
+      // a top-out sent while the connection was down did not count: say it again
+      if (lost && room!.started && _toppedSecs != null && room!.player(you)?.finish == null) _link?.emit('topped', _toppedSecs);
     } else {
       final e = r is Map ? r['error'] : null;
       if (lost) {
@@ -373,10 +387,21 @@ class Online extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Tells the room you reached the top, [secs] after the start.
+  /// Tells the room you reached the top, [secs] after the start. Said again
+  /// after a dropped connection comes back (the server takes it once).
   void topped(double secs) {
+    _toppedSecs = secs;
     if (room != null && room!.started) _link?.emit('topped', secs);
   }
+
+  double? _toppedSecs;
+
+  /// In the lobby: ready to climb, or not.
+  void setReady(bool on) {
+    if (room != null && !room!.started) _link?.emit('ready', on);
+  }
+
+  bool get ready => room?.player(you)?.ready ?? false;
 
   /// The creator ends the climb for everyone (the results show), or after
   /// the results starts the next climb.

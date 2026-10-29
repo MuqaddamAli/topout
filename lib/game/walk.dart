@@ -37,6 +37,11 @@ enum Emote {
 /// How long after an emote (or a chat phrase) the next one may start, in seconds.
 const double emoteCooldown = 2;
 
+/// Quick chat: the only things you can say (no typing), shown above your
+/// climber for everyone for [chatShow] seconds. 1 to 4 on the wire.
+const List<String> quickChat = ['Wait for me!', 'Come on!', 'Nice!', 'Over here!'];
+const double chatShow = 3;
+
 /// The body, the hands and feet (left hand, right hand, left foot, right
 /// foot), the lean and where the head looks of a standing climber.
 class StandPose {
