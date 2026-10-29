@@ -13,7 +13,7 @@ This is the Flutter version of the Topout web prototype (kept in `web_prototype/
 - Jumps: a hand can jump to a hold that is a little too far, if a foot is on a hold. After the catch you must grab a second hold fast.
 - Catch a fall: when you lose your hold, time slows for a moment and every hold within reach on the way down glows. Tap one (or press Space) and your hand snatches it, then the body swings under it and you have a second or two to get a foot or the other hand on. The longer you fell, the more grip the catch costs: green holds leave you plenty, yellow ones little, and red ones are too much for a tired hand (the fingers slip off). Each fall gets one chance, so a fall out of the hang after a catch is final. The moment lasts longest in Relaxed and is shortest in No saves.
 - Three modes: Relaxed, Normal, and No saves.
-- Online play: up to 8 players, each on their own device, climb the same wall at the same time and see each other live. The wall gets one lane per two players, with bridges between the lanes (see Online play).
+- Online play: up to 8 players, each on their own device, climb the same wall at the same time and see each other live. The wall gets one lane per two players, with bridges between the lanes. Online you can walk along the ground, ledges and the top, wait for friends, cheer, taunt or lie back to show off, say a few set phrases, and watch the others once you are up; the room sees everyone's times at the end and can play again (see Online play).
 - After a fall, a card explains why you fell and shows your hand strength before the fall.
 - Records: best time per route, highest point, today's best on the Daily Wall, and a log of tops, metres, falls (and how many you caught) and time.
 - A climber drawn in code (helmet, ponytail, harness, quickdraws and chalk bag that swing), sunset clouds, mountains, birds, lamps and snow.
@@ -49,11 +49,11 @@ flutter run
 
 The `android`, `ios` and `web` folders are included. If you ever need to rebuild one of them, run `flutter create . --platforms=android,ios,web --org com.muqaddamali --project-name topout`; it only adds missing files and does not change `lib/`.
 
-The game is made for phones held upright (portrait). It also runs on the web and on desktop. On a desktop you can use the keyboard: **U** undo, **L** look, **Space** catch a hold while falling, **Esc** pause or back, **Enter** try again or go on.
+The game is made for phones held upright (portrait). It also runs on the web and on desktop. On a desktop you can use the keyboard: **U** undo, **L** look, **Space** catch a hold while falling, **Esc** pause or back, **Enter** try again or go on. Online there is more: **A/D** or the arrows walk, **1 2 3** emote, **Q W E R** quick chat, **Tab** watch (see docs/MULTIPLAYER.md).
 
 ## Online play
 
-Tap **Play online**, make a room and send its 4-letter code to friends; up to 8 players climb the same route together, each on their own device. The wall has one lane per two players (up to 4 lanes side by side, each a copy of the route, every other one mirrored, with bridges to cross between them); each player starts at their own spot in their lane. Online climbs are not saved in the records. The game talks to a small Node.js server in `server/`. The live site uses the server at `https://topout.onrender.com`; a page opened on `localhost` or the local network uses port 3000 of the same machine, and a build can set another address with `--dart-define=MP_SERVER=...`.
+Tap **Play online**, make a room and send its 4-letter code to friends; up to 8 players climb the same route together, each on their own device. The wall has one lane per two players (up to 4 lanes side by side, each a copy of the route, every other one mirrored, with bridges to cross between them); each player starts standing at their own spot in their lane and can walk before climbing. Reaching the top stops your time but not the climb: you stand on the top, and the room's results show when everyone is up or the creator ends it, with Play again. Emotes, quick chat bubbles, arrows to friends out of view, Watch after the top and a Ready check in the lobby make it social. Online climbs are not saved in the records. The game talks to a small Node.js server in `server/`. The live site uses the server at `https://topout.onrender.com`; a page opened on `localhost` or the local network uses port 3000 of the same machine, and a build can set another address with `--dart-define=MP_SERVER=...`.
 
 [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md) has the exact steps: trying it on one PC with bots, with phones on the same Wi-Fi, and putting the server on Render's free plan.
 
@@ -69,8 +69,9 @@ flutter test
 - `test/widget_test.dart` is a quick start-up check.
 - `test/lanes_test.dart` checks the wall with lanes: one lane is the route itself, every lane has the same holds, the spawns and bridges, the same wall every time, and the balance bot climbs every lane (from both spawns) as well as the route on its own.
 - `test/wide_wall_test.dart` climbs alone on a wall with lanes: the camera across the lanes and over a bridge, Look, and screenshots (`build/screens/4x_*`).
+- `test/walk_test.dart` stands and walks online (alone on a wall with lanes): keys and a finger, the wall's edges, ledges and their ends, the first grab, undo and falls; `test/emote_test.dart` the emotes, their cooldown and poses; `test/social_test.dart` quick chat, name tags and bubbles, friend arrows, Watch, the ready check and coming back after a dropped connection.
 - `test/online_test.dart` tries the Play online screen and the lobby against a fake server, and `test/remote_test.dart` the climber states sent over the network, playing other climbers back smoothly, the heights list, the messages and a whole online climb.
-- `cd server` and `npm test` checks the room server: making and joining rooms, the errors, the creator leaving and reconnecting, and the lanes given out at the start.
+- `cd server` and `npm test` checks the room server: making and joining rooms, the errors, the creator leaving and reconnecting, the lanes given out at the start, Ready, top-outs, results and Play again, and the emote and chat limit.
 
 Every push runs `.github/workflows/build.yml` on GitHub Actions. It analyzes the code, runs the tests, builds the web version and an Android APK, and uploads the APK (`topout-apk`), the web build (`topout-web`) and the test screenshots (`screenshots`) as downloads at the bottom of the run page, under **Actions**.
 
@@ -100,7 +101,8 @@ To build the same thing on your own machine: `bash tool/vercel_build.sh` (set `F
 | `lib/game/store.dart` | Saves settings and records (`shared_preferences`) |
 | `lib/game/online.dart` | Online play: the connection to the room server, the room and the lobby |
 | `lib/game/remote.dart` | Other players' climbers: the state sent over the network, played back smoothly |
-| `lib/ui/` | Flutter widgets: title screen and climber picker, Play online and the lobby, HUD, fall, top and pause cards |
+| `lib/game/walk.dart` | Online: standing and walking on flat holds, the emotes, the quick chat phrases |
+| `lib/ui/` | Flutter widgets: title screen and climber picker, Play online and the lobby, HUD, fall, top, pause and room results cards |
 | `server/` | The room server for online play (Node.js and Socket.io), with bots for testing |
 | `docs/MULTIPLAYER.md` | How to test online play and put the server online |
 | `assets/audio/` | Music and sounds (MP3) |
@@ -120,7 +122,7 @@ On the web every layer is drawn again each frame (there is no raster cache), so 
 - On the web, the sound effects are decoded once and played from memory through a single `AudioContext`.
 
 - A wall with lanes costs the same per frame as one lane: ledges and the long top are only drawn near the view, like the holds.
-- Other players' climbers are drawn the cheap way (flat colours, no cel bands, no small gear), and the ones far outside the view are skipped.
+- Other players' climbers are drawn the cheap way (flat colours, no cel bands, no small gear), and the ones far outside the view are skipped. Their walking is played back from how the body moves (no extra data), name tags, bubbles and arrow labels are laid out once per text and kept, and a full room of 8 walking, emoting and chatting measured about 140 fps (build 2–3 ms, raster 6–7 ms) on a laptop.
 
 To measure, open the web build with `?perf` (frame times in the browser console every 2 s) or `?perf=steps` to also start that route (`first`, `steps`, `crimps`, `daily`). `?perf=online` makes a room and prints the command that fills it with bots; it starts by itself when 8 climbers are in (see docs/MULTIPLAYER.md). In a profile build (`flutter run -d chrome --profile`), `?perf=steps&lanes=4` measures a route on a wall with 4 lanes (`?lanes` works in debug and profile builds only).
 
@@ -130,7 +132,7 @@ World units are centimetres with y pointing up. The ground is at y = 0, and 100 
 
 ## Sounds and music
 
-`tool/make_audio.py` makes every file in `assets/audio/`. It is all synthesis in numpy, with no samples and no noise floor, so every sound fades to true silence. Sounds with a pitch use notes from the music's key (D major), so they sit well with it. The music is a 24-bar loop at 66 bpm: electric-piano chords, a soft pad, a gentle bass and a few kalimba notes. Its reverb tail wraps around to the start, so it loops without a seam.
+`tool/make_audio.py` makes every file in `assets/audio/`. It is all synthesis in numpy, with no samples and no noise floor, so every sound fades to true silence. Sounds with a pitch use notes from the music's key (D major), so they sit well with it. The online emotes have their own soft cues (`emote_cheer`, `emote_taunt`, `emote_aura`): a little rising leap, a playful "ha-ha-ha" and a slow, relaxed swell. The music is a 24-bar loop at 66 bpm: electric-piano chords, a soft pad, a gentle bass and a few kalimba notes. Its reverb tail wraps around to the start, so it loops without a seam.
 
 ```bash
 pip install numpy          # ffmpeg (with MP3 support) is also needed
