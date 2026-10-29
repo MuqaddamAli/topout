@@ -188,28 +188,6 @@ class FbTxt {
       );
 }
 
-/// The grip halo above the helmet: ten segments, left five for the left
-/// hand and right five for the right hand. Angles in degrees, 0 = to the
-/// right, -90 = straight up (Flutter's y points down, like the mockups).
-class Halo {
-  static const start = -160.0, sweep = 140.0, gap = 3.0, segments = 10;
-
-  /// The paths for one hand: lit segments and dark ones. [grip] is 0 to 100.
-  static ({Path lit, Path dim}) hand(Offset head, double radius, {required int hand, required double grip}) {
-    final lit = Path(), dim = Path();
-    const seg = (sweep - gap * (segments - 1)) / segments;
-    final on = (grip.clamp(0, 100) / 20).round(); // 0 to 5 per hand
-    for (var i = 0; i < 5; i++) {
-      // the left hand fills from the middle outwards to the left, the right hand to the right
-      final k = hand == 0 ? 4 - i : 5 + i;
-      final a0 = (start + k * (seg + gap)) * math.pi / 180;
-      final rect = Rect.fromCircle(center: head, radius: radius);
-      (i < on ? lit : dim).addArc(rect, a0, seg * math.pi / 180);
-    }
-    return (lit: lit, dim: dim);
-  }
-}
-
 /// Tally marks: strokes, every fifth one crossing the four before it.
 /// Drawn with a 2.6 px round-capped stroke, in a box 28 px high.
 Path tallyPath(int n, {double x0 = 6}) {

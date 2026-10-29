@@ -143,7 +143,6 @@ class ScenePainter extends CustomPainter {
     _motes(canvas, r);
     if (!menu && _light.night > 0.01) _headlamp(canvas, size, pose);
     if (!menu) {
-      _halo(canvas, pose);
       _chalkAids(canvas);
       _catchMarks(canvas);
     }
@@ -903,22 +902,6 @@ class ScenePainter extends CustomPainter {
         tp.dispose();
         return width;
       }();
-
-  /// The grip halo over the helmet, in screen space so the eyes never leave
-  /// the climber: ten segments, the left five for the left hand and the
-  /// right five for the right. A weak hand that still holds on turns red
-  /// and pulses.
-  void _halo(Canvas c, Pose? pose) {
-    if (pose == null || g.limbs.length != 4 || (g.phase != Phase.climb && g.phase != Phase.falling) || g.standOn != null) return;
-    final k = _markK, head = g.w2s(pose.head.x, pose.head.y + 4), r = 34 * k;
-    for (var i = 0; i < 2; i++) {
-      final paths = Halo.hand(head, r, hand: i, grip: g.grip[i]);
-      final low = g.limbs[i].h != null && g.grip[i] < 30;
-      final pulse = low && !g.reducedMotion ? 0.65 + 0.35 * math.sin(g.clock * math.pi * 2 / 0.8) : 1.0;
-      c.drawPath(paths.dim, _line(Kit.chalk.withValues(alpha: 0.32), 5.5 * k.clamp(0.9, 1.3)));
-      c.drawPath(paths.lit, _line((low ? Kit.low : Kit.webbing).withValues(alpha: pulse), 5.5 * k.clamp(0.9, 1.3)));
-    }
-  }
 
   void _hang(Canvas c) {
     if (!(g.hangT > 0)) return;

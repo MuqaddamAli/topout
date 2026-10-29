@@ -16,29 +16,7 @@ import 'package:topout/game/game.dart';
 import 'package:topout/game/store.dart';
 import 'package:topout/ui/app.dart';
 
-Future<void> _loadFonts() async {
-  Future<void> load(String family, List<String> files) async {
-    final loader = FontLoader(family);
-    for (final f in files) {
-      loader.addFont(rootBundle.load('assets/fonts/$f'));
-    }
-    await loader.load();
-  }
-
-  await load('Atkinson', ['AtkinsonHyperlegible-Regular.ttf', 'AtkinsonHyperlegible-Bold.ttf']);
-  await load('ArchivoXC', ['Archivo-ExtraCondensedBlack.ttf']);
-  await load('CourierPrime', ['CourierPrime-Regular.ttf', 'CourierPrime-Bold.ttf']);
-  await load('Reenie', ['ReenieBeanie-Regular.ttf']);
-  // Real icons too, if the Flutter SDK is where we expect it.
-  final root = Platform.environment['FLUTTER_ROOT'];
-  if (root != null) {
-    final icons = File('$root/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf');
-    if (icons.existsSync()) {
-      final bytes = icons.readAsBytesSync();
-      await (FontLoader('MaterialIcons')..addFont(Future.value(ByteData.sublistView(bytes)))).load();
-    }
-  }
-}
+import 'fonts.dart';
 
 void main() {
   final shotKey = GlobalKey();
@@ -83,7 +61,7 @@ void main() {
   int holdAt(Game g, double x, double y) => g.holds.indexWhere((h) => h.x == x && h.y == y);
 
   testWidgets('a full climb on a phone', (tester) async {
-    await _loadFonts();
+    await loadGameFonts();
     tester.view.physicalSize = const Size(390 * 3, 844 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -203,7 +181,7 @@ void main() {
   });
 
   testWidgets('catch a hold while falling', (tester) async {
-    await _loadFonts();
+    await loadGameFonts();
     tester.view.physicalSize = const Size(390 * 3, 844 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -303,7 +281,7 @@ void main() {
   });
 
   testWidgets('pick each climber and climb with them', (tester) async {
-    await _loadFonts();
+    await loadGameFonts();
     tester.view.physicalSize = const Size(390 * 3, 844 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -342,7 +320,7 @@ void main() {
   });
 
   testWidgets('title screen on a wide screen', (tester) async {
-    await _loadFonts();
+    await loadGameFonts();
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);

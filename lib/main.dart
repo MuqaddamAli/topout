@@ -9,9 +9,11 @@ import 'game/game.dart';
 import 'game/online.dart';
 import 'game/store.dart';
 import 'ui/app.dart';
+import 'ui/fonts.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (kIsWeb) await loadUnlistedFonts();
   // The game is made for phones held upright.
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   final store = await Store.open();

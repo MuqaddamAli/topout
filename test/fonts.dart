@@ -3,20 +3,10 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:topout/ui/fonts.dart';
 
 Future<void> loadGameFonts() async {
-  Future<void> load(String family, List<String> files) async {
-    final loader = FontLoader(family);
-    for (final f in files) {
-      loader.addFont(rootBundle.load('assets/fonts/$f'));
-    }
-    await loader.load();
-  }
-
-  await load('Atkinson', ['AtkinsonHyperlegible-Regular.ttf', 'AtkinsonHyperlegible-Bold.ttf']);
-  await load('ArchivoXC', ['Archivo-ExtraCondensedBlack.ttf']);
-  await load('CourierPrime', ['CourierPrime-Regular.ttf', 'CourierPrime-Bold.ttf']);
-  await load('Reenie', ['ReenieBeanie-Regular.ttf']);
+  await loadFonts();
   // Real icons too, if the Flutter SDK is where we expect it.
   final root = Platform.environment['FLUTTER_ROOT'];
   if (root != null) {

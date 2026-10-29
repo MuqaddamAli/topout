@@ -68,8 +68,7 @@ double _nightOf(Game g) {
 /// The climbing screen, as things a climber carries: a paper scrap with the
 /// route and the time (top left), Pause on a luggage tag (top right), an
 /// altimeter tape down the left edge, and a gear rack along the bottom with
-/// Undo, Look, each hand's strength and what is going on. The grip halo over
-/// the helmet is drawn by the scene.
+/// Undo, Look, each hand's strength and what is going on.
 ///
 /// The HUD itself is built when the game state changes (a move, a toast, a
 /// tip); the numbers that change while you climb rebuild on their own.
