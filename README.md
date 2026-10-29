@@ -47,7 +47,7 @@ flutter pub get
 flutter run
 ```
 
-The `android`, `ios` and `web` folders are included. If you ever need to rebuild one of them, run `flutter create . --platforms=android,ios,web --org com.muqaddamali --project-name topout`; it only adds missing files and does not change `lib/`.
+The `android`, `ios` and `web` folders are included. If you ever need to rebuild one of them, run `flutter create . --platforms=android,ios,web --org com.mw --project-name topout`; it only adds missing files and does not change `lib/`.
 
 The game is made for phones held upright (portrait). It also runs on the web and on desktop. On a desktop you can use the keyboard: **U** undo, **L** look, **Space** catch a hold while falling, **Esc** pause or back, **Enter** try again or go on. Online there is more: **A/D** or the arrows walk, **1 2 3** emote, **Q W E R** quick chat, **Tab** watch (see docs/MULTIPLAYER.md).
 
@@ -141,9 +141,3 @@ python tool/make_audio.py grab foot    # only the files whose names start so
 ```
 
 The files are balanced against each other; `GameAudio` in `lib/game/audio.dart` sets the music and wind under them and gives each effect its own level (`Sfx`).
-
-## Before you publish to the stores
-
-- The app id is `com.muqaddamali.topout`. Change it if you want a different one before your first upload.
-- Make an app icon and a splash screen.
-- Set up release signing for Android (`android/key.properties`) and a team for iOS.
