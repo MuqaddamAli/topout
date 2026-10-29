@@ -210,6 +210,16 @@ void main() {
     await frames(tester, 0.3);
     g.grip[0] = g.grip[1] = 30;
     await stepUp(tester, g, ledge);
+    // first the pull-up, as over the top (no cheer here), then you stand
+    expect(g.cele, isNotNull, reason: 'pulling up onto the ledge');
+    expect(g.cele!.cheer, isFalse);
+    expect(g.cele!.feetOn, isTrue);
+    expect(g.canUndo, isFalse, reason: 'no undo halfway up');
+    final yBefore = g.cd.y;
+    await frames(tester, 0.45);
+    expect(g.cd.y, greaterThan(yBefore + 10), reason: 'the body rises over the edge');
+    await frames(tester, 0.6);
+    expect(g.cele, isNull);
     expect(g.standOn, ledge, reason: 'standing on the ledge');
     expect([g.limbs[0].h, g.limbs[1].h], [null, null], reason: 'the hands let go');
     expect(g.c.y, closeTo(h.y + standHeight(g.climber) + 2.5, 0.5));
@@ -234,12 +244,64 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  /// Hangs the climber from [ledge] by both hands, the feet free under it.
+  void hangFrom(Game g, int ledge) {
+    final h = g.holds[ledge];
+    g.standOn = null;
+    g.limbs = [
+      Limb(ledge, h.x + 40, h.y),
+      Limb(ledge, h.x + 80, h.y),
+      Limb(null, h.x + 50, h.y - 120),
+      Limb(null, h.x + 70, h.y - 120),
+    ];
+    final s = solve(Pt(h.x + 60, h.y - 40), g.anchors(), 80, g.climber.reach);
+    g.c = Pt(s.x, s.y);
+    g.cd = g.c.copy();
+    g.camY = g.c.y + 40;
+  }
+
+  testWidgets('on a ledge: both hands on it pull you up onto it, the way you pull over the top', (tester) async {
+    final g = await open(tester);
+    final ledge = underLedge(g), h = g.holds[ledge];
+    hangFrom(g, ledge);
+    await frames(tester, 0.05);
+    expect(g.cele, isNotNull, reason: 'pulling up');
+    expect(g.cele!.cheer, isFalse, reason: 'the cheer is only for the top');
+    expect(g.cele!.feetOn, isFalse, reason: 'the feet come up after the body');
+    await frames(tester, 0.3);
+    expect(g.limbEnd(0).y, closeTo(h.y, 8), reason: 'the hands hold the edge');
+    await shot(tester, '53_ledge_pull_up');
+    await frames(tester, 0.8);
+    expect(g.cele, isNull);
+    expect(g.standOn, ledge);
+    expect([g.limbs[2].h, g.limbs[3].h], [ledge, ledge], reason: 'both feet on the ledge');
+    expect([g.limbs[0].h, g.limbs[1].h], [null, null], reason: 'the hands let go');
+    expect(g.c.y, closeTo(h.y + standHeight(g.climber) + 2.5, 0.5));
+    expect(g.phase, Phase.climb);
+    expect(g.toppedOut, isFalse, reason: 'a ledge is not the top');
+    await frames(tester, 0.3);
+    expect(g.lit, contains(ledge), reason: 'it saves, as when you step up');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('alone (no lanes) a ledge stays as it always was: no pull-up, no standing', (tester) async {
+    final g = await open(tester, lanes: 1);
+    expect(g.social, isFalse);
+    final ledge = underLedge(g);
+    hangFrom(g, ledge);
+    await frames(tester, 0.5);
+    expect(g.cele, isNull);
+    expect(g.standOn, isNull);
+    expect([g.limbs[0].h, g.limbs[1].h], [ledge, ledge], reason: 'still hanging from it');
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('from a ledge: climb on with a hand, undo, and a fall brings you back to where you left it', (tester) async {
     final g = await open(tester);
     final ledge = underLedge(g), r = g.route!;
     await frames(tester, 0.3);
     await stepUp(tester, g, ledge);
-    await frames(tester, 0.3);
+    await frames(tester, 1.2); // the pull-up
     expect(g.standOn, ledge);
     // walk a little along the ledge first
     await walk(tester, g, LogicalKeyboardKey.keyD, 0.8);
@@ -282,7 +344,7 @@ void main() {
     final start = g.c.x, ledge = underLedge(g);
     await frames(tester, 0.3);
     await stepUp(tester, g, ledge);
-    await frames(tester, 0.3);
+    await frames(tester, 1.2); // the pull-up
     expect(g.standOn, ledge);
     expect(g.lit, isNot(contains(ledge)));
     final k = [

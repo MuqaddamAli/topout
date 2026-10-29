@@ -161,9 +161,21 @@ class DynoState {
   final double dur = 0.45;
 }
 
+/// Pulling up over an edge: the hands hold it, the body rises over it in an
+/// arc and the feet come after. At the top it ends with a cheer; on a ledge
+/// (with others) you stand up there.
 class Cele {
-  Cele(this.c0, this.c1);
+  Cele(this.c0, this.c1, {required this.edge, this.cheer = true, this.feetOn = false});
   final Pt c0, c1;
+
+  /// The height of the edge the hands pull on.
+  final double edge;
+
+  /// At the top: the arms go up, sparks fly and the wind blows. Not on a ledge.
+  final bool cheer;
+
+  /// The feet stepped onto the ledge already, so they stay on it.
+  final bool feetOn;
   double t = 0;
   bool burst = false;
 }
@@ -341,8 +353,11 @@ class Game {
   String? watching;
 
   /// With others the climb goes on after the top: you reached it (your time
-  /// stopped), and the top hold you will stand on once the cheer is over.
+  /// stopped).
   bool toppedOut = false;
+
+  /// The flat hold you will stand on once the pull-up (and at the top the
+  /// cheer) is over.
   int? _celeStand;
 
   /// The room's climb you are in (Play again starts the next one).
@@ -842,8 +857,24 @@ class Game {
     final a = limbs[2].h, b = limbs[3].h;
     if (!social || a == null || a != b) return;
     if (holds[a].t == HoldType.top && !toppedOut) _reachedTop();
+    if (holds[a].t != HoldType.ground) return _mantle(a, feetOn: true);
     _standOn(a, (limbs[2].x + limbs[3].x) / 2);
     resetPoseState([HandStyle.open, HandStyle.open]);
+  }
+
+  /// Pulls up onto flat hold [hold] the way you pull over the top (hands on
+  /// its edge, the body over it, the feet after), then stands there.
+  /// [feetOn]: the feet stepped onto it already and stay there.
+  void _mantle(int hold, {bool feetOn = false}) {
+    final h = holds[hold], w = walkRange(route!, h);
+    final to = standAt(climber, clampD(c.x, w.lo, w.hi), h.y, facing: facing).c;
+    cele = Cele(c.copy(), to, edge: h.y, cheer: false, feetOn: feetOn);
+    _celeStand = hold;
+    drag = null;
+    hangT = 0;
+    for (final l in limbs) {
+      l.h = null;
+    }
   }
 
   void resetPoseState(List<HandStyle> styles) {
@@ -1549,10 +1580,10 @@ class Game {
     _ui();
   }
 
-  bool get canUndo => history.isNotEmpty;
+  bool get canUndo => history.isNotEmpty && cele == null;
 
   void undo() {
-    if (phase != Phase.climb || drag != null || dyno != null || history.isEmpty) return;
+    if (phase != Phase.climb || drag != null || dyno != null || cele != null || history.isEmpty) return;
     final s = history.removeLast();
     limbs = s.limbs.map((l) => l.copy()).toList();
     c = s.c.copy();
@@ -1776,7 +1807,11 @@ class Game {
     }
     if (s.standing) _checkpointAt(s);
     final h0 = limbs[0].h, h1 = limbs[1].h;
-    if (h0 != null && h1 != null && holds[h0].t == HoldType.top && holds[h1].t == HoldType.top) _topOut();
+    if (h0 != null && h1 != null && holds[h0].t == HoldType.top && holds[h1].t == HoldType.top) {
+      _topOut();
+    } else if (social && h0 != null && h0 == h1 && holds[h0].t == HoldType.ledge) {
+      _mantle(h0); // both hands on a ledge: pull up onto it, like over the top
+    }
   }
 
   void _stepDyno(double dt) {
@@ -2151,7 +2186,7 @@ class Game {
   void _topOutTogether() {
     final top = limbs[0].h!, h = holds[top], r = route!;
     if (!toppedOut) _reachedTop();
-    cele = Cele(c.copy(), Pt(clampD(c.x, h.x + 30, h.x2! - 30), r.topY + standHeight(climber)));
+    cele = Cele(c.copy(), Pt(clampD(c.x, h.x + 30, h.x2! - 30), r.topY + standHeight(climber)), edge: r.topY);
     _celeStand = top;
     drag = null;
     for (final l in limbs) {
@@ -2190,7 +2225,7 @@ class Game {
     }
     if (isBest) records.newBestTime(r, mode, time: time, moves: moves, climber: climber);
     final top = holds[limbs[0].h!];
-    cele = Cele(c.copy(), Pt(clampD(c.x, top.x + 30, top.x2! - 30), r.topY + standHeight(climber)));
+    cele = Cele(c.copy(), Pt(clampD(c.x, top.x + 30, top.x2! - 30), r.topY + standHeight(climber)), edge: r.topY);
     for (final l in limbs) {
       l.h = null;
     }
@@ -2283,15 +2318,15 @@ class Game {
       final k = math.min(1.0, dt * 18);
       cd.x += (c.x - cd.x) * k;
       cd.y += (c.y - cd.y) * k;
-      if (ce.t > 0.9 && !ce.burst) {
+      if (ce.cheer && ce.t > 0.9 && !ce.burst) {
         ce.burst = true;
         for (var n = 0; n < 4; n++) {
           later(n * 0.14, () => effects.burst(cd.x + (_rand.nextDouble() - 0.5) * 60, cd.y + 60 + _rand.nextDouble() * 30, PartKind.spark, 12));
         }
       }
       final top = _celeStand;
-      if (ce.t > 1.1 && top != null) {
-        // with others: the cheer is over, now stand on the top
+      if (ce.t > (ce.cheer ? 1.1 : 0.9) && top != null) {
+        // with others: up (and at the top the cheer is over), now stand there
         cele = null;
         _celeStand = null;
         _standOn(top, c.x);
@@ -2353,8 +2388,8 @@ class Game {
       tgt = dyno!.pt;
     } else if (fall?.best case final b?) {
       tgt = b.pt;
-    } else if (cele != null) {
-      tgt = Pt(cd.x - 120, cd.y + 160);
+    } else if (cele case final ce?) {
+      tgt = ce.cheer ? Pt(cd.x - 120, cd.y + 160) : Pt(cd.x + facing * 40, ce.edge + 20);
     }
     final hx = cd.x, hy = cd.y + 38;
     final lkX = tgt != null
@@ -2370,7 +2405,7 @@ class Game {
 
   void _limbTargets(double dt) {
     if (limbs.length != 4) return;
-    final ph = phase, bag = gear?.bag, r = route!;
+    final ph = phase, bag = gear?.bag;
     final at = standOn;
     final sp = _sp = at != null && ph == Phase.climb
         ? standAt(climber, cd.x, holds[at].y, facing: facing, phase: walkPhase, walk: walkAmt, emote: emote, emoteT: clock - emoteAt)
@@ -2388,16 +2423,21 @@ class Game {
         if (hand) {
           if (u < 0.55) {
             tx = cd.x + sideOf[i] * 30;
-            ty = r.topY;
+            ty = ce.edge;
             style = HandStyle.grip;
-          } else {
+          } else if (ce.cheer) {
             tx = cd.x + sideOf[i] * 36;
             ty = cd.y + 84 + math.sin(clock * 6 + i) * 2;
+          } else {
+            // up on a ledge: the hands let go and hang, as when you stand
+            final e = standAt(climber, cd.x, ce.edge, facing: facing).ends[i];
+            tx = e.x;
+            ty = e.y;
           }
         } else {
-          tx = cd.x + sideOf[i] * 14;
-          ty = u > 0.5 ? r.topY : j.y - 60;
-          free = u <= 0.5;
+          tx = cd.x + sideOf[i] * (ce.feetOn ? 12 : 14);
+          ty = ce.feetOn || u > 0.5 ? ce.edge : j.y - 60;
+          free = !ce.feetOn && u <= 0.5;
         }
       } else if (dy != null && dy.i == i) {
         (tx, ty) = _toward(i, j, dy.pt);
@@ -2520,7 +2560,7 @@ class Game {
 
   void _gearUpdate(double dt) {
     if (gear == null) _gearInit();
-    final windy = phase == Phase.menu || cele != null;
+    final windy = phase == Phase.menu || (cele?.cheer ?? false);
     final wind = (windy ? 360.0 : 25.0) * (0.6 + 0.4 * math.sin(clock * 0.9)) + (windy ? 90 * math.sin(clock * 3.1) : 0.0);
     gear!.update(pose!, dt, wind);
   }
