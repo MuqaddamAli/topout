@@ -6,15 +6,19 @@ import 'package:flutter/services.dart';
 
 import '../game/audio.dart';
 import '../game/core.dart';
+import '../game/field_book.dart';
 import '../game/game.dart';
 import '../game/online.dart';
 import '../game/palette.dart';
 import 'climbers.dart';
 import 'hud.dart' show FrameSelect, GameToast;
+import 'kit.dart';
 import 'widgets.dart';
 
 /// Play online: make a room or join one with its code, then the lobby with
-/// everyone in the room until the creator starts the climb.
+/// everyone in the room until the creator starts the climb. It is a page of
+/// the field book: the room code on a big luggage tag, the players as rows
+/// of a register with a pencil tick for Ready.
 class OnlineScreen extends StatefulWidget {
   const OnlineScreen({super.key, required this.game});
   final Game game;
@@ -80,7 +84,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [rgba(13, 15, 21, 0), rgba(13, 15, 21, 0.9), Pal.ink],
+                colors: [rgba(6, 9, 22, 0), rgba(6, 9, 22, 0.82), rgba(6, 9, 22, 0.92)],
                 stops: const [0, 0.3, 0.5],
               ),
             ),
@@ -100,28 +104,27 @@ class _OnlineScreenState extends State<OnlineScreen> {
                     GameButton(
                       label: online.inRoom ? 'Leave' : 'Back',
                       icon: Icons.arrow_back_rounded,
-                      minHeight: 44,
                       onTap: () => _tap(game.leaveOnline),
                     ),
                     const Spacer(),
                     _NetChip(status: online.status),
                   ]),
-                  SizedBox(height: math.min(size.height * 0.16, 130)),
+                  SizedBox(height: math.min(size.height * 0.12, 100)),
                   Stagger(
                     index: 0,
                     child: Text.rich(
                       TextSpan(children: [
                         const TextSpan(text: 'PLAY '),
-                        TextSpan(text: 'ONLINE', style: TextStyle(color: Pal.signal)),
+                        TextSpan(text: 'ONLINE', style: TextStyle(color: Kit.webbing)),
                       ]),
-                      style: Txt.display(52, weight: FontWeight.w900),
+                      style: FbTxt.label(64, color: Kit.blazeWhite),
                     ),
                   ),
                   const SizedBox(height: 8),
                   Stagger(
                     index: 1,
                     child: Text('Climb the same wall with up to 8 friends, each on their own device.',
-                        style: Txt.body(16, color: Pal.chalkDim, height: 1.4)),
+                        style: Txt.body(16, color: Kit.blazeWhite.withValues(alpha: 0.8), height: 1.4)),
                   ),
                   const SizedBox(height: 18),
                   if (online.status != NetStatus.online) ...[
@@ -139,7 +142,7 @@ class _OnlineScreenState extends State<OnlineScreen> {
       Positioned(
         left: 14,
         right: 14,
-        top: pad.top + 70,
+        bottom: pad.bottom + 24,
         child: IgnorePointer(
           child: FrameSelect(
             game: game,
@@ -155,34 +158,39 @@ class _OnlineScreenState extends State<OnlineScreen> {
 
   Widget _entry() {
     final ready = online.status == NetStatus.online && !online.busy && _cleanName.isNotEmpty;
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      GamePanel(title: 'Your name', children: [
+    return FieldPage(
+      angle: -0.8,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        const SectionHead(number: 1, title: 'Your name'),
+        const SizedBox(height: 6),
         _Field(
           controller: _name,
           hint: 'Name others will see',
           maxLength: 16,
           onChanged: (v) => setState(() => game.playerName = v.trim()),
         ),
-      ]),
-      const SizedBox(height: 12),
-      GamePanel(title: 'Make a room', children: [
-        Text('ROUTE', style: Txt.eyebrow()),
+        const SizedBox(height: 22),
+        const SectionHead(number: 2, title: 'Make a room'),
+        const SizedBox(height: 8),
+        Text('ROUTE', style: FbTxt.typed(12, bold: true)),
         _Pairs(children: [
           for (final r in game.routes)
             GameChoice(label: r.name, on: _route == r.id, onTap: () => _tap(() => setState(() => _route = r.id))),
         ]),
-        Text('MODE', style: Txt.eyebrow()),
+        const SizedBox(height: 6),
+        Text('MODE', style: FbTxt.typed(12, bold: true)),
         Row(children: [
           for (final m in Mode.values) ...[
-            if (m != Mode.values.first) const SizedBox(width: 6),
+            if (m != Mode.values.first) const SizedBox(width: 4),
             Expanded(child: GameChoice(label: m.label, on: _mode == m, onTap: () => _tap(() => setState(() => _mode = m)))),
           ],
         ]),
-        GameButton(label: 'Create', primary: true, minHeight: 52, width: double.infinity, onTap: ready ? () => _tap(_create) : null),
-      ]),
-      const SizedBox(height: 12),
-      GamePanel(title: 'Join a room', children: [
-        Row(children: [
+        const SizedBox(height: 12),
+        GameButton(label: 'Create', primary: true, onTap: ready ? () => _tap(_create) : null),
+        const SizedBox(height: 22),
+        const SectionHead(number: 3, title: 'Join a room'),
+        const SizedBox(height: 6),
+        Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
           Expanded(
             child: _Field(
               controller: _code,
@@ -192,17 +200,19 @@ class _OnlineScreenState extends State<OnlineScreen> {
               onSubmitted: ready ? (_) => _join() : null,
             ),
           ),
-          const SizedBox(width: 10),
-          GameButton(
-            label: 'Join',
-            primary: true,
-            minHeight: 56,
-            onTap: ready && cleanRoomCode(_code.text).length == 4 ? () => _tap(_join) : null,
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 140,
+            child: GameButton(
+              label: 'Join',
+              primary: true,
+              onTap: ready && cleanRoomCode(_code.text).length == 4 ? () => _tap(_join) : null,
+            ),
           ),
         ]),
+        if (online.error case final e?) ...[const SizedBox(height: 14), _ErrorLine(e)],
       ]),
-      if (online.error case final e?) ...[const SizedBox(height: 14), _ErrorLine(e)],
-    ]);
+    );
   }
 
   // ---------------------------------------------------------------- lobby
@@ -213,47 +223,58 @@ class _OnlineScreenState extends State<OnlineScreen> {
     final host = room.player(room.host);
     final facts = [route?.name ?? room.route, Mode.fromName(room.mode).label, if (daily) room.dateKey].join(' · ');
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      GamePanel(title: 'Room code', children: [
-        Row(children: [
-          Expanded(
-            child: SelectableText(room.code,
-                semanticsLabel: room.code.split('').join(' '),
-                style: Txt.display(64, weight: FontWeight.w900, spacing: 0.1, color: Pal.signal)),
-          ),
-          GameButton(
-            label: _copied ? 'Copied' : 'Copy',
-            icon: _copied ? Icons.check_rounded : Icons.copy_rounded,
-            minHeight: 46,
-            onTap: () => _tap(() => _copy(room.code)),
-          ),
-        ]),
-        Text('Send this code to your friends so they can join.', style: Txt.body(15, color: Pal.chalkDim)),
-        Text(facts, style: Txt.mono(13, color: Pal.chalkDim)),
-      ]),
-      const SizedBox(height: 12),
-      GamePanel(title: 'Players', children: [
-        Text('${room.players.length}/${room.max} players', style: Txt.mono(14, color: Pal.good)),
-        Text(
-            room.laneCount == 1
-                ? 'One lane: two climbers side by side.'
-                : '${room.laneCount} lanes side by side, two climbers in each. Bridges join them.',
-            style: Txt.body(13, color: Pal.chalkDim)),
-        for (final p in room.players)
-          _PlayerRow(player: p, lane: room.slot(p), you: p.id == online.you, host: p.id == room.host),
+      // the room code, on a big luggage tag
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _CodeTag(code: room.code),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const SizedBox(height: 18),
+            Text('Send this code to your friends so they can join.', style: Txt.body(15, color: Kit.blazeWhite, height: 1.35)),
+            const SizedBox(height: 6),
+            Text(facts, style: FbTxt.typed(13, bold: true, color: Kit.blazeWhite)),
+            const SizedBox(height: 4),
+            GameButton(
+              label: _copied ? 'Copied' : 'Copy',
+              icon: _copied ? Icons.check_rounded : Icons.copy_rounded,
+              onTap: () => _tap(() => _copy(room.code)),
+            ),
+          ]),
+        ),
       ]),
       const SizedBox(height: 18),
-      Text('YOUR CLIMBER', style: Txt.eyebrow()),
+      FieldPage(
+        angle: 0.6,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+            const Expanded(child: SectionHead(number: 1, title: 'Players')),
+            Text('${room.players.length}/${room.max} players', style: FbTxt.typed(14, bold: true)),
+          ]),
+          const SizedBox(height: 2),
+          Text(
+              room.laneCount == 1
+                  ? 'One lane: two climbers side by side.'
+                  : '${room.laneCount} lanes side by side, two climbers in each. Bridges join them.',
+              style: Txt.body(13, color: Kit.graphite)),
+          const SizedBox(height: 6),
+          for (final p in room.players)
+            _PlayerRow(player: p, lane: room.slot(p), you: p.id == online.you, host: p.id == room.host),
+        ]),
+      ),
+      const SizedBox(height: 22),
+      Text('YOUR CLIMBER', style: FbTxt.typed(13, bold: true, color: Kit.blazeWhite)),
       const SizedBox(height: 10),
       ClimberPicker(game: game),
       const SizedBox(height: 18),
       if (online.error case final e?) ...[_ErrorLine(e), const SizedBox(height: 12)],
       if (!room.started) ...[
-        GameButton(
-          label: online.ready ? 'Ready ✓' : 'Ready',
-          icon: online.ready ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-          minHeight: 48,
-          on: online.ready,
-          onTap: online.status == NetStatus.online ? () => _tap(() => online.setReady(!online.ready)) : null,
+        Semantics(
+          toggled: online.ready,
+          child: GameButton(
+            label: online.ready ? 'Ready ✓' : "I'm ready",
+            on: online.ready,
+            onTap: online.status == NetStatus.online ? () => _tap(() => online.setReady(!online.ready)) : null,
+          ),
         ),
         const SizedBox(height: 10),
       ],
@@ -262,22 +283,67 @@ class _OnlineScreenState extends State<OnlineScreen> {
           game: game,
           select: (g) => (g.countdown ?? 0).ceil(),
           builder: (context, left) => Text(left > 0 ? 'Starting in $left' : 'Starting…',
-              textAlign: TextAlign.center, style: Txt.display(28, color: Pal.good)),
+              textAlign: TextAlign.center, style: FbTxt.label(32, color: Kit.blazeWhite)),
         )
       else if (online.isHost)
         GameButton(
           // the creator can start any time, and sees how many are ready
           label: 'Start · ${room.players.where((p) => p.ready).length}/${room.players.length} ready',
           primary: true,
-          minHeight: 56,
-          icon: Icons.flag_rounded,
           onTap: online.status == NetStatus.online && !online.busy ? () => _tap(online.start) : null,
         )
       else
         Text('Waiting for ${host?.name ?? 'the creator'} to start…',
-            textAlign: TextAlign.center, style: Txt.body(16, color: Pal.chalkDim)),
+            textAlign: TextAlign.center, style: Txt.body(16, color: Kit.blazeWhite.withValues(alpha: 0.8))),
     ]);
   }
+}
+
+/// The room's code, big on a luggage tag on a string.
+class _CodeTag extends StatelessWidget {
+  const _CodeTag({required this.code});
+  final String code;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 168,
+      child: Stack(clipBehavior: Clip.none, children: [
+        Positioned(left: 83, top: -30, width: 1.5, height: 46, child: ColoredBox(color: Kit.blazeWhite.withValues(alpha: 0.85))),
+        Transform.rotate(
+          angle: -0.04,
+          child: CustomPaint(
+            painter: _BigTagPainter(),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 34, 10, 14),
+              child: Column(children: [
+                Text('ROOM', style: FbTxt.typed(12, bold: true, color: Kit.ink)),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: SelectableText(code, maxLines: 1, semanticsLabel: code.split('').join(' '), style: FbTxt.label(60, color: Kit.ink, spacing: 0.04)),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _BigTagPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = tagPath(size);
+    canvas.drawPath(p.shift(const Offset(0, 6)), Paint()..color = rgba(0, 0, 0, 0.3));
+    canvas.drawPath(p, Paint()..color = Kit.paper);
+    final c = Offset(size.width / 2, 16);
+    canvas.drawCircle(c, 8, Paint()..color = hex(0xB8AE98));
+    canvas.drawCircle(c, 4.5, Paint()..color = hex(0x2A2E38));
+  }
+
+  @override
+  bool shouldRepaint(covariant _BigTagPainter oldDelegate) => false;
 }
 
 /// Lays children out two in a row.
@@ -320,12 +386,12 @@ class _Field extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = code ? Txt.mono(26).copyWith(letterSpacing: 8) : Txt.body(17);
-    final border = OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none);
+    final style = code ? FbTxt.label(40, color: Kit.ink, spacing: 0.2) : FbTxt.typed(18, bold: true, color: Kit.ink);
+    final line = UnderlineInputBorder(borderSide: BorderSide(color: Kit.ink, width: 1.5));
     return TextField(
       controller: controller,
       style: style,
-      cursorColor: Pal.signal,
+      cursorColor: Kit.blaze,
       autocorrect: false,
       enableSuggestions: !code,
       textCapitalization: code ? TextCapitalization.characters : TextCapitalization.words,
@@ -341,18 +407,19 @@ class _Field extends StatelessWidget {
       onSubmitted: onSubmitted,
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: style.copyWith(color: Pal.chalkDim.withAlpha(110)),
-        filled: true,
-        fillColor: Pal.ink3,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        border: border,
-        enabledBorder: border,
-        focusedBorder: border.copyWith(borderSide: BorderSide(color: Pal.signal, width: 1.5)),
+        hintStyle: style.copyWith(color: Kit.graphite.withValues(alpha: 0.6)),
+        counterStyle: FbTxt.typed(11, color: Kit.graphite),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
+        border: line,
+        enabledBorder: line,
+        focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Kit.blaze, width: 2)),
       ),
     );
   }
 }
 
+/// A player as an entry in the register: their climber, name and lane,
+/// a pencil tick when they are ready, and who made the room.
 class _PlayerRow extends StatelessWidget {
   const _PlayerRow({required this.player, required this.lane, required this.you, required this.host});
   final RoomPlayer player;
@@ -364,35 +431,33 @@ class _PlayerRow extends StatelessWidget {
     final k = Climber.byId(player.climber);
     return Opacity(
       opacity: player.connected ? 1 : 0.5,
-      child: Row(children: [
-        SizedBox(width: 40, height: 52, child: ClimberPortrait(climber: k)),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(player.name, overflow: TextOverflow.ellipsis, style: Txt.body(16, weight: FontWeight.w700, height: 1.2)),
-            Text(player.connected ? '${k.name} · ${laneLabel(lane.lane, lane.side)}' : 'Reconnecting…',
-                style: Txt.body(13, color: Pal.chalkDim, height: 1.2)),
-          ]),
-        ),
-        if (player.ready) ...[_Tag(label: 'Ready', color: Pal.good), const SizedBox(width: 6)],
-        if (host) _Tag(label: 'Creator', color: Pal.lamp),
-        if (you) ...[const SizedBox(width: 6), _Tag(label: 'You', color: Pal.jump)],
-      ]),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(children: [
+          SizedBox(width: 40, height: 52, child: ClimberPortrait(climber: k)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(player.name, overflow: TextOverflow.ellipsis, style: FbTxt.hand(30, color: you ? Kit.blaze : Kit.ink)),
+              Text(player.connected ? '${k.name} · ${laneLabel(lane.lane, lane.side)}' : 'Reconnecting…',
+                  style: FbTxt.typed(12.5, color: Kit.graphite, height: 1.2)),
+            ]),
+          ),
+          if (player.ready) ...[const PencilBox(on: true, size: 20), const SizedBox(width: 4), const _Tag(label: 'Ready'), const SizedBox(width: 6)],
+          if (host) const _Tag(label: 'Creator'),
+          if (you) ...[const SizedBox(width: 6), const _Tag(label: 'You')],
+        ]),
+      ),
     );
   }
 }
 
 class _Tag extends StatelessWidget {
-  const _Tag({required this.label, required this.color});
+  const _Tag({required this.label});
   final String label;
-  final Color color;
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(color: color.withAlpha(36), borderRadius: BorderRadius.circular(6)),
-        child: Text(label.toUpperCase(), style: Txt.body(11, weight: FontWeight.w700, color: color).copyWith(letterSpacing: 0.8)),
-      );
+  Widget build(BuildContext context) => Text(label.toUpperCase(), style: FbTxt.typed(11, bold: true, color: Kit.ink));
 }
 
 /// A dot and a word: is the server there?
@@ -403,26 +468,25 @@ class _NetChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, color) = switch (status) {
-      NetStatus.online => ('Online', Pal.good),
-      NetStatus.connecting => ('Connecting', Pal.weak),
-      NetStatus.failed => ('Offline', Pal.bad),
-      NetStatus.off => ('Offline', Pal.chalkDim),
+      NetStatus.online => ('Online', hex(0x3B9A5A)),
+      NetStatus.connecting => ('Connecting', Kit.rope),
+      NetStatus.failed => ('Offline', Kit.blaze),
+      NetStatus.off => ('Offline', Kit.graphite),
     };
     return Semantics(
       label: 'Server: $label',
       excludeSemantics: true,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Pal.ink2,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: Pal.line, width: 1.5),
+      child: Transform.rotate(
+        angle: 0.03,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(color: Kit.paper, boxShadow: [BoxShadow(color: rgba(0, 0, 0, 0.3), offset: const Offset(0, 4))]),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 9, height: 9, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+            const SizedBox(width: 8),
+            Text(label, style: FbTxt.typed(13, bold: true, color: Kit.ink, height: 1.1)),
+          ]),
         ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 9, height: 9, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-          const SizedBox(width: 8),
-          Text(label, style: Txt.body(13, weight: FontWeight.w700, height: 1.1)),
-        ]),
       ),
     );
   }
@@ -438,35 +502,31 @@ class _Connecting extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final failed = online.status == NetStatus.failed || online.status == NetStatus.off;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Pal.ink2,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: failed ? Pal.bad.withAlpha(140) : Pal.line, width: 1.5),
-      ),
+    return PaperScrap(
+      angle: failed ? 1 : -1,
+      torn: false,
       child: failed
           ? Row(children: [
-              Icon(Icons.cloud_off_rounded, color: Pal.bad, size: 24),
+              Icon(Icons.cloud_off_rounded, color: Kit.blaze, size: 24),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text("Can't reach the server.", style: Txt.body(16, weight: FontWeight.w700)),
-                  Text(mpServer, style: Txt.mono(12, color: Pal.chalkDim)),
+                  Text("Can't reach the server.", style: FbTxt.typed(15, bold: true, color: Kit.blaze)),
+                  Text(mpServer, style: FbTxt.typed(12, color: Kit.graphite)),
                 ]),
               ),
               const SizedBox(width: 10),
-              GameButton(label: 'Retry', primary: true, minHeight: 44, onTap: onRetry),
+              SizedBox(width: 130, child: GameButton(label: 'Retry', primary: true, onTap: onRetry)),
             ])
           : Row(children: [
-              SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Pal.weak)),
+              SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Kit.ink)),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Connecting to server…', style: Txt.body(16, weight: FontWeight.w700)),
+                  Text('Connecting to server…', style: FbTxt.typed(15, bold: true, color: Kit.ink)),
                   if (online.slow)
                     Text('The server may be waking up. This can take up to a minute.',
-                        style: Txt.body(14, color: Pal.chalkDim, height: 1.35)),
+                        style: Txt.body(14, color: Kit.ink, height: 1.35)),
                 ]),
               ),
             ]),
@@ -482,9 +542,9 @@ class _ErrorLine extends StatelessWidget {
   Widget build(BuildContext context) => Semantics(
         liveRegion: true,
         child: Row(children: [
-          Icon(Icons.error_outline_rounded, color: Pal.bad, size: 20),
+          Icon(Icons.error_outline_rounded, color: Kit.blaze, size: 20),
           const SizedBox(width: 8),
-          Expanded(child: Text(text, style: Txt.body(15, weight: FontWeight.w700, color: Pal.bad))),
+          Expanded(child: Text(text, style: FbTxt.typed(15, bold: true, color: Kit.blaze))),
         ]),
       );
 }

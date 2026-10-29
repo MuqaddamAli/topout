@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../game/art.dart';
 import '../game/core.dart';
+import '../game/field_book.dart';
 import '../game/palette.dart';
+import 'kit.dart';
 
 /// Text styles (fonts are in assets/fonts). The Field Book's three hands:
 /// Archivo for titles (write them in capitals), Courier for anything typed,
@@ -123,7 +125,9 @@ class Stagger extends StatelessWidget {
   }
 }
 
-/// Button in the game's style. [primary] is the orange one.
+/// Button in the game's style. [primary] is the one thing to do next, a
+/// strap of webbing; the others are index lines ([index] is the number they
+/// show). [compact] is a small dark button with an icon over its label.
 class GameButton extends StatelessWidget {
   const GameButton({
     super.key,
@@ -137,6 +141,9 @@ class GameButton extends StatelessWidget {
     this.on = false,
     this.compact = false,
     this.semanticLabel,
+    this.index,
+    this.extra,
+    this.keyHint,
   });
   final String label;
   final VoidCallback? onTap;
@@ -153,8 +160,23 @@ class GameButton extends StatelessWidget {
   final bool compact;
   final String? semanticLabel;
 
+  /// The number an index line shows (02, 03…).
+  final int? index;
+
+  /// Small typed text at the end of a webbing strap.
+  final String? extra;
+
+  /// A key that does the same, shown on a desktop.
+  final String? keyHint;
+
   @override
   Widget build(BuildContext context) {
+    if (!compact) {
+      final Widget b = primary
+          ? WebbingButton(label: label, onTap: onTap, extra: extra ?? keyHint, height: math.max(minHeight, 64), semanticLabel: semanticLabel)
+          : IndexLine(label: label, onTap: onTap, number: index, icon: icon, on: on, semanticLabel: semanticLabel, keyHint: keyHint);
+      return width == null ? b : SizedBox(width: width, child: b);
+    }
     final filled = primary || on;
     final fg = filled ? Pal.signalInk : Pal.chalk;
     final disabled = onTap == null;
@@ -233,7 +255,8 @@ class GamePanel extends StatelessWidget {
   }
 }
 
-/// One choice of a few side by side (Relaxed, Normal, No saves): orange when on.
+/// One choice of a few side by side (Relaxed, Normal, No saves): the picked
+/// one has a pencil ring round it.
 class GameChoice extends StatelessWidget {
   const GameChoice({super.key, required this.label, required this.on, required this.onTap});
   final String label;
@@ -242,45 +265,45 @@ class GameChoice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ink = Surface.ink(context);
     return Semantics(
       inMutuallyExclusiveGroup: true,
       checked: on,
       label: label,
       button: true,
       excludeSemantics: true,
-      child: PressScale(
-        child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        decoration: BoxDecoration(
-          color: on ? Pal.signal : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Material(
-        color: Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: on ? BorderSide.none : BorderSide(color: Pal.line, width: 1.5),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: onTap,
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 46),
-            alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(label,
-                textAlign: TextAlign.center,
-                style: Txt.body(14, weight: FontWeight.w700, color: on ? Pal.signalInk : Pal.chalk, height: 1.1)),
+          child: PressScale(
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 46),
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: CustomPaint(
+                foregroundPainter: on ? PencilRing(color: ink) : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(label.toUpperCase(),
+                        maxLines: 1,
+                        textAlign: TextAlign.center,
+                        style: FbTxt.label(22, color: on ? ink : ink.withValues(alpha: 0.62))),
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
-      ),
-      ),
       ),
     );
   }
 }
 
-/// On/off switch with a label (Music, Sounds).
+/// On/off switch with a label (Music, Sounds): a box drawn in pencil, ticked when on.
 class GameToggle extends StatelessWidget {
   const GameToggle({super.key, required this.label, required this.value, required this.onChanged});
   final String label;
@@ -294,35 +317,18 @@ class GameToggle extends StatelessWidget {
       label: label,
       button: true,
       excludeSemantics: true,
-      child: Material(
-        color: Colors.transparent,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12), side: BorderSide(color: Pal.line, width: 1.5)),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: () => onChanged(!value),
           child: Container(
             constraints: const BoxConstraints(minHeight: 44),
-            padding: const EdgeInsets.fromLTRB(10, 0, 14, 0),
+            padding: const EdgeInsets.fromLTRB(2, 0, 12, 0),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                width: 34,
-                height: 20,
-                decoration: BoxDecoration(color: value ? Pal.signal : Pal.ink3, borderRadius: BorderRadius.circular(10)),
-                child: AnimatedAlign(
-                  duration: const Duration(milliseconds: 150),
-                  alignment: value ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
-                    width: 14,
-                    height: 14,
-                    margin: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(color: value ? Pal.signalInk : Pal.chalkDim, shape: BoxShape.circle),
-                  ),
-                ),
-              ),
+              PencilBox(on: value),
               const SizedBox(width: 10),
-              Text(label, style: Txt.body(14, weight: FontWeight.w700, height: 1.1)),
+              Text(label.toUpperCase(), style: FbTxt.typed(15, bold: true, color: Surface.ink(context), height: 1.1)),
             ]),
           ),
         ),
@@ -331,43 +337,22 @@ class GameToggle extends StatelessWidget {
   }
 }
 
-/// Three bars that show how hard a route is.
+/// How hard a route is: one to three tally marks.
 class Pips extends StatelessWidget {
-  const Pips({super.key, required this.level});
+  const Pips({super.key, required this.level, this.color});
   final int level;
+  final Color? color;
 
   @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      label: const ['', 'Easy', 'Medium', 'Hard'][level.clamp(0, 3)],
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          for (var k = 1; k <= 3; k++)
-            Container(
-              width: 5,
-              height: 3.0 + k * 3,
-              margin: EdgeInsets.only(left: k == 1 ? 0 : 3),
-              decoration: BoxDecoration(color: k <= level ? Pal.signal : Pal.line, borderRadius: BorderRadius.circular(1.5)),
-            ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      TallyMarks(count: level.clamp(0, 3), height: 14, color: color, label: const ['', 'Easy', 'Medium', 'Hard'][level.clamp(0, 3)]);
 }
 
+/// The Daily Wall's stamp.
 class DailyBadge extends StatelessWidget {
   const DailyBadge({super.key});
   @override
-  Widget build(BuildContext context) => Container(
-        height: 20,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(color: Pal.jump, borderRadius: BorderRadius.circular(6)),
-        child: Text('DAILY',
-            style: Txt.body(11, weight: FontWeight.w700, color: hex(0x0b1a26), height: 1).copyWith(letterSpacing: 0.9)),
-      );
+  Widget build(BuildContext context) => const InkStamp(word: 'Daily', size: 0.42, angle: -6);
 }
 
 /// The ring that shows how strong a hand still is. [glow] (0 to 1) is a red
@@ -408,9 +393,10 @@ class GaugePainter extends CustomPainter {
   bool shouldRepaint(covariant GaugePainter old) => old.value != value || old.glow != glow;
 }
 
-/// Hand strength over the last seconds before a fall. Red shading shows
-/// moments with no feet on the wall, yellow with one foot. [progress] (0 to 1)
-/// draws the line from the left, so it can be played in.
+/// Hand strength over the last seconds before a fall, as a pencil line on
+/// the page: it turns blaze red where the hand was running out. Red shading
+/// shows moments with no feet on the wall, yellow with one foot. [progress]
+/// (0 to 1) draws the line from the left, so it can be played in.
 class TracePainter extends CustomPainter {
   TracePainter(this.trace, this.hand, {this.progress = 1});
   final List<List<double>> trace;
@@ -420,41 +406,39 @@ class TracePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final w = size.width, h = size.height;
-    canvas.drawRRect(RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(10)), Paint()..color = Pal.ink);
     final n = trace.length;
     if (n < 2) return;
-    double px(int k) => 8 + (w - 16) * (80 - n + k) / 79;
-    double py(double v) => h - 8 - (h - 16) * v / 100;
+    double px(int k) => 4 + (w - 8) * (80 - n + k) / 79;
+    double py(double v) => h - 6 - (h - 12) * v / 100;
     final band = Paint();
     for (var k = 0; k < n; k++) {
       final fw = trace[k][2];
       if (fw < 2) {
-        band.color = fw == 0 ? rgba(255, 90, 90, 0.22) : rgba(244, 198, 77, 0.14);
+        band.color = fw == 0 ? rgba(196, 42, 28, 0.12) : rgba(217, 164, 65, 0.16);
         canvas.drawRect(Rect.fromLTWH(px(k) - w / 160, 0, w / 79 + 1, h), band);
       }
     }
-    canvas.drawLine(Offset(0, py(30)), Offset(w, py(30)),
-        Paint()
-          ..color = rgba(242, 237, 228, 0.18)
-          ..strokeWidth = 1);
-    // the line, up to where it has been played in
+    // where a hand starts to slip
+    canvas.drawPath(dashLine(0, py(30), w, py(30), 4, 4), Paint()
+      ..style = PaintingStyle.stroke
+      ..color = Kit.blaze.withValues(alpha: 0.45)
+      ..strokeWidth = 1);
+    // the line, up to where it has been played in: graphite, red when low
     final upTo = (n - 1) * progress.clamp(0.0, 1.0), last = upTo.floor();
-    final line = Path()..moveTo(px(0), py(trace[0][hand]));
-    for (var k = 1; k <= last; k++) {
-      line.lineTo(px(k), py(trace[k][hand]));
+    final pencil = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    for (var k = 1; k <= math.min(last + 1, n - 1); k++) {
+      final f = k <= last ? 1.0 : upTo - last;
+      if (f <= 0) break;
+      final a = Offset(px(k - 1), py(trace[k - 1][hand]));
+      final b = Offset(px(k - 1) + (px(k) - px(k - 1)) * f, py(trace[k - 1][hand] + (trace[k][hand] - trace[k - 1][hand]) * f));
+      pencil.color = trace[k][hand] < 30 ? Kit.blaze : Kit.graphite;
+      canvas.drawLine(a, b, pencil);
     }
-    if (last < n - 1) {
-      final f = upTo - last;
-      line.lineTo(px(last) + (px(last + 1) - px(last)) * f, py(trace[last][hand] + (trace[last + 1][hand] - trace[last][hand]) * f));
-    }
-    canvas.drawPath(
-        line,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.2
-          ..strokeJoin = StrokeJoin.round
-          ..color = Pal.chalk);
-    if (progress >= 1) canvas.drawCircle(Offset(px(n - 1), py(trace[n - 1][hand])), 4, Paint()..color = Pal.bad);
+    if (progress >= 1) canvas.drawCircle(Offset(px(n - 1), py(trace[n - 1][hand])), 4, Paint()..color = Kit.blaze);
   }
 
   @override

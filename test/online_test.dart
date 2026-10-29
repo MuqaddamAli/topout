@@ -1,6 +1,10 @@
 // The Play online screen with a fake server: connecting, making and joining
 // a room, the lobby, the errors, a creator who leaves, and Retry.
+import 'dart:io';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:topout/game/audio.dart';
@@ -10,6 +14,7 @@ import 'package:topout/game/store.dart';
 import 'package:topout/ui/app.dart';
 
 import 'fake_link.dart';
+import 'fonts.dart';
 
 void main() {
   test('the server: the live site finds the online one, local pages the one on their own machine', () {
@@ -39,14 +44,29 @@ void main() {
   }
 
   Future<void> tap(WidgetTester tester, String label) async {
-    final f = find.text(label).last;
+    // buttons write their labels in capitals
+    final f = find.byWidgetPredicate((w) => w is Text && (w.data == label || w.data == label.toUpperCase()), description: 'text "$label"').last;
     await tester.ensureVisible(f);
     await tester.pump();
     await tester.tap(f);
     await settle(tester);
   }
 
+  final shotKey = GlobalKey();
+
+  /// Saves a screenshot to build/screens/, to check the look by eye.
+  Future<void> shot(WidgetTester tester, String name) async {
+    final boundary = tester.renderObject<RenderRepaintBoundary>(find.byKey(shotKey));
+    await tester.runAsync(() async {
+      final image = await boundary.toImage(pixelRatio: 2);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      final dir = Directory('build/screens')..createSync(recursive: true);
+      File('${dir.path}/$name.png').writeAsBytesSync(data!.buffer.asUint8List());
+    });
+  }
+
   Future<void> open(WidgetTester tester) async {
+    await loadGameFonts();
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -56,7 +76,7 @@ void main() {
       audio: GameAudio(musicOn: false, sfxOn: false, enabled: false),
       netLink: () => (links..add(FakeLink())).last,
     );
-    await tester.pumpWidget(TopoutApp(game: game));
+    await tester.pumpWidget(RepaintBoundary(key: shotKey, child: TopoutApp(game: game)));
     await tester.pump(const Duration(milliseconds: 100));
     await tap(tester, 'Play online');
   }
@@ -110,6 +130,7 @@ void main() {
 
     await open(tester);
     await connected(tester, name: 'Ada');
+    await shot(tester, '70_online_entry');
     link().answer = (e, d) => entered(roomJson());
     await tap(tester, 'Granite Steps');
     await tap(tester, 'No saves');
@@ -130,13 +151,14 @@ void main() {
     expect(find.text('Ada · Lane 1, left'), findsOneWidget);
     await tap(tester, 'Copy');
     expect(copied, 'KXMP');
-    expect(find.text('Copied'), findsOneWidget);
+    expect(find.text('COPIED'), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
 
     link().push('room', roomJson(names: ['Ada', 'Bo', 'Cy', 'Di', 'Ed']));
     await settle(tester);
     expect(find.text('5/8 players'), findsOneWidget);
     expect(find.text('Ed'), findsOneWidget);
+    await shot(tester, '71_online_lobby');
     // the lane each player will get, in the order they joined
     expect(find.text('3 lanes side by side, two climbers in each. Bridges join them.'), findsOneWidget);
     for (final lane in ['Lane 1, left', 'Lane 1, right', 'Lane 2, left', 'Lane 2, right', 'Lane 3, left']) {
@@ -147,7 +169,7 @@ void main() {
     await tap(tester, 'KAI');
     expect(link().last('pick'), 'kai');
 
-    expect(find.text('Start · 0/5 ready'), findsOneWidget);
+    expect(find.text('START · 0/5 READY'), findsOneWidget);
     await tap(tester, 'Start · 0/5 ready');
     expect(link().did('start'), isTrue);
     // from the start, the server's lanes are shown
@@ -234,11 +256,11 @@ void main() {
     await settle(tester);
     await tap(tester, 'Join');
     expect(find.text('Waiting for Host to start…'), findsOneWidget);
-    expect(find.textContaining('Start · '), findsNothing);
+    expect(find.textContaining('START · '), findsNothing);
 
     link().push('room', roomJson(host: 'p1', names: ['Bo']));
     await settle(tester);
-    expect(find.textContaining('Start · '), findsOneWidget);
+    expect(find.textContaining('START · '), findsOneWidget);
     expect(find.text('1/8 players'), findsOneWidget);
     await done(tester);
   });

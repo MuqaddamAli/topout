@@ -431,6 +431,12 @@ class Game {
   Pt c = Pt(180, 100), cd = Pt(180, 100);
   List<double> grip = [100, 100], holdTime = [0, 0];
   int moves = 0, falls = 0;
+
+  /// Falls caught this climb (by grabbing a hold on the way down).
+  int caught = 0;
+
+  /// The last input was a finger (no key hints then).
+  bool usedTouch = false;
   double time = 0;
   final List<Snapshot> history = [];
   Checkpoint? checkpoint;
@@ -694,6 +700,7 @@ class Game {
     moves = 0;
     time = 0;
     falls = 0;
+    caught = 0;
     history.clear();
     drag = null;
     fall = null;
@@ -1370,6 +1377,10 @@ class Game {
   }
 
   void pointerDown(int id, Offset pos, bool touch) {
+    if (touch != usedTouch) {
+      usedTouch = touch;
+      _ui();
+    }
     if (phase == Phase.falling && (fall?.window ?? false)) {
       _tapCatch(pos);
       return;
@@ -1672,6 +1683,10 @@ class Game {
   }
 
   bool key(LogicalKeyboardKey k, {bool ctrl = false}) {
+    if (usedTouch) {
+      usedTouch = false;
+      _ui();
+    }
     final f = fall;
     if (phase == Phase.falling && f != null && f.window && k == LogicalKeyboardKey.space) {
       final b = f.best;
@@ -2118,6 +2133,7 @@ class Game {
     history.clear(); // no undo back into the fall
     camManual = null;
     showRecenter = false;
+    caught++;
     if (keepsRecords) {
       records.catches++;
       records.saveLog();
